@@ -7,11 +7,17 @@ fileMatchPattern: "**/*.{tf,hcl}"
 
 ## Nomenclatura de recursos AWS
 
-Patrón: **`xaldigital-urbanbot-<env>-<descripcion>`**, siempre kebab-case.
+Patrón: **`cdshack-urbanbot-<env>-<descripcion>`**, siempre kebab-case.
+
+> **El prefijo DEBE ser `cdshack-`.** La política de gobierno del hackathon
+> (permissions boundary del rol de Terraform) solo permite crear IAM roles y
+> policies que empiecen con `cdshack-` y buckets S3 que contengan `cdshack-`.
+> Cualquier otro prefijo hace fallar el `apply` con AccessDenied. No uses
+> `xaldigital-urbanbot-*` (nombre viejo, ya migrado).
 
 - `<env>` es `dev`, `qa` o `prod`.
 - Dentro del módulo se deriva un local:
-  `local.name_prefix = "xaldigital-urbanbot-${var.environment}"`.
+  `local.name_prefix = "cdshack-urbanbot-${var.environment}"`.
 - **Sin prefijos de tipo** en recursos de aplicación (no `s3-`, `lambda-`,
   `role-`).
 - **Con sufijos de tipo** en IAM: roles terminan en `-role`, policies en
@@ -20,10 +26,18 @@ Patrón: **`xaldigital-urbanbot-<env>-<descripcion>`**, siempre kebab-case.
 - Sin abreviaciones ambiguas (usa `create-report`, no `cr`).
 
 Ejemplos reales:
-`xaldigital-urbanbot-dev-reports` (DynamoDB),
-`xaldigital-urbanbot-dev-ingest.fifo` (SQS),
-`xaldigital-urbanbot-dev-create-report` (Lambda),
-`xaldigital-urbanbot-dev-create-report-role` (IAM role).
+`cdshack-urbanbot-dev-reports` (DynamoDB),
+`cdshack-urbanbot-dev-ingest.fifo` (SQS),
+`cdshack-urbanbot-dev-create-report` (Lambda),
+`cdshack-urbanbot-dev-create-report-role` (IAM role).
+
+### Excepción: bucket de state de Terraform
+
+El bucket de state NO sigue el prefijo `cdshack-`: lo provee el team de infra y
+se llama `s3-xaldigital-hackathon-agentic-terraform` (patrón
+`s3-xaldigital-hackathon-*`). La política de gobierno fue ampliada para permitir
+ese patrón. El bucket llega por la variable de CI/CD `TF_STATE_BUCKET`, no se
+hardcodea.
 
 ## Tags
 
@@ -31,7 +45,7 @@ Los tags van como **`default_tags` del provider en `envs/<env>/main.tf`**, NO en
 los módulos. Los seis tags obligatorios:
 
 ```hcl
-Project     = "xaldigital-urbanbot"
+Project     = "cdshack-urbanbot"
 Agente      = "urbanbot"
 Environment = var.environment
 ManagedBy   = "terraform"

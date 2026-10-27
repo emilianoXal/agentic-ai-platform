@@ -17,19 +17,31 @@ Read this before adding or changing anything.
 
 ## Naming convention
 
-Pattern: **`xaldigital-urbanbot-<env>-<description>`**, kebab-case.
+Pattern: **`cdshack-urbanbot-<env>-<description>`**, kebab-case.
+
+> **The prefix MUST be `cdshack-`.** The hackathon governance policy (the
+> Terraform role's permissions boundary) only allows creating IAM roles/policies
+> that start with `cdshack-` and S3 buckets containing `cdshack-`. Any other
+> prefix fails `apply` with AccessDenied. The old `xaldigital-urbanbot-*` prefix
+> has been migrated — do not reintroduce it.
 
 - `<env>` is `dev`, `qa` or `prod`.
 - No type prefixes on app resources (no `s3-`, `lambda-`).
 - IAM roles end in `-role`, policies in `-policy`.
 - Log groups: `/aws/lambda/<function-name>`.
 - Inside a module, derive `local.name_prefix =
-  "xaldigital-urbanbot-${var.environment}"` and build every name from it.
+  "cdshack-urbanbot-${var.environment}"` and build every name from it.
 
-Examples: `xaldigital-urbanbot-dev-reports`,
-`xaldigital-urbanbot-dev-ingest.fifo`,
-`xaldigital-urbanbot-dev-create-report`,
-`xaldigital-urbanbot-dev-create-report-role`.
+Examples: `cdshack-urbanbot-dev-reports`,
+`cdshack-urbanbot-dev-ingest.fifo`,
+`cdshack-urbanbot-dev-create-report`,
+`cdshack-urbanbot-dev-create-report-role`.
+
+**State bucket exception:** the Terraform state bucket does NOT follow the
+`cdshack-` prefix — it's provided by the infra team as
+`s3-xaldigital-hackathon-agentic-terraform` (the governance policy was widened to
+allow the `s3-xaldigital-hackathon-*` pattern). It arrives via the
+`TF_STATE_BUCKET` CI/CD variable and is never hardcoded.
 
 ## Tags
 
@@ -37,7 +49,7 @@ Six mandatory tags, set as `default_tags` on the AWS provider in
 `envs/<env>/main.tf` (NOT in modules):
 
 ```hcl
-Project     = "xaldigital-urbanbot"
+Project     = "cdshack-urbanbot"
 Agente      = "urbanbot"
 Environment = var.environment
 ManagedBy   = "terraform"

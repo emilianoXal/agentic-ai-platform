@@ -3,7 +3,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "xaldigital-urbanbot"
+      Project     = "cdshack-urbanbot"
       Agente      = "urbanbot"
       Environment = var.environment
       ManagedBy   = "terraform"

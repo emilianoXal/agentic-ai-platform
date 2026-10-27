@@ -1,10 +1,10 @@
 locals {
-  name_prefix = "xaldigital-urbanbot-${var.environment}"
+  name_prefix = "cdshack-urbanbot-${var.environment}"
 
   # awscc does NOT honour provider default_tags, so AgentCore resources that
   # accept tags set these six inline (same keys/values as the env default_tags).
   tags = {
-    Project     = "xaldigital-urbanbot"
+    Project     = "cdshack-urbanbot"
     Agente      = "urbanbot"
     Environment = var.environment
     ManagedBy   = "terraform"

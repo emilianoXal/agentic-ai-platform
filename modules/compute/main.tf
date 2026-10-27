@@ -1,5 +1,5 @@
 locals {
-  name_prefix = "xaldigital-urbanbot-${var.environment}"
+  name_prefix = "cdshack-urbanbot-${var.environment}"
 }
 
 # =============================================================================

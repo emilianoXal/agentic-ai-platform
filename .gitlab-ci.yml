@@ -1,0 +1,176 @@
+# =============================================================================
+# Pipeline de infraestructura — Bot ciudadano de infraestructura urbana (urbanbot)
+# Repo: hackaton-aws-cds-agentic-ai/agentic-ai-platform
+#
+# Solo infra (Terraform). Autenticacion AWS via OIDC (GitLab id_tokens -> STS
+# AssumeRoleWithWebIdentity). Layout de Terraform: envs/<env>/ (state aislado
+# por entorno sobre el mismo bucket con native locking).
+#
+# Variables requeridas a nivel de proyecto (Settings > CI/CD > Variables):
+#   AWS_ROLE_ARN      Rol OIDC de despliegue del agente (uno por agente).
+#   TF_STATE_BUCKET   Bucket S3 del estado de Terraform (ya existe, versioning ON).
+#
+# Variables opcionales (override al lanzar el pipeline):
+#   TF_ENV       Entorno a operar: dev | qa | prod   (default: dev)
+#   TF_TARGET    Lista separada por comas de recursos a targetear en plan.
+#   TF_DESTROY   "true" habilita el job manual de destroy.
+# =============================================================================
+stages:
+  - tf_validate
+  - tf_plan
+  - tf_apply
+
+variables:
+  GIT_STRATEGY: "clone"
+  GIT_DEPTH: "0"
+  AWS_EC2_METADATA_DISABLED: "true"
+  AWS_DEFAULT_REGION: "us-east-1"
+  # Entorno objetivo. dev por defecto; qa/prod se lanzan seteando TF_ENV.
+  TF_ENV: "dev"
+  # Raiz de Terraform por entorno.
+  TF_ROOT: "${CI_PROJECT_DIR}/envs/${TF_ENV}"
+  # Backend de estado (S3 native locking, sin DynamoDB).
+  # TF_STATE_BUCKET NO tiene default aqui: se define como variable de proyecto
+  # en CI/CD > Variables. El bucket ya existe con versioning ON.
+  # Version de Terraform pineada (evita drift de :latest).
+  TF_VERSION: "1.10"
+
+# =============================================================================
+# Autenticacion OIDC compartida por todos los jobs que hablan con AWS.
+# =============================================================================
+.aws_auth: &aws_auth
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://gitlab.xalcloud.com/
+  before_script:
+    - echo "Configurando credenciales AWS via OIDC..."
+    - |
+      STS_RESPONSE=$(aws sts assume-role-with-web-identity \
+        --role-arn "${AWS_ROLE_ARN}" \
+        --role-session-name "GitLabRunner-${CI_PROJECT_ID}-${CI_PIPELINE_ID}" \
+        --web-identity-token "${GITLAB_OIDC_TOKEN}" \
+        --duration-seconds 3600)
+    - export AWS_ACCESS_KEY_ID=$(echo "$STS_RESPONSE" | jq -r '.Credentials.AccessKeyId')
+    - export AWS_SECRET_ACCESS_KEY=$(echo "$STS_RESPONSE" | jq -r '.Credentials.SecretAccessKey')
+    - export AWS_SESSION_TOKEN=$(echo "$STS_RESPONSE" | jq -r '.Credentials.SessionToken')
+    - aws sts get-caller-identity
+
+# =============================================================================
+# Base Terraform: imagen + auth OIDC + init con backend por entorno.
+# =============================================================================
+.terraform_base:
+  <<: *aws_auth
+  image:
+    name: hashicorp/terraform:${TF_VERSION}
+    entrypoint: [""]
+  before_script:
+    - apk add --no-cache aws-cli jq
+    - !reference [.aws_auth, before_script]
+    - echo "Verificando acceso al bucket de estado..."
+    - aws s3 ls "s3://${TF_STATE_BUCKET}/" || echo "Warning - No se pudo listar el bucket de estado"
+    - cd "${TF_ROOT}"
+    - terraform init -input=false -backend-config="bucket=${TF_STATE_BUCKET}"
+
+terraform:validate:
+  extends: .terraform_base
+  stage: tf_validate
+  script:
+    - terraform fmt -check -recursive
+    - terraform validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
+terraform:plan:
+  extends: .terraform_base
+  stage: tf_plan
+  script:
+    - cd "${TF_ROOT}"
+    - |
+      TARGET_ARGS=""
+      if [ -n "${TF_TARGET:-}" ]; then
+        for t in $(echo "$TF_TARGET" | tr ',' ' '); do
+          TARGET_ARGS="$TARGET_ARGS -target=$t"
+        done
+        echo "Plan con targets: $TARGET_ARGS"
+      fi
+    - terraform plan $TARGET_ARGS -out=tfplan -input=false
+  artifacts:
+    paths:
+      # El plan guardado congela la ruta y el hash del ZIP del placeholder.
+      - ${TF_ROOT}/tfplan
+      # El ZIP lo genera el data source archive_file durante el plan y vive en
+      # modules/compute/build/ (gitignored). El job de apply corre en otro
+      # runner con workspace limpio, asi que hay que pasarlo como artifact o el
+      # apply falla con "reading ZIP file ... no such file or directory".
+      - ${CI_PROJECT_DIR}/modules/compute/build/
+      # Mismo motivo: los ZIPs del modulo agent (seis tools + consumer) los
+      # genera archive_file durante el plan en modules/agent/build/.
+      - ${CI_PROJECT_DIR}/modules/agent/build/
+    expire_in: 1 hour
+  dependencies:
+    - terraform:validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
+terraform:apply:
+  extends: .terraform_base
+  stage: tf_apply
+  script:
+    - cd "${TF_ROOT}"
+    - terraform apply -auto-approve -input=false tfplan
+  dependencies:
+    - terraform:plan
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$TF_DESTROY == "true"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH =~ /^(main|feat\/.*|fix\/.*|hotfix\/.*|release\/.*)$/'
+      when: manual
+
+terraform:destroy:
+  extends: .terraform_base
+  stage: tf_apply
+  script:
+    - cd "${TF_ROOT}"
+    - terraform destroy -auto-approve -input=false
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$TF_DESTROY == "true" && $CI_COMMIT_BRANCH =~ /^(main|feat\/.*|fix\/.*|hotfix\/.*|release\/.*)$/'
+      when: manual
+
+# =============================================================================
+# Job manual para des-tainting un recurso del state.
+#
+# Cuando aparece: si un apply crea un recurso en AWS pero falla justo despues
+# (post-create step), Terraform lo marca como tainted en state. En los planes
+# subsecuentes aparece como '# ... is tainted, so must be replaced', y el
+# apply intenta destroy + create que choca con el nombre del recurso original.
+#
+# Como usar: en la UI de GitLab, "Run pipeline" y setear la variable
+#   TF_UNTAINT_TARGET = <resource address, ej. module.data.aws_sqs_queue.ingest>
+# Solo aparece el job cuando esa variable esta seteada. El job corre en el
+# rol OIDC (con permisos de PutObject al bucket de state, que el rol SSO
+# humano intencionalmente no tiene).
+# =============================================================================
+terraform:untaint:
+  extends: .terraform_base
+  stage: tf_plan
+  script:
+    - cd "${TF_ROOT}"
+    - |
+      if [ -z "${TF_UNTAINT_TARGET:-}" ]; then
+        echo "TF_UNTAINT_TARGET no seteada. Ejemplo:"
+        echo "  TF_UNTAINT_TARGET=module.data.aws_sqs_queue.ingest"
+        exit 1
+      fi
+    - echo "Des-tainting ${TF_UNTAINT_TARGET}..."
+    - terraform untaint "${TF_UNTAINT_TARGET}"
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$TF_UNTAINT_TARGET != null && $TF_UNTAINT_TARGET != ""'
+      when: manual

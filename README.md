@@ -91,3 +91,44 @@ For open source projects, say how it is licensed.
 
 ## Project status
 If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+
+***
+
+# Infrastructure
+
+Infrastructure for the **urbanbot** agent (WhatsApp citizen bot for urban
+infrastructure reporting) is managed with Terraform. AWS region: `us-east-1`.
+
+## Layout
+
+```
+envs/<env>/        # dev | qa | prod — isolated state, one backend per env
+modules/data/      # KMS CMK, S3 media bucket, DynamoDB tables, SNS, SQS FIFO, EventBridge bus
+modules/compute/   # (placeholder — build/ holds Lambda artifacts generated at plan time)
+```
+
+Each `envs/<env>` configures the AWS provider (region + `default_tags`) and
+wires the shared `modules/data` module. State lives in a single S3 bucket with
+native locking (`use_lockfile`, no DynamoDB); the state key is isolated per
+environment (`urbanbot/<env>/terraform.tfstate`).
+
+## CI / authentication
+
+The GitLab pipeline (`.gitlab-ci.yml`) authenticates to AWS via OIDC
+(`id_tokens` → `sts assume-role-with-web-identity`), so no long-lived
+credentials are stored. Two CI/CD **project variables** are required:
+
+- `AWS_ROLE_ARN` — OIDC deploy role for the agent.
+- `TF_STATE_BUCKET` — existing S3 state bucket (versioning ON); it has no
+  default in the pipeline and is injected at `terraform init` via
+  `-backend-config="bucket=${TF_STATE_BUCKET}"`.
+
+## Local verification
+
+```
+terraform fmt -check -recursive          # from repo root
+cd envs/dev
+terraform init -backend=false
+terraform validate
+```
+

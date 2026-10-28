@@ -95,6 +95,19 @@ terraform:validate:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
 
+media:build:
+  stage: app_build
+  image: python:3.12-alpine
+  script:
+    - pip install --requirement modules/compute/layers/pillow/requirements.txt --target modules/compute/layers/pillow/python --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 --only-binary=":all:"
+  artifacts:
+    paths:
+      - modules/compute/layers/pillow/python/
+    expire_in: 1 hour
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
 terraform:plan:
   extends: .terraform_base
   stage: tf_plan
@@ -127,6 +140,7 @@ terraform:plan:
     expire_in: 1 hour
   dependencies:
     - terraform:validate
+    - media:build
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'

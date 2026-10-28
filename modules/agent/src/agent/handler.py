@@ -196,10 +196,17 @@ def _is_deletion_confirmation(text):
     return " ".join(words) == _DELETE_CONFIRMATION_PHRASE
 
 
+
+def _sanitized_media(media):
+    if not isinstance(media, list):
+        return []
+    return [value for value in media if isinstance(value, str) and value.startswith("sanitized/")]
+
+
 # --- Tool wrappers (one per tool Lambda; typed signatures + es-MX docstrings) -
 @tool
-def create_report(user_id: str, category: str, geohash: str, description: str,
-                  media: list = None, lat: float = None, lng: float = None,
+def create_report(category: str, geohash: str, description: str,
+                  lat: float = None, lng: float = None,
                   severity: str = None) -> dict:
     """Registra un nuevo reporte ciudadano de infraestructura urbana.
 
@@ -208,21 +215,19 @@ def create_report(user_id: str, category: str, geohash: str, description: str,
     partir de lat/lng con precision 7 antes de llamar a esta herramienta.
 
     Args:
-        user_id: Identificador del usuario que reporta.
         category: Categoria del reporte (p.ej. bacheo, alumbrado, basura, agua).
         geohash: Celda geohash de precision 7 calculada desde lat/lng.
         description: Descripcion del reporte (obligatoria).
-        media: Lista opcional de referencias a medios (claves S3 o URLs).
         lat: Latitud opcional (se guarda en el reporte).
         lng: Longitud opcional (se guarda en el reporte).
         severity: Severidad opcional (low, medium, high, critical).
     """
     return _invoke_tool(TOOL_CREATE_REPORT_FN, {
-        "user_id": user_id,
+        "user_id": _turn.get("user_id"),
         "category": category,
         "geohash": geohash,
         "description": description,
-        "media": media,
+        "media": list(_turn.get("media", [])),
         "lat": lat,
         "lng": lng,
         "severity": severity,
@@ -230,19 +235,18 @@ def create_report(user_id: str, category: str, geohash: str, description: str,
 
 
 @tool
-def join_incident(incident_id: str, report_id: str = None, user_id: str = None,
+def join_incident(incident_id: str, report_id: str = None,
                   category: str = None, geohash: str = None,
                   severity: str = None) -> dict:
     """Adjunta un reporte a un incidente abierto existente (RF-29/RF-10).
 
     Proporciona incident_id y exactamente uno de: report_id (adjunta un reporte
-    existente) o user_id+category+geohash (crea un reporte y lo adjunta). El
-    geohash debe ser de precision 7.
+    existente) o category+geohash (crea un reporte del usuario actual y lo
+    adjunta). El geohash debe ser de precision 7.
 
     Args:
         incident_id: Identificador del incidente abierto (obligatorio).
         report_id: Reporte existente a adjuntar.
-        user_id: Usuario, para crear-y-adjuntar.
         category: Categoria, para crear-y-adjuntar.
         geohash: Celda geohash de precision 7, para crear-y-adjuntar.
         severity: Severidad opcional para recalcular prioridad.
@@ -250,42 +254,41 @@ def join_incident(incident_id: str, report_id: str = None, user_id: str = None,
     return _invoke_tool(TOOL_JOIN_INCIDENT_FN, {
         "incident_id": incident_id,
         "report_id": report_id,
-        "user_id": user_id,
+        "user_id": _turn.get("user_id"),
         "category": category,
         "geohash": geohash,
+        "media": list(_turn.get("media", [])),
         "severity": severity,
     })
 
 
 @tool
-def get_status(user_id: str = None, report_id: str = None) -> dict:
-    """Consulta el estatus de un reporte o de todos los reportes de un usuario.
+def get_status(report_id: str = None) -> dict:
+    """Consulta el estatus de un reporte o de todos los reportes del usuario actual.
 
-    Proporciona report_id o user_id (RF-16). Devuelve el estatus del reporte y
-    del incidente padre.
+    Sin report_id lista los reportes del usuario (RF-16). Devuelve el estatus
+    del reporte y del incidente padre.
 
     Args:
-        user_id: Usuario del que listar reportes.
         report_id: Reporte especifico a consultar.
     """
     return _invoke_tool(TOOL_GET_STATUS_FN, {
-        "user_id": user_id,
+        "user_id": _turn.get("user_id"),
         "report_id": report_id,
     })
 
 
 @tool
-def register_place(user_id: str, alias: str, geohash: str = None,
+def register_place(alias: str, geohash: str = None,
                    lat: float = None, lng: float = None, place_id: str = None,
                    radius_m: int = None) -> dict:
-    """Registra o actualiza un lugar de interes para el usuario (RF-23/RF-25).
+    """Registra o actualiza un lugar de interes del usuario actual (RF-23/RF-25).
 
     Maximo 3 lugares por usuario; requiere consentimiento previo. Proporciona
     geohash o lat/lng. Si lat/lng estan presentes, calcula el geohash de
     precision 7 antes de llamar.
 
     Args:
-        user_id: Usuario dueno del lugar.
         alias: Nombre/etiqueta del lugar.
         geohash: Celda geohash de precision 7 (opcional si hay lat/lng).
         lat: Latitud opcional.
@@ -294,7 +297,7 @@ def register_place(user_id: str, alias: str, geohash: str = None,
         radius_m: Radio en metros del area de interes.
     """
     return _invoke_tool(TOOL_REGISTER_PLACE_FN, {
-        "user_id": user_id,
+        "user_id": _turn.get("user_id"),
         "alias": alias,
         "geohash": geohash,
         "lat": lat,
@@ -398,6 +401,24 @@ _SYSTEM_PROMPT = (
 # --- es-MX canned replies ----------------------------------------------------
 _ASK_FOR_TEXT = (
     "Hola, cuentame que problema de infraestructura urbana quieres reportar."
+)
+_MEDIA_DROPPED_NOTES = {
+    "consent_pending": (
+        "[El usuario envio una foto que no se guardo porque aun no da su "
+        "consentimiento: pide opt-in y despues pidele que reenvie la foto.]"
+    ),
+    "rate_limited": (
+        "[El usuario envio una foto que no se proceso porque supero el limite "
+        "de mensajes por hora: explicalo y pidele que reenvie la foto mas tarde.]"
+    ),
+    "processing_error": (
+        "[El usuario envio una foto que no se pudo procesar: explicalo y pidele "
+        "que reenvie la foto.]"
+    ),
+}
+_PHOTO_WITHOUT_CAPTION_NOTE = (
+    "[El usuario envio una foto sin descripcion: pide la descripcion del "
+    "problema y la ubicacion.]"
 )
 _TRY_AGAIN = (
     "Tuve un problema al procesar tu solicitud. Por favor intenta de nuevo en "
@@ -596,19 +617,24 @@ def lambda_handler(event, context):
     event = event if isinstance(event, dict) else {}
     user_id = event.get("user_id")
     text = event.get("text")
+    media = _sanitized_media(event.get("media"))
+    has_text = isinstance(text, str) and bool(text.strip())
+    media_note = _MEDIA_DROPPED_NOTES.get(event.get("media_dropped"))
+    if not media_note and media and not has_text:
+        media_note = _PHOTO_WITHOUT_CAPTION_NOTE
 
     # Defensive validation (invalid_input is terminal; consumer does not redrive).
     if not user_id:
         _log(logging.WARNING, "invalid_input", reason="missing_user_id")
         return {"ok": False, "error": "invalid_input", "reply": _ASK_FOR_TEXT}
-    if not isinstance(text, str) or not text.strip():
+    if not media_note and not has_text:
         _log(logging.WARNING, "invalid_input", reason="missing_text",
              user=_mask_phone(user_id))
         return {"ok": False, "error": "invalid_input", "reply": _ASK_FOR_TEXT}
 
-    text = text.strip()
+    text = text.strip() if isinstance(text, str) else ""
     _turn.clear()
-    _turn.update(user_id=str(user_id), text=text)
+    _turn.update(user_id=str(user_id), text=text, media=media)
     consent_pending = bool(event.get("consent_pending"))
     rate_limited = bool(event.get("rate_limited"))
 
@@ -634,6 +660,8 @@ def lambda_handler(event, context):
         # Shape the turn with the ingest-provided flags; ingest already enforced
         # consent/rate limits, the agent only reflects them in the conversation.
         prompt = text
+        if media_note:
+            prompt = media_note + "\n" + prompt
         if consent_pending:
             prompt = (
                 "[El usuario aun no ha dado su consentimiento: pide opt-in antes "
@@ -652,7 +680,7 @@ def lambda_handler(event, context):
 
         if (CONVERSATION_HISTORY_TABLE and not consent_pending
                 and not _is_deletion_confirmation(text)):
-            _save_history(user_id, text, reply)
+            _save_history(user_id, prompt, reply)
 
         _log(logging.INFO, "agent_done", user_hash=_hash_id(user_id),
              reply_len=len(reply))
@@ -685,3 +713,5 @@ def lambda_handler(event, context):
                                      "reason": "unexpected",
                                      "user_hash": _hash_id(user_id)}))
         return {"ok": False, "error": "internal"}
+    finally:
+        _turn.clear()

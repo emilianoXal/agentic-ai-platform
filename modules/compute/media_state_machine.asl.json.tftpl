@@ -1,0 +1,53 @@
+{
+  "StartAt": "DownloadMedia",
+  "States": {
+    "DownloadMedia": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${download_lambda_arn}",
+        "Payload.$": "$"
+      },
+      "OutputPath": "$.Payload",
+      "Next": "DetectFaces"
+    },
+    "DetectFaces": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:rekognition:detectFaces",
+      "Parameters": {
+        "Image": {
+          "S3Object": {
+            "Bucket.$": "$.bucket",
+            "Name.$": "$.rawKey"
+          }
+        }
+      },
+      "ResultPath": "$.faces",
+      "Next": "DetectText"
+    },
+    "DetectText": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:rekognition:detectText",
+      "Parameters": {
+        "Image": {
+          "S3Object": {
+            "Bucket.$": "$.bucket",
+            "Name.$": "$.rawKey"
+          }
+        }
+      },
+      "ResultPath": "$.texts",
+      "Next": "SanitizeMedia"
+    },
+    "SanitizeMedia": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${sanitize_lambda_arn}",
+        "Payload.$": "$"
+      },
+      "OutputPath": "$.Payload",
+      "End": true
+    }
+  }
+}

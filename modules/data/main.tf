@@ -121,6 +121,27 @@ resource "aws_s3_bucket_lifecycle_configuration" "media" {
     expiration {
       days = var.media_retention_days
     }
+
+    noncurrent_version_expiration {
+      noncurrent_days = var.media_retention_days
+    }
+  }
+
+  rule {
+    id     = "expire-sanitized"
+    status = "Enabled"
+
+    filter {
+      prefix = "sanitized/"
+    }
+
+    expiration {
+      days = var.sanitized_media_retention_days
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = var.sanitized_media_retention_days
+    }
   }
 }
 
@@ -250,6 +271,27 @@ resource "aws_dynamodb_table" "users" {
 
   point_in_time_recovery {
     enabled = true
+  }
+}
+
+resource "aws_dynamodb_table" "pending_media" {
+  name         = "${local.name_prefix}-pending-media"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "user_hash"
+
+  attribute {
+    name = "user_hash"
+    type = "S"
+  }
+
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.this.arn
   }
 }
 

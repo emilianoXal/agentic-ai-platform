@@ -1,5 +1,5 @@
 environment                 = "dev"
-media_retention_days        = 30
+media_retention_days        = 1
 enable_agentcore_memory     = false
 enable_conversation_history = true
 

@@ -1,2 +1,2 @@
 environment          = "prod"
-media_retention_days = 30
+media_retention_days = 1

@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -26,6 +27,7 @@ from botocore.exceptions import ClientError
 INCIDENTS_TABLE = os.environ.get("INCIDENTS_TABLE", "")
 REPORTS_TABLE = os.environ.get("REPORTS_TABLE", "")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
+PENDING_MEDIA_TABLE = os.environ.get("PENDING_MEDIA_TABLE", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 # --- Clients created at module load (reused across warm invocations) ---------
@@ -84,22 +86,51 @@ def _priority(report_count, max_severity):
     return report_count + (sev_rank * 2)
 
 
-def _create_report(user_id, category, geohash):
+def _sanitized_media(media):
+    if not isinstance(media, list):
+        return []
+    return [value for value in media if isinstance(value, str) and value.startswith("sanitized/")]
+
+
+def _consume_pending_media(user_id):
+    """Atomically take the citizen's unexpired pending sanitized keys."""
+    if not PENDING_MEDIA_TABLE:
+        return []
+    try:
+        resp = _ddb.delete_item(
+            TableName=PENDING_MEDIA_TABLE,
+            Key={"user_hash": {"S": hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()}},
+            ReturnValues="ALL_OLD",
+        )
+    except ClientError:
+        _log(logging.WARNING, "pending_media_consume_failed", user_hash=_hash_id(user_id))
+        return []
+    now = int(time.time())
+    pending = [
+        (int(value["N"]), key)
+        for key, value in resp.get("Attributes", {}).items()
+        if key.startswith("sanitized/") and "N" in value and int(value["N"]) > now
+    ]
+    return [key for _, key in sorted(pending)]
+
+
+def _create_report(user_id, category, geohash, media):
     """Create a minimal report row for the create-then-attach branch (b)."""
     report_id = str(uuid.uuid4())
     now = _now_iso()
-    _ddb.put_item(
-        TableName=REPORTS_TABLE,
-        Item={
-            "report_id": {"S": report_id},
-            "user_id": {"S": str(user_id)},
-            "category": {"S": category},
-            "geohash": {"S": geohash},
-            "status": {"S": "Recibido"},
-            "created_at": {"S": now},
-            "updated_at": {"S": now},
-        },
-    )
+    item = {
+        "report_id": {"S": report_id},
+        "user_id": {"S": str(user_id)},
+        "category": {"S": category},
+        "geohash": {"S": geohash},
+        "status": {"S": "Recibido"},
+        "created_at": {"S": now},
+        "updated_at": {"S": now},
+    }
+    media = list(dict.fromkeys(_sanitized_media(media) + _consume_pending_media(user_id)))
+    if media:
+        item["media"] = {"L": [{"S": key} for key in media]}
+    _ddb.put_item(TableName=REPORTS_TABLE, Item=item)
     return report_id
 
 
@@ -128,7 +159,7 @@ def lambda_handler(event, context):
         if not report_id:
             # Branch (b): create then attach. Trusts incident_id; does NOT
             # re-check geohash/category equality against the incident.
-            report_id = _create_report(user_id, category, geohash)
+            report_id = _create_report(user_id, category, geohash, event.get("media"))
             created = True
 
         subscriber = str(user_id) if user_id else None

@@ -15,15 +15,20 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 # --- Config from environment -------------------------------------------------
 INGEST_QUEUE_URL = os.environ.get("INGEST_QUEUE_URL", "")
 USERS_TABLE = os.environ.get("USERS_TABLE", "")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
+MEDIA_BUCKET = os.environ.get("MEDIA_BUCKET", "")
+MEDIA_STATE_MACHINE_ARN = os.environ.get("MEDIA_STATE_MACHINE_ARN", "")
+PENDING_MEDIA_TABLE = os.environ.get("PENDING_MEDIA_TABLE", "")
+PENDING_MEDIA_TTL_SECONDS = 3600
 RATE_LIMIT_PER_HOUR = int(os.environ.get("RATE_LIMIT_PER_HOUR", "60"))
 MAX_TEXT_LEN = int(os.environ.get("MAX_TEXT_LEN", "4096"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -31,6 +36,7 @@ LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 # --- Clients created at module load (reused across warm invocations) ---------
 _sqs = boto3.client("sqs")
 _ddb = boto3.client("dynamodb")
+_sfn = boto3.client("stepfunctions")
 
 # --- Structured JSON-line logger ---------------------------------------------
 logger = logging.getLogger()
@@ -295,6 +301,52 @@ def _sanitize_text(text):
     return _CONTROL_CHARS.sub("", s)
 
 
+def _remember_pending_media(user_id, key):
+    """Keep a sanitized key claimable by the citizen's next report for one hour.
+
+    The item key is a full SHA-256 of user_id; each media key carries its own
+    expiry so stale keys are never revived by a later photo.
+    """
+    if not PENDING_MEDIA_TABLE or not user_id:
+        return
+    expires_at = str(int(time.time()) + PENDING_MEDIA_TTL_SECONDS)
+    try:
+        _ddb.update_item(
+            TableName=PENDING_MEDIA_TABLE,
+            Key={"user_hash": {"S": hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()}},
+            UpdateExpression="SET #key = :exp, expires_at = :exp",
+            ExpressionAttributeNames={"#key": key},
+            ExpressionAttributeValues={":exp": {"N": expires_at}},
+        )
+    except (BotoCoreError, ClientError) as exc:
+        _log(logging.WARNING, "pending_media_store_failed", error=type(exc).__name__)
+
+
+def _prepare_media(item):
+    media = item.get("media")
+    if item.get("type") != "image" or not isinstance(media, dict) or not media.get("id"):
+        return media
+    if not MEDIA_BUCKET or not MEDIA_STATE_MACHINE_ARN or not item.get("origination_phone_number_id"):
+        raise ValueError("image media pipeline is not configured")
+    media_id = str(media["id"])
+    message_id = str(item.get("message_id") or media_id)
+    object_id = hashlib.sha256(message_id.encode("utf-8")).hexdigest()[:32]
+    sanitized_key = "sanitized/" + object_id
+    payload = {
+        "bucket": MEDIA_BUCKET,
+        "mediaId": media_id,
+        "originationPhoneNumberId": item["origination_phone_number_id"],
+        "sanitizedKey": sanitized_key,
+    }
+    _sfn.start_execution(
+        stateMachineArn=MEDIA_STATE_MACHINE_ARN,
+        name=object_id,
+        input=json.dumps(payload),
+    )
+    _remember_pending_media(item.get("user_id"), sanitized_key)
+    return [sanitized_key]
+
+
 def _process_item(item):
     if item.get("kind") == "status":
         _log(
@@ -322,13 +374,33 @@ def _process_item(item):
     consent_granted = _check_consent(user_id)
     rate_limited = _check_rate_limit(user_id)
     safe_text = _sanitize_text(item.get("text"))
+    media_dropped = None
+    media = []
+    if item.get("type") == "image" and not consent_granted:
+        media_dropped = "consent_pending"
+    elif item.get("type") == "image" and rate_limited:
+        media_dropped = "rate_limited"
+    else:
+        try:
+            media = _prepare_media(item)
+        except (BotoCoreError, ClientError, ValueError):
+            media_dropped = "processing_error"
+    if media_dropped:
+        _log(
+            logging.INFO,
+            "media_dropped",
+            message_id=message_id,
+            user_hash=_hash_id(user_id),
+            reason=media_dropped,
+        )
 
     normalized = {
         "user_id": user_id,
         "message_id": message_id,
         "type": item.get("type") or "text",
         "text": safe_text,
-        "media": item.get("media"),
+        "media": media,
+        "media_dropped": media_dropped,
         "origination_phone_number_id": item.get("origination_phone_number_id"),
         "received_at": _now_iso(),
         "consent_pending": not consent_granted,

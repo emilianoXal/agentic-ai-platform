@@ -116,6 +116,21 @@ def test_unanswered_and_empty_turns_are_not_saved(app):
     assert seen[-1][0]["content"] == [{"text": "Hola"}]
 
 
+@pytest.mark.parametrize("flags", [
+    {"media": ["sanitized/photo.jpg"]},
+    {"media_dropped": "rate_limited"},
+    {"media_dropped": "processing_error"},
+])
+def test_captionless_media_turn_never_restores_blank_user_text(app, flags):
+    agent, _, _, seen = app
+    assert invoke(agent, "", **flags)["ok"]
+    assert invoke(agent, "Avenida Central")["ok"]
+    restored = seen[-1][:-1]
+    assert [m["role"] for m in restored] == ["user", "assistant"]
+    assert all(block["text"].strip() for m in restored for block in m["content"])
+    assert restored[0]["content"][0]["text"] == seen[0][0]["content"][0]["text"]
+
+
 def test_recent_ten_completed_turns_only(app):
     agent, _, ddb, seen = app
     key = agent._citizen_key("5215512345678")

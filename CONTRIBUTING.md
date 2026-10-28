@@ -103,7 +103,9 @@ table ARN. Any role touching CMK-encrypted resources needs `kms:Decrypt` +
 
 ## Lambda handlers
 
-- Python 3.12, handler `handler.lambda_handler`, stdlib + boto3 only.
+- Python 3.12, handler `handler.lambda_handler`, stdlib + boto3 only. Exception:
+  the compute `media` blur Lambda uses the Pillow layer
+  (`modules/compute/layers/pillow/`), built by the CI `media:build` job.
 - Structured JSON logging with **PII masking**: never log the full phone or
   message text — use last-4 digits, a hash of the id, and the text length.
   Copy the helper from `modules/compute/src/ingest/handler.py`.

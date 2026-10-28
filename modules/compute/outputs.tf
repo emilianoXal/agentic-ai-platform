@@ -42,3 +42,8 @@ output "outbound_role_arn" {
   description = "ARN of the outbound Lambda execution role."
   value       = aws_iam_role.outbound.arn
 }
+
+output "media_state_machine_arn" {
+  description = "ARN of the WhatsApp image sanitization state machine."
+  value       = aws_sfn_state_machine.media.arn
+}

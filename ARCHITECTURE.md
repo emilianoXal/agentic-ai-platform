@@ -65,3 +65,35 @@ in-flight turns from one SQS delivery. Terraform preconditions enforce these
 relationships. Runtime history and erasure regressions run with
 `python3 -m pytest -q modules/agent/tests/test_conversation_history.py`; mocked
 Terraform plans assert the table configuration and disabled memory resource.
+
+Inbound WhatsApp images take a privacy-gated path before their references reach
+the agent. Images from users without opt-in consent or over the rate limit are
+never downloaded. Otherwise ingest starts the compute module's Step Functions
+workflow and queues only a deterministic `sanitized/` S3 key. When the image is
+not processed, ingest still queues the message with no media reference and a
+PII-free `media_dropped` reason (`consent_pending`, `rate_limited`, or
+`processing_error` when media preparation fails, including missing pipeline
+configuration or origination number and AWS `StartExecution` errors); the agent prompt then asks for
+opt-in or explains the reason and asks the citizen to resend the photo, even
+when the photo had no caption. Report media is attached server-side and only
+as `sanitized/` keys; the model cannot supply or omit media. Ingest also records each started `sanitized/` key in the
+pending-media table, keyed only by a SHA-256 of the sender's `user_id`, with a
+one-hour per-key expiry plus DynamoDB TTL cleanup. `create_report`, and
+`join_incident` when it creates a report from `category`+`geohash`, receive the
+current message's `sanitized/` keys and atomically consume (`DeleteItem` with `ALL_OLD`) the unexpired pending keys, so a photo
+sent alone or before the location still lands on the citizen's next report. A
+photo without a caption is valid input: the agent asks for the description and
+location. Likewise, the sender's `user_id` comes from the inbound
+event and is injected server-side into `create_report`, `join_incident`,
+`get_status`, and `register_place`; it is not a model-facing tool parameter. The workflow downloads the WhatsApp
+asset into the KMS-encrypted media bucket, calls Rekognition `DetectFaces` and
+`DetectText`, and invokes the media Lambda to blur face boxes and plate-shaped
+alphanumeric text lines. Images with no sensitive regions are copied unchanged.
+Raw objects and every noncurrent raw version expire after one day; sanitized
+objects and their noncurrent versions expire after 30 days. The bucket is
+private and blocks all public access. The download call follows AWS End User
+Messaging Social's `GetWhatsAppMessageMedia` contract: `mediaId` and
+`originationPhoneNumberId` are required, while `destinationS3File` supplies the
+S3 `bucketName` and key prefix. The service writes `raw/<mediaId>.<ext>`, so the
+download Lambda derives the raw key from the returned `mimeType`. See the [AWS API reference](https://docs.aws.amazon.com/social-messaging/latest/APIReference/API_GetWhatsAppMessageMedia.html)
+and [download guide](https://docs.aws.amazon.com/social-messaging/latest/userguide/receive-message-image.html).

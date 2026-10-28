@@ -20,9 +20,10 @@ provider "awscc" {
 module "data" {
   source = "../../modules/data"
 
-  environment                 = var.environment
-  media_retention_days        = var.media_retention_days
-  enable_conversation_history = var.enable_conversation_history
+  environment                    = var.environment
+  media_retention_days           = var.media_retention_days
+  sanitized_media_retention_days = var.sanitized_media_retention_days
+  enable_conversation_history    = var.enable_conversation_history
 }
 
 module "compute" {
@@ -30,20 +31,24 @@ module "compute" {
 
   environment = var.environment
 
-  kms_key_arn          = module.data.kms_key_arn
-  ingest_queue_url     = module.data.ingest_queue_url
-  ingest_queue_arn     = module.data.ingest_queue_arn
-  inbound_topic_arn    = module.data.inbound_topic_arn
-  event_bus_name       = module.data.events_bus_name
-  event_bus_arn        = module.data.events_bus_arn
-  users_table_name     = module.data.users_table_name
-  users_table_arn      = module.data.users_table_arn
-  places_table_name    = module.data.places_table_name
-  places_table_arn     = module.data.places_table_arn
-  audit_table_name     = module.data.audit_log_table_name
-  audit_table_arn      = module.data.audit_log_table_arn
-  incidents_table_name = module.data.incidents_table_name
-  incidents_table_arn  = module.data.incidents_table_arn
+  kms_key_arn              = module.data.kms_key_arn
+  ingest_queue_url         = module.data.ingest_queue_url
+  ingest_queue_arn         = module.data.ingest_queue_arn
+  inbound_topic_arn        = module.data.inbound_topic_arn
+  media_bucket_name        = module.data.media_bucket_name
+  media_bucket_arn         = module.data.media_bucket_arn
+  event_bus_name           = module.data.events_bus_name
+  event_bus_arn            = module.data.events_bus_arn
+  users_table_name         = module.data.users_table_name
+  users_table_arn          = module.data.users_table_arn
+  pending_media_table_name = module.data.pending_media_table_name
+  pending_media_table_arn  = module.data.pending_media_table_arn
+  places_table_name        = module.data.places_table_name
+  places_table_arn         = module.data.places_table_arn
+  audit_table_name         = module.data.audit_log_table_name
+  audit_table_arn          = module.data.audit_log_table_arn
+  incidents_table_name     = module.data.incidents_table_name
+  incidents_table_arn      = module.data.incidents_table_arn
 
   dependency_email_map      = var.dependency_email_map
   dependency_fallback_email = var.dependency_fallback_email
@@ -69,19 +74,21 @@ module "agent" {
   enable_agentcore_gateway = var.enable_agentcore_gateway
   enable_agentcore_memory  = var.enable_agentcore_memory
 
-  kms_key_arn          = module.data.kms_key_arn
-  reports_table_name   = module.data.reports_table_name
-  reports_table_arn    = module.data.reports_table_arn
-  incidents_table_name = module.data.incidents_table_name
-  incidents_table_arn  = module.data.incidents_table_arn
-  places_table_name    = module.data.places_table_name
-  places_table_arn     = module.data.places_table_arn
-  users_table_name     = module.data.users_table_name
-  users_table_arn      = module.data.users_table_arn
-  audit_log_table_name = module.data.audit_log_table_name
-  audit_log_table_arn  = module.data.audit_log_table_arn
-  ingest_queue_arn     = module.data.ingest_queue_arn
-  ingest_queue_url     = module.data.ingest_queue_url
+  kms_key_arn              = module.data.kms_key_arn
+  reports_table_name       = module.data.reports_table_name
+  reports_table_arn        = module.data.reports_table_arn
+  incidents_table_name     = module.data.incidents_table_name
+  incidents_table_arn      = module.data.incidents_table_arn
+  places_table_name        = module.data.places_table_name
+  places_table_arn         = module.data.places_table_arn
+  users_table_name         = module.data.users_table_name
+  users_table_arn          = module.data.users_table_arn
+  pending_media_table_name = module.data.pending_media_table_name
+  pending_media_table_arn  = module.data.pending_media_table_arn
+  audit_log_table_name     = module.data.audit_log_table_name
+  audit_log_table_arn      = module.data.audit_log_table_arn
+  ingest_queue_arn         = module.data.ingest_queue_arn
+  ingest_queue_url         = module.data.ingest_queue_url
 
   ingest_queue_visibility_timeout_seconds = module.data.ingest_queue_visibility_timeout_seconds
   events_bus_name                         = module.data.events_bus_name

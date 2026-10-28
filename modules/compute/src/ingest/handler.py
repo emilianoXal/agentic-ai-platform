@@ -108,19 +108,56 @@ def _origination_phone_number_id(envelope):
     return None
 
 
+def _location_from_wa(message):
+    """Normalize a WhatsApp location blob (including forwarded messages)."""
+    if not isinstance(message, dict):
+        return None
+    blob = message.get("location")
+    if not isinstance(blob, dict):
+        return None
+    try:
+        lat = float(blob.get("latitude", blob.get("lat")))
+        lng = float(blob.get("longitude", blob.get("lng")))
+    except (TypeError, ValueError):
+        return None
+    out = {"lat": lat, "lng": lng}
+    name = blob.get("name")
+    address = blob.get("address")
+    if isinstance(name, str) and name.strip():
+        out["name"] = name.strip()
+    if isinstance(address, str) and address.strip():
+        out["address"] = address.strip()
+    return out
+
+
+def _location_text(location):
+    parts = [str(location["lat"]), str(location["lng"])]
+    if location.get("name"):
+        parts.append(location["name"])
+    if location.get("address") and location.get("address") != location.get("name"):
+        parts.append(location["address"])
+    return "[Shared location: " + ", ".join(parts) + "]"
+
+
 def _text_from_wa(message):
     if not isinstance(message, dict):
         return None
     text = message.get("text")
     if isinstance(text, dict):
-        return text.get("body")
-    if isinstance(text, str):
-        return text
-    mtype = message.get("type")
-    blob = message.get(mtype) if mtype in _MEDIA_TYPES else None
-    if isinstance(blob, dict):
-        return blob.get("caption")
-    return None
+        body = text.get("body")
+    elif isinstance(text, str):
+        body = text
+    else:
+        mtype = message.get("type")
+        blob = message.get(mtype) if mtype in _MEDIA_TYPES else None
+        body = blob.get("caption") if isinstance(blob, dict) else None
+    location = _location_from_wa(message)
+    loc_text = _location_text(location) if location else None
+    if isinstance(body, str) and body.strip() and loc_text:
+        return body + "\n" + loc_text
+    if isinstance(body, str) and body.strip():
+        return body
+    return loc_text
 
 
 def _media_from_wa(message):
@@ -172,6 +209,7 @@ def _iter_eum_items(envelope, entry, fallback_id):
                     "type": message.get("type") or "text",
                     "text": _text_from_wa(message),
                     "media": _media_from_wa(message),
+                    "location": _location_from_wa(message),
                     "origination_phone_number_id": origin,
                 }
         statuses = value.get("statuses") or []
@@ -219,6 +257,7 @@ def _parse_message(record):
         "type": envelope.get("type", "text"),
         "text": _text_from_wa(envelope),
         "media": envelope.get("media"),
+        "location": _location_from_wa(envelope),
         "origination_phone_number_id": _origination_phone_number_id(envelope),
     }
 
@@ -410,6 +449,9 @@ def _process_item(item):
         "consent_pending": not consent_granted,
         "rate_limited": rate_limited,
     }
+    location = item.get("location")
+    if isinstance(location, dict) and "lat" in location and "lng" in location:
+        normalized["location"] = location
 
     # MessageGroupId/DeduplicationId require non-empty values on a FIFO queue.
     group_id = str(user_id) if user_id else "unknown"

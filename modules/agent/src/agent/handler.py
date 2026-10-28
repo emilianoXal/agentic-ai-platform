@@ -56,6 +56,7 @@ TOOL_REGISTER_CONSENT_FN = os.environ.get("TOOL_REGISTER_CONSENT_FN", "")
 CONVERSATION_HISTORY_TABLE = os.environ.get("CONVERSATION_HISTORY_TABLE", "")
 _HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 _HISTORY_TURNS = 10
+_PENDING_LOCATION_SECONDS = 30 * 60
 
 AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
 AGENTCORE_IDENTITY_SECRET_ARN = os.environ.get("AGENTCORE_IDENTITY_SECRET_ARN", "")
@@ -206,6 +207,11 @@ def _sanitized_media(media):
 
 
 # --- Tool wrappers (one per tool Lambda; typed signatures + English docstrings) -
+def _consume_pending_location():
+    _turn.pop("location", None)
+    _turn["report_created"] = True
+
+
 @tool
 def create_report(category: str, geohash: str, description: str,
                   lat: float = None, lng: float = None,
@@ -224,7 +230,12 @@ def create_report(category: str, geohash: str, description: str,
         lng: Optional longitude (stored on the report).
         severity: Optional severity (low, medium, high, critical).
     """
-    return _invoke_tool(TOOL_CREATE_REPORT_FN, {
+    loc = _turn.get("location")
+    if (lat is None or lng is None) and loc:
+        lat = loc["lat"]
+        lng = loc["lng"]
+        geohash = _encode_geohash(lat, lng)
+    result = _invoke_tool(TOOL_CREATE_REPORT_FN, {
         "user_id": _turn.get("user_id"),
         "category": category,
         "geohash": geohash,
@@ -234,6 +245,9 @@ def create_report(category: str, geohash: str, description: str,
         "lng": lng,
         "severity": severity,
     })
+    if result.get("ok"):
+        _consume_pending_location()
+    return result
 
 
 @tool
@@ -253,7 +267,7 @@ def join_incident(incident_id: str, report_id: str = None,
         geohash: Precision-7 geohash cell, for create-and-attach.
         severity: Optional severity to recompute priority.
     """
-    return _invoke_tool(TOOL_JOIN_INCIDENT_FN, {
+    result = _invoke_tool(TOOL_JOIN_INCIDENT_FN, {
         "incident_id": incident_id,
         "report_id": report_id,
         "user_id": _turn.get("user_id"),
@@ -262,6 +276,9 @@ def join_incident(incident_id: str, report_id: str = None,
         "media": list(_turn.get("media", [])),
         "severity": severity,
     })
+    if result.get("ok") and not report_id:
+        _consume_pending_location()
+    return result
 
 
 @tool
@@ -432,8 +449,10 @@ _SYSTEM_PROMPT = (
     "processing: if it accepts, call register_consent and do not claim it was "
     "registered until the tool returns ok; if it returns ok, handle the rest of "
     "this same message; if it rejects or is unclear, do not call the tool. "
-    "To create or join reports you need the location (lat/lng); if it is "
-    "missing, ask for it and do not invent a cell. If a person asks to delete "
+    "To create or join reports you need the location (lat/lng); if the turn "
+    "includes a recently shared location, decide whether it belongs to this "
+    "report; if it is missing or does not apply, ask for it and do not invent "
+    "a cell. If a person asks to delete "
     "their data, first explain that their personal data and places will be "
     "removed, that their reports will be kept anonymized, and ask them to reply "
     "with exactly I CONFIRM DELETE MY DATA in their next message. Call "
@@ -474,6 +493,42 @@ _PHOTO_WITHOUT_CAPTION_NOTE = (
     "[The user sent a photo without a description: ask for a description of the "
     "problem and the location.]"
 )
+
+
+def _coerce_location(value):
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(value, dict):
+        return None
+    try:
+        lat = float(value.get("lat"))
+        lng = float(value.get("lng"))
+    except (TypeError, ValueError):
+        return None
+    out = {"lat": lat, "lng": lng}
+    name = value.get("name")
+    address = value.get("address")
+    if isinstance(name, str) and name.strip():
+        out["name"] = name.strip()
+    if isinstance(address, str) and address.strip():
+        out["address"] = address.strip()
+    return out
+
+
+def _location_note(location):
+    parts = [str(location["lat"]), str(location["lng"])]
+    if location.get("name"):
+        parts.append(location["name"])
+    if location.get("address") and location.get("address") != location.get("name"):
+        parts.append(location["address"])
+    minutes = max(0, int((time.time() - location["shared_at"]) // 60))
+    return (
+        "[The citizen shared this location " + str(minutes) + " minutes ago: "
+        + ", ".join(parts) + "]"
+    )
 _TRY_AGAIN = (
     "I had a problem processing your request. Please try again in a moment."
 )
@@ -591,33 +646,46 @@ def _load_history(citizen_key):
         ScanIndexForward=False, Limit=_HISTORY_TURNS, ConsistentRead=True,
     )
     messages = []
+    pending_location = None
     for item in reversed(response.get("Items", [])):
         if int(item["expires_at"]["N"]) <= time.time():
             continue
+        stored = _coerce_location(item.get("location", {}).get("S"))
+        if stored:
+            stored["shared_at"] = datetime.fromisoformat(
+                item["ts"]["S"].split("#")[0]).timestamp()
+            pending_location = stored
+        if item.get("report_created", {}).get("BOOL"):
+            pending_location = None
         for role in ("user", "assistant"):
             messages.append({"role": role, "content": [{"text": item[role]["S"]}]})
     _log(logging.INFO, "history_loaded", citizen_key=citizen_key, turns=len(messages) // 2)
-    return messages
+    if (pending_location
+            and time.time() - pending_location["shared_at"] > _PENDING_LOCATION_SECONDS):
+        pending_location = None
+    return messages, pending_location
 
 
-def _save_history(user_id, text, reply):
+def _save_history(user_id, text, reply, location=None):
     try:
-        _ddb.put_item(
-            TableName=CONVERSATION_HISTORY_TABLE,
-            Item={
-                "citizen_id": {"S": _citizen_key(user_id)},
-                "ts": {"S": _now_iso() + "#" + uuid4().hex},
-                "user": {"S": text},
-                "assistant": {"S": reply},
-                "expires_at": {"N": str(int(time.time()) + _HISTORY_TTL_SECONDS)},
-            },
-        )
+        item = {
+            "citizen_id": {"S": _citizen_key(user_id)},
+            "ts": {"S": _now_iso() + "#" + uuid4().hex},
+            "user": {"S": text},
+            "assistant": {"S": reply},
+            "expires_at": {"N": str(int(time.time()) + _HISTORY_TTL_SECONDS)},
+        }
+        if location:
+            item["location"] = {"S": json.dumps(location)}
+        if _turn.get("report_created"):
+            item["report_created"] = {"BOOL": True}
+        _ddb.put_item(TableName=CONVERSATION_HISTORY_TABLE, Item=item)
     except Exception:
         _log(logging.WARNING, "history_unavailable", operation="write")
 
 
 @contextmanager
-def _agent_for_citizen(model, user_id, consent_pending):
+def _agent_for_citizen(model, user_id, consent_pending, history_messages=None):
     system_prompt = _SYSTEM_PROMPT
     if _turn.get("follow_ups") and not consent_pending:
         system_prompt += "\nPending 'Is it fixed?' notices: " + json.dumps(_turn["follow_ups"])
@@ -628,10 +696,7 @@ def _agent_for_citizen(model, user_id, consent_pending):
         "callback_handler": None,
     }
     if CONVERSATION_HISTORY_TABLE and not consent_pending:
-        try:
-            agent_kwargs["messages"] = _load_history(_citizen_key(user_id))
-        except Exception:
-            _log(logging.WARNING, "history_unavailable", operation="read")
+        agent_kwargs["messages"] = history_messages or []
         yield Agent(**agent_kwargs)
         return
     if not AGENTCORE_MEMORY_ID or consent_pending:
@@ -675,6 +740,7 @@ def lambda_handler(event, context):
     text = event.get("text")
     media = _sanitized_media(event.get("media"))
     has_text = isinstance(text, str) and bool(text.strip())
+    location = _coerce_location(event.get("location"))
     media_note = _MEDIA_DROPPED_NOTES.get(event.get("media_dropped"))
     if not media_note and media and not has_text:
         media_note = _PHOTO_WITHOUT_CAPTION_NOTE
@@ -683,7 +749,7 @@ def lambda_handler(event, context):
     if not user_id:
         _log(logging.WARNING, "invalid_input", reason="missing_user_id")
         return {"ok": False, "error": "invalid_input", "reply": _ASK_FOR_TEXT}
-    if not media_note and not has_text:
+    if not media_note and not has_text and not location:
         _log(logging.WARNING, "invalid_input", reason="missing_text",
              user=_mask_phone(user_id))
         return {"ok": False, "error": "invalid_input", "reply": _ASK_FOR_TEXT}
@@ -691,9 +757,19 @@ def lambda_handler(event, context):
     text = text.strip() if isinstance(text, str) else ""
     _turn.clear()
     _turn.update(user_id=str(user_id), text=text, media=media)
+    if location:
+        _turn["location"] = dict(location, shared_at=time.time())
     consent_pending = bool(event.get("consent_pending"))
     _turn["consent_pending"] = consent_pending
     rate_limited = bool(event.get("rate_limited"))
+    history_messages = []
+    if CONVERSATION_HISTORY_TABLE and not consent_pending:
+        try:
+            history_messages, pending_location = _load_history(_citizen_key(user_id))
+            if pending_location and not location:
+                _turn["location"] = pending_location
+        except Exception:
+            _log(logging.WARNING, "history_unavailable", operation="read")
 
     _log(logging.INFO, "agent_start", user=_mask_phone(user_id),
          user_hash=_hash_id(user_id),
@@ -719,6 +795,8 @@ def lambda_handler(event, context):
         prompt = text
         if media_note:
             prompt = media_note + "\n" + prompt
+        if _turn.get("location"):
+            prompt = _location_note(_turn["location"]) + "\n" + prompt
         if TOOL_FOLLOW_UP_FN and not consent_pending:
             pending = _invoke_tool(TOOL_FOLLOW_UP_FN, {
                 "action": "pending", "user_id": str(user_id),
@@ -733,7 +811,9 @@ def lambda_handler(event, context):
                 "ok.]\n" + prompt
             )
 
-        with _agent_for_citizen(model, user_id, consent_pending) as agent:
+        with _agent_for_citizen(
+            model, user_id, consent_pending, history_messages=history_messages,
+        ) as agent:
             result = agent(prompt)
         reply = _extract_reply(result)
 
@@ -745,7 +825,7 @@ def lambda_handler(event, context):
 
         if (CONVERSATION_HISTORY_TABLE and not consent_pending
                 and not _is_deletion_confirmation(text)):
-            _save_history(user_id, prompt, reply)
+            _save_history(user_id, prompt, reply, location)
 
         _log(logging.INFO, "agent_done", user_hash=_hash_id(user_id),
              reply_len=len(reply))

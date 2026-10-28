@@ -76,6 +76,13 @@ managed policies con wildcards (`AWSLambdaBasicExecutionRole`): escribe los
 permisos de logs explícitos acotados al ARN del log group.
 
 Reglas:
+- **Permissions boundary OBLIGATORIO.** La política de gobierno DENIEGA
+  `iam:CreateRole` si el rol no se crea con el boundary
+  `base-cdshack-limite-permisos`. Por eso TODO `aws_iam_role` debe llevar
+  `permissions_boundary = var.permissions_boundary_arn`. El módulo declara la
+  variable `permissions_boundary_arn` y el entorno la pasa (su default es
+  `arn:aws:iam::636487155766:policy/base-cdshack-limite-permisos`). Un rol sin
+  boundary hace fallar el `apply` con AccessDenied / explicit deny.
 - Cada statement acota `resources` al ARN exacto que el handler toca.
 - Acceso a un GSI requiere el ARN del índice:
   `"${table_arn}/index/<index_name>"` (ej.

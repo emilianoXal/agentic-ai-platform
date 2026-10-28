@@ -4,6 +4,12 @@ variable "environment" {
   default     = "qa"
 }
 
+variable "permissions_boundary_arn" {
+  description = "Permissions boundary required on every IAM role by the hackathon governance policy."
+  type        = string
+  default     = "arn:aws:iam::636487155766:policy/base-cdshack-limite-permisos"
+}
+
 variable "media_retention_days" {
   description = "Number of days before objects under the \"raw/\" prefix in the media bucket expire."
   type        = number

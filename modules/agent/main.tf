@@ -133,8 +133,9 @@ data "aws_iam_policy_document" "lambda_assume" {
 # reports R/W + incidents R/W + by-geohash GSI query + audit-log + kms + logs.
 # =============================================================================
 resource "aws_iam_role" "create_report" {
-  name               = "${local.name_prefix}-create-report-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "${local.name_prefix}-create-report-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "create_report" {
@@ -204,8 +205,9 @@ resource "aws_iam_role_policy_attachment" "create_report" {
 # incidents R/W + reports write (create-then-join) + audit-log + kms + logs.
 # =============================================================================
 resource "aws_iam_role" "join_incident" {
-  name               = "${local.name_prefix}-join-incident-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "${local.name_prefix}-join-incident-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "join_incident" {
@@ -267,8 +269,9 @@ resource "aws_iam_role_policy_attachment" "join_incident" {
 # reports read + by-user GSI + incidents read + kms + logs.
 # =============================================================================
 resource "aws_iam_role" "get_status" {
-  name               = "${local.name_prefix}-get-status-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "${local.name_prefix}-get-status-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "get_status" {
@@ -326,8 +329,9 @@ resource "aws_iam_role_policy_attachment" "get_status" {
 # places R/W + Query (table hash key, no GSI) + users read + audit + kms + logs.
 # =============================================================================
 resource "aws_iam_role" "register_place" {
-  name               = "${local.name_prefix}-register-place-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "${local.name_prefix}-register-place-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "register_place" {
@@ -389,8 +393,9 @@ resource "aws_iam_role_policy_attachment" "register_place" {
 # incidents R/W + events:PutEvents on the bus + audit + kms + logs.
 # =============================================================================
 resource "aws_iam_role" "route" {
-  name               = "${local.name_prefix}-route-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "${local.name_prefix}-route-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "route" {
@@ -452,8 +457,9 @@ resource "aws_iam_role_policy_attachment" "route" {
 # incidents R/W + events:PutEvents on the bus + audit + kms + logs.
 # =============================================================================
 resource "aws_iam_role" "escalate" {
-  name               = "${local.name_prefix}-escalate-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "${local.name_prefix}-escalate-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "escalate" {
@@ -516,8 +522,9 @@ resource "aws_iam_role_policy_attachment" "escalate" {
 # bedrock-agentcore:InvokeAgentRuntime left as a TODO (runtime flag false).
 # =============================================================================
 resource "aws_iam_role" "consumer" {
-  name               = "${local.name_prefix}-consumer-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "${local.name_prefix}-consumer-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "consumer" {
@@ -855,8 +862,9 @@ data "aws_iam_policy_document" "agentcore_assume" {
 }
 
 resource "aws_iam_role" "agentcore_exec" {
-  name               = "${local.name_prefix}-agentcore-exec-role"
-  assume_role_policy = data.aws_iam_policy_document.agentcore_assume.json
+  name                 = "${local.name_prefix}-agentcore-exec-role"
+  assume_role_policy   = data.aws_iam_policy_document.agentcore_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "agentcore_exec" {

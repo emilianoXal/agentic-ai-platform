@@ -6,6 +6,11 @@ variable "environment" {
   type        = string
 }
 
+variable "permissions_boundary_arn" {
+  description = "ARN of the permissions boundary required on every IAM role by the governance policy (base-cdshack-limite-permisos)."
+  type        = string
+}
+
 variable "enable_agentcore_runtime" {
   description = "Create the AgentCore Runtime (awscc). Default false so terraform validate / dev plan need no agent image."
   type        = bool

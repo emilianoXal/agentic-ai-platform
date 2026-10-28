@@ -1251,14 +1251,14 @@ resource "awscc_bedrockagentcore_memory" "this" {
   tags = local.tags
 }
 
-# HMAC key for the AgentCore Memory actor/session ids. The value is generated
-# ephemerally and written write-only, so it never lands in Terraform state; the
-# agent Lambda only receives the secret ARN.
-ephemeral "aws_secretsmanager_random_password" "agentcore_identity" {
+# HMAC key for the AgentCore Memory actor/session ids. The value lives only in
+# Secrets Manager and in the encrypted Terraform state; the agent Lambda only
+# receives the secret ARN. Never output or log it.
+resource "random_password" "agentcore_identity" {
   count = var.enable_agentcore_memory ? 1 : 0
 
-  password_length     = 64
-  exclude_punctuation = true
+  length  = 64
+  special = false
 }
 
 resource "aws_secretsmanager_secret" "agentcore_identity" {
@@ -1271,7 +1271,6 @@ resource "aws_secretsmanager_secret" "agentcore_identity" {
 resource "aws_secretsmanager_secret_version" "agentcore_identity" {
   count = var.enable_agentcore_memory ? 1 : 0
 
-  secret_id                = aws_secretsmanager_secret.agentcore_identity[0].id
-  secret_string_wo         = ephemeral.aws_secretsmanager_random_password.agentcore_identity[0].random_password
-  secret_string_wo_version = 1
+  secret_id     = aws_secretsmanager_secret.agentcore_identity[0].id
+  secret_string = random_password.agentcore_identity[0].result
 }

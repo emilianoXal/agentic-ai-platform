@@ -41,9 +41,9 @@ In dev, the agent Lambda persists each consenting citizen's conversation through
 the Strands AgentCore Memory session manager. While `consent_pending` is true the
 agent runs without a session manager, so nothing from that turn is persisted.
 Actor and session identifiers are HMAC-SHA256 of the citizen number keyed by a
-Terraform-created Secrets Manager secret (generated write-only, never in state;
-the Lambda receives only its ARN), so the phone number cannot be recovered from
-them by brute force. The memory is encrypted with the project CMK and expires
+Terraform-created Secrets Manager secret (generated with `random_password`, so
+it also lives in the encrypted Terraform state; the Lambda receives only its
+ARN), so the phone number cannot be recovered from them by brute force. The memory is encrypted with the project CMK and expires
 events after 7 days. Before each turn the agent lists the session's raw events,
 decodes them with the session manager's converter, and deletes by `eventId`
 every message event newer than the last final assistant reply, so a retried

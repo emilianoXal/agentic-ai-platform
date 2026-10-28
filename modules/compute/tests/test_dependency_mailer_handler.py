@@ -17,6 +17,7 @@ class FakeDynamoDB:
         self.audit = []
         self.incident = {
             "incident_id": {"S": "INC-42"},
+            "status": {"S": "OPEN"},
             "category": {"S": "agua"},
             "neighborhood": {"S": "Centro"},
             "max_severity": {"S": "high"},
@@ -132,9 +133,40 @@ class DependencyMailerTest(unittest.TestCase):
             self.ses.sent[0]["Destination"]["ToAddresses"],
         )
         self.assert_safe_message(self.ses.sent[0])
-        self.assertEqual(self.ddb.incident["status"]["S"], "sent_to_agency")
+        self.assertEqual(self.ddb.incident["status"]["S"], "OPEN")
         self.assertTrue(self.ddb.incident["dependency_mail_sent_at"]["S"])
         self.assertEqual(self.ddb.audit[-1]["kind"]["S"], "dependency_mail_sent")
+
+    def test_fallback_supervisor_send_is_not_marked_as_agency(self):
+        event = self.event("StatusChanged", "evt-fallback")
+        event["detail"]["category"] = "otro"
+
+        result = self.handler.lambda_handler(event, None)
+
+        self.assertTrue(result["sent"])
+        self.assertEqual(
+            ["antonio.miguel+supervisor@xaldigital.com"],
+            self.ses.sent[0]["Destination"]["ToAddresses"],
+        )
+        self.assertNotIn("dependency_mail_sent_at", self.ddb.incident)
+        self.assertEqual(self.ddb.audit[-1]["kind"]["S"], "supervisor_mail_sent")
+        self.assertNotIn("dependency", self.ddb.audit[-1])
+
+    def test_mark_failure_after_send_is_logged_not_raised(self):
+        def fail(**kwargs):
+            raise ClientError({"Error": {"Code": "ThrottlingException"}}, "UpdateItem")
+
+        self.ddb.update_item = fail
+        with self.assertLogs(level="ERROR") as logs:
+            result = self.handler.lambda_handler(self.event("StatusChanged", "evt-mark"), None)
+
+        self.assertTrue(result["sent"])
+        self.assertEqual("message-1", result["message_id"])
+        self.assertEqual(1, len(self.ses.sent))
+        logged = json.loads(logs.records[0].getMessage())
+        self.assertEqual("dependency_mail_mark_failed", logged["event"])
+        self.assertEqual("INC-42", logged["incident_id"])
+        self.assertEqual("message-1", logged["message_id"])
 
     def test_escalation_sends_safe_incident_email(self):
         result = self.handler.lambda_handler(self.event("IncidentEscalated", "evt-escalate"), None)

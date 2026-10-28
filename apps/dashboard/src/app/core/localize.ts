@@ -57,8 +57,13 @@ export function localizeTimeline(entry: TimelineEntry, i18n: I18nService): strin
   switch (entry.kind) {
     case 'status': {
       if (text.startsWith('First report')) return i18n.t('timeline.firstReport');
-      const mailed = /Agency email sent to (.+)$/.exec(text)?.[1];
-      if (mailed) return i18n.t('timeline.agencyEmailSent', { agency: mailed });
+      if (text === 'Email sent to the supervisor') return i18n.t('timeline.supervisorEmailSent');
+      const mailed = /^Agency email sent(?: to (.+))?$/.exec(text);
+      if (mailed) {
+        return mailed[1]
+          ? i18n.t('timeline.agencyEmailSent', { agency: mailed[1] })
+          : i18n.t('timeline.agencyEmailSentNoName');
+      }
       if (!entry.status) return text;
       const status = statusWord(entry.status, i18n);
       if (!entry.actor) return i18n.t('timeline.statusNoActor', { status });
@@ -72,9 +77,12 @@ export function localizeTimeline(entry: TimelineEntry, i18n: I18nService): strin
       return n && n > 1 ? i18n.t('timeline.joinedMany', { n }) : i18n.t('timeline.joined');
     }
     case 'routed': {
-      const agency =
-        /Assigned to (.+?) by panel/.exec(text)?.[1] ??
-        /Sent to (.+?) by routing rule/.exec(text)?.[1];
+      const assigned = /Assigned to (.+?) by routing rule; agency email (sent|pending)/.exec(text);
+      if (assigned) {
+        const key = assigned[2] === 'sent' ? 'timeline.routedMailed' : 'timeline.routed';
+        return i18n.t(key, { agency: assigned[1] });
+      }
+      const agency = /Sent to (.+?) by routing rule/.exec(text)?.[1];
       return agency ? i18n.t('timeline.routed', { agency }) : text;
     }
     case 'escalated':

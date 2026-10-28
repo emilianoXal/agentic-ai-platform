@@ -90,7 +90,7 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
         entry(
           79,
           'routed',
-          'Assigned to Organismo de Agua by panel; agency email pending',
+          'Assigned to Organismo de Agua by routing rule; agency email sent',
           'routing',
           now,
         ),
@@ -142,7 +142,7 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
         entry(
           60 * 29 + 1,
           'routed',
-          'Assigned to Obras Publicas by panel; agency email pending',
+          'Assigned to Obras Publicas by routing rule; agency email sent',
           'routing',
           now,
         ),
@@ -190,7 +190,7 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
         entry(
           60 * 24 * 4 - 29,
           'routed',
-          'Assigned to Servicios Publicos by panel; agency email pending',
+          'Assigned to Servicios Publicos by routing rule; agency email sent',
           'routing',
           now,
         ),

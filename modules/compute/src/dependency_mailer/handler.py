@@ -50,35 +50,22 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-_OPEN_STATUSES = ("", "OPEN", "received", "Recibido")
-
-
-def _mark_agency_notified(incident_id, item, message_id):
+def _mark_mail_sent(incident_id, item, message_id, to_agency):
     now = _now_iso()
-    current = _text(item, "status")
-    names = {}
-    values = {":t": {"S": now}}
-    updates = ["updated_at = :t", "dependency_mail_sent_at = :t"]
-    if current in _OPEN_STATUSES:
-        names["#s"] = "status"
-        values[":s"] = {"S": "sent_to_agency"}
-        updates.append("#s = :s")
-    kwargs = {
-        "TableName": INCIDENTS_TABLE,
-        "Key": {"incident_id": {"S": incident_id}},
-        "UpdateExpression": "SET " + ", ".join(updates),
-        "ExpressionAttributeValues": values,
-    }
-    if names:
-        kwargs["ExpressionAttributeNames"] = names
-    _ddb.update_item(**kwargs)
+    if to_agency:
+        _ddb.update_item(
+            TableName=INCIDENTS_TABLE,
+            Key={"incident_id": {"S": incident_id}},
+            UpdateExpression="SET dependency_mail_sent_at = :t",
+            ExpressionAttributeValues={":t": {"S": now}},
+        )
     audit = {
         "entity_id": {"S": "incident#" + incident_id},
         "ts": {"S": now},
-        "kind": {"S": "dependency_mail_sent"},
+        "kind": {"S": "dependency_mail_sent" if to_agency else "supervisor_mail_sent"},
     }
     dependency = _text(item, "routed_to") or _text(item, "dependency")
-    if dependency:
+    if to_agency and dependency:
         audit["dependency"] = {"S": dependency}
     if message_id:
         audit["message_id"] = {"S": str(message_id)}
@@ -157,8 +144,8 @@ def _field(detail, item, *keys):
 
 
 def _recipient(category):
-    normalized = category.strip().lower()
-    return DEPENDENCY_EMAIL_MAP.get(normalized) or FALLBACK_EMAIL
+    agency = DEPENDENCY_EMAIL_MAP.get(category.strip().lower())
+    return (agency, True) if agency else (FALLBACK_EMAIL, False)
 
 
 def _message(action, incident_id, category, neighborhood, priority, report_count):
@@ -212,7 +199,7 @@ def lambda_handler(event, context):
         neighborhood = _field(detail, item, "neighborhood", "address", "geohash")
         priority = _field(detail, item, "max_severity", "severity")
         report_count = _field(detail, item, "report_count")
-        recipient = _recipient(category)
+        recipient, to_agency = _recipient(category)
         if not recipient or not MAIL_FROM:
             raise ValueError("dependency mail sender or recipient is not configured")
         subject, body = _message(
@@ -238,12 +225,23 @@ def lambda_handler(event, context):
         _release(event_id)
         raise
 
-    _mark_agency_notified(incident_id, item, response.get("MessageId"))
+    message_id = response.get("MessageId")
+    try:
+        _mark_mail_sent(incident_id, item, message_id, to_agency)
+    except Exception as exc:
+        _log(
+            logging.ERROR,
+            "dependency_mail_mark_failed",
+            incident_id=incident_id,
+            message_id=message_id,
+            error=type(exc).__name__,
+        )
     _log(
         logging.INFO,
         "dependency_mail_sent",
         event_hash=_hash_id(event_id),
         incident_id=incident_id,
         detail_type=detail_type,
+        to_agency=to_agency,
     )
-    return {"sent": True, "message_id": response.get("MessageId")}
+    return {"sent": True, "message_id": message_id}

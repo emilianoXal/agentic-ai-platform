@@ -31,10 +31,13 @@ retries and agent/portal events for the same escalation send one notice, and
 sends a Spanish agency notice with SES v2. The mailer's IAM role uses the same
 data CMK (`kms:Decrypt`, `kms:GenerateDataKey`) as ingest and the notifier so
 encrypted DynamoDB reads and the dedupe `PutItem` can succeed. After SES accepts
-the message it writes `dependency_mail_sent_at` (and `sent_to_agency` when the
-incident is still open) plus an audit line `dependency_mail_sent`. The portal
-maps `OPEN` plus `routed_to` to `received` and a panel-assignment timeline entry
-with email pending; `sent_to_agency` appears only after that mailer confirmation.
+a mail to the category's agency it sets only `dependency_mail_sent_at` (status
+stays `OPEN` for the agent tools) plus an audit line `dependency_mail_sent`; a
+fallback-supervisor send records only `supervisor_mail_sent`. Marking failures
+after SES are logged (`dependency_mail_mark_failed`), not retried. The portal
+maps `OPEN` plus `routed_to` to `received` with a routing-rule timeline entry
+whose agency email is pending; `sent_to_agency` appears only after that mailer
+confirmation.
 The mail contains operational incident fields only; citizen identity, phone, and
 saved places never enter the message. Terraform provisions the Lambda,
 EventBridge rule, SES identities, and least-privilege IAM policy.

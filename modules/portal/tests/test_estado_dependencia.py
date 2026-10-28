@@ -147,8 +147,10 @@ class EstadoDependenciaTest(unittest.TestCase):
             "dependency": {"S": "Obras Publicas"},
         })
         self.assertEqual(route_line["status"], None)
-        self.assertIn("panel", route_line["text"])
-        self.assertIn("pending", route_line["text"])
+        self.assertEqual(
+            route_line["text"],
+            "Assigned to Obras Publicas by routing rule; agency email pending",
+        )
 
         result = mailer.lambda_handler(_creation_event(), None)
 
@@ -158,9 +160,47 @@ class EstadoDependenciaTest(unittest.TestCase):
         after = portal.to_incident(ddb.incident)
         self.assertEqual(after["status"], "sent_to_agency")
         self.assertTrue(ddb.incident["dependency_mail_sent_at"]["S"])
+        self.assertEqual(ddb.incident["status"]["S"], "OPEN")
         mail_line = portal._timeline_entry(ddb.audit[-1])
         self.assertEqual(mail_line["status"], "sent_to_agency")
         self.assertEqual(mail_line["kind"], "status")
+        self.assertEqual(mail_line["text"], "Agency email sent to Obras Publicas")
+        route_after = portal._timeline_entry(
+            {"kind": {"S": "route"}, "dependency": {"S": "Obras Publicas"}},
+            "dependency_mail_sent_at" in ddb.incident,
+        )
+        self.assertEqual(
+            route_after["text"],
+            "Assigned to Obras Publicas by routing rule; agency email sent",
+        )
+
+    def test_mail_before_routing_does_not_invent_dependency(self):
+        incident = _routed_incident()
+        del incident["routed_to"]
+        ddb = FakeDynamo(incident)
+        mailer = _load(MAILER, "dependencia_mailer_unrouted", ddb, FakeSES())
+        portal = _load(PORTAL, "dependencia_portal_unrouted", ddb)
+
+        mailer.lambda_handler(_creation_event(), None)
+
+        mail_line = portal._timeline_entry(ddb.audit[-1])
+        self.assertEqual(mail_line["text"], "Agency email sent")
+
+    def test_fallback_supervisor_send_keeps_received(self):
+        incident = _routed_incident()
+        incident["category"] = {"S": "otro"}
+        ddb = FakeDynamo(incident)
+        event = _creation_event()
+        event["detail"]["category"] = "otro"
+        mailer = _load(MAILER, "dependencia_mailer_fallback", ddb, FakeSES())
+        portal = _load(PORTAL, "dependencia_portal_fallback", ddb)
+
+        mailer.lambda_handler(event, None)
+
+        self.assertEqual(portal.to_incident(ddb.incident)["status"], "received")
+        mail_line = portal._timeline_entry(ddb.audit[-1])
+        self.assertEqual(mail_line["text"], "Email sent to the supervisor")
+        self.assertIsNone(mail_line["status"])
 
     def test_failed_mail_does_not_mark_sent_to_agency(self):
         ddb = FakeDynamo(_routed_incident())

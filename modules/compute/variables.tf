@@ -96,6 +96,16 @@ variable "incidents_table_arn" {
   type        = string
 }
 
+variable "reports_table_name" {
+  description = "Reports table; the dependency mailer labels rows sent after the agency email."
+  type        = string
+}
+
+variable "reports_table_arn" {
+  description = "ARN of the reports table."
+  type        = string
+}
+
 variable "dependency_email_map" {
   description = "Incident category to responsible agency e-mail address."
   type        = map(string)

@@ -53,11 +53,16 @@ after SES are logged (`dependency_mail_mark_failed`), not retried. The portal
 maps `OPEN` to `received` until both `routed_to` and `dependency_mail_sent_at`
 are present; only then does the read model become `sent_to_agency`. A supervisor
 fallback keeps `received` and the timeline text `Email sent to the supervisor`.
-A supervisor "Send to agency" click must name an agency from the route map; it
-sets `routed_to` and emits `StatusChanged` (source `urbanbot.dashboard`, no
-neighbors) that the dependency mailer sends to that agency's mailbox, writing
-`dependency_mail_sent_at` only for an agency mailbox. Report rows and neighbors
-are not told "sent" by the click. A stored `sent_to_agency` missing `routed_to`
+A supervisor "Send to agency" click must name an agency whose category has a
+mailbox in `dependency_email_map` (the dialog lists only those); it sets
+`routed_to` and emits `StatusChanged` (source `urbanbot.dashboard`, no
+neighbors) that the dependency mailer sends to that agency's mailbox. Only after
+an agency send writes `dependency_mail_sent_at` does the mailer label the report
+rows `Enviado a dependencia` and emit one `StatusChanged` (source
+`urbanbot.mailer`, with the neighbors' user ids) that the mailer itself ignores.
+An incident routed to an agency without a mailbox (Seguridad Ciudadana,
+Supervisor municipal) is a supervisor escalation: escalated, never sent or
+pending send. A stored `sent_to_agency` missing `routed_to`
 or `dependency_mail_sent_at` reads as the display-only `pending_send`
 ("Received, pending send"); the item is not rewritten.
 `create_report` stores only the closed catalog `agua`, `bacheo`, `alumbrado`,

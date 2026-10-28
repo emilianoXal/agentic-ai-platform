@@ -30,6 +30,8 @@ export type ChangeSource = 'whatsapp' | 'dashboard' | 'routing' | 'email' | 'bot
 export interface Agency {
   readonly id: string;
   readonly name: string;
+  /** True when the agency has a configured mailbox and can be chosen for Send to agency. */
+  readonly mailbox?: boolean;
 }
 
 export interface LatLng {

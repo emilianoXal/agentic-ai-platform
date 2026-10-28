@@ -344,6 +344,20 @@ data "aws_iam_policy_document" "dependency_mailer" {
   }
 
   statement {
+    sid       = "LabelReportsSent"
+    effect    = "Allow"
+    actions   = ["dynamodb:UpdateItem"]
+    resources = [var.reports_table_arn]
+  }
+
+  statement {
+    sid       = "NotifyNeighborsSent"
+    effect    = "Allow"
+    actions   = ["events:PutEvents"]
+    resources = [var.event_bus_arn]
+  }
+
+  statement {
     sid       = "SendDependencyEmail"
     effect    = "Allow"
     actions   = ["ses:SendEmail"]
@@ -653,7 +667,9 @@ resource "aws_lambda_function" "dependency_mailer" {
   environment {
     variables = {
       INCIDENTS_TABLE           = var.incidents_table_name
+      REPORTS_TABLE             = var.reports_table_name
       AUDIT_TABLE               = var.audit_table_name
+      EVENT_BUS_NAME            = var.event_bus_name
       DEPENDENCY_EMAIL_MAP      = jsonencode(var.dependency_email_map)
       DEPENDENCY_FALLBACK_EMAIL = var.dependency_fallback_email
       MAIL_FROM                 = var.dependency_mail_from

@@ -11,7 +11,8 @@ are normalized on read to the six standard codes plus an escalated flag.
 OPEN and ESCALATED become sent_to_agency only when both dependency_mail_sent_at
 and routed_to are present. Either one alone keeps them received. A stored
 sent_to_agency missing either one reads as pending_send, a display-only code
-that is never written back.
+that is never written back. An incident routed to a dependency without an agency
+mailbox is a supervisor escalation: escalated, never sent or pending send.
 
 Authorization (server side, from Cognito claims):
   - group "agency": only incidents routed to its custom:agency_id.
@@ -40,6 +41,9 @@ REPORTS_TABLE = os.environ["REPORTS_TABLE_NAME"]
 AUDIT_TABLE = os.environ["AUDIT_TABLE_NAME"]
 EVENT_BUS_NAME = os.environ["EVENT_BUS_NAME"]
 ROUTING_RULES_JSON = os.environ.get("ROUTING_RULES_JSON", "{}")
+MAIL_CATEGORIES = frozenset(
+    c.strip().lower() for c in os.environ.get("DEPENDENCY_MAIL_CATEGORIES", "").split(",") if c.strip()
+)
 FOLLOW_UP_DELAY_MINUTES = int(os.environ.get("FOLLOW_UP_DELAY_MINUTES", "1440"))
 FOLLOW_UP_FUNCTION_ARN = os.environ.get("FOLLOW_UP_FUNCTION_ARN", "")
 FOLLOW_UP_ROLE_ARN = os.environ.get("FOLLOW_UP_ROLE_ARN", "")
@@ -157,9 +161,14 @@ def _dependency_map():
     return names
 
 
+def _mailbox_dependencies():
+    return {name for category, name in _dependency_map().items() if category in MAIL_CATEGORIES}
+
+
 def _agencies():
     unique = {slugify(name): name for name in _dependency_map().values()}
-    return [{"id": slug, "name": name} for slug, name in sorted(unique.items())]
+    mailboxes = _mailbox_dependencies()
+    return [{"id": slug, "name": name, "mailbox": name in mailboxes} for slug, name in sorted(unique.items())]
 
 
 # =============================================================================
@@ -247,6 +256,10 @@ def to_incident(item, neighbors=None, timeline=None):
     if status == "sent_to_agency" and not (mail_sent and routed_to):
         status = "pending_send"
     escalated = item.get("escalated", {}).get("BOOL", False) or legacy_escalated
+    if routed_to and routed_to not in _mailbox_dependencies():
+        escalated = True
+        if status in ("sent_to_agency", "pending_send"):
+            status = "received"
     category = _s(item, "category", "otro")
     geohash = _s(item, "geohash", "")
     if "lat" in item and "lng" in item:
@@ -294,7 +307,7 @@ def _timeline_entry(item, mail_sent=False):
         "join_incident": ("joined", "A neighbor joined from WhatsApp", "whatsapp", None),
         "route": ("routed", "Assigned to {} by routing rule; agency email {}".format(_s(item, "dependency") or _s(item, "authority") or "the agency", "sent" if mail_sent else "pending"), "routing", None),
         "dependency_mail_sent": ("status", "Agency email sent" + (" to " + _s(item, "dependency") if _s(item, "dependency") else ""), "email", "sent_to_agency"),
-        "supervisor_mail_sent": ("status", "Email sent to the supervisor", "email", None),
+        "supervisor_mail_sent": ("escalated", "Escalated to the supervisor: no agency mailbox", "email", None),
         "escalate": ("escalated", "Escalated: over the report or age threshold", "bot", None),
         "citizen_confirmed": ("follow_up", "A neighbor confirmed it is fixed from WhatsApp", "whatsapp", None),
         "citizen_reopened": ("status", "A neighbor reopened it from WhatsApp", "whatsapp", "reopened"),
@@ -448,7 +461,9 @@ def update_status(event, caller):
     dependency = (args.get("dependency") or "").strip()
     dependency_categories = []
     if target == "sent_to_agency":
-        dependency_categories = sorted(c for c, name in _dependency_map().items() if name == dependency)
+        dependency_categories = sorted(
+            c for c, name in _dependency_map().items() if name == dependency and c in MAIL_CATEGORIES
+        )
         if not dependency_categories:
             raise DashboardError("invalid_input", "Choose the agency to send this incident to.")
 

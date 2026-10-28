@@ -59,7 +59,7 @@ export class StatusDialog {
   protected readonly comment = signal('');
   protected readonly reason = signal('');
   protected readonly dependency = signal('');
-  protected readonly agencies = computed(() => this.gateway.agencies());
+  protected readonly agencies = computed(() => this.gateway.agencies().filter((a) => a.mailbox));
   protected readonly status = STATUS;
 
   protected readonly needsReason = computed(() => this.target() === 'not_applicable');

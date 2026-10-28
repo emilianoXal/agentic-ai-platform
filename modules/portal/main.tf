@@ -403,17 +403,18 @@ resource "aws_lambda_function" "dashboard_api" {
 
   environment {
     variables = {
-      INCIDENTS_TABLE_NAME    = var.incidents_table_name
-      REPORTS_TABLE_NAME      = var.reports_table_name
-      AUDIT_TABLE_NAME        = var.audit_log_table_name
-      USERS_TABLE_NAME        = var.users_table_name
-      EVENT_BUS_NAME          = var.events_bus_name
-      ROUTING_RULES_JSON      = var.routing_rules_json
-      FOLLOW_UP_DELAY_MINUTES = tostring(var.follow_up_delay_minutes)
-      FOLLOW_UP_FUNCTION_ARN  = var.follow_up_function_arn
-      FOLLOW_UP_ROLE_ARN      = var.follow_up_scheduler_role_arn
-      SCHEDULE_NAME_PREFIX    = "${local.name_prefix}-fu-"
-      LOG_LEVEL               = var.log_level
+      INCIDENTS_TABLE_NAME       = var.incidents_table_name
+      REPORTS_TABLE_NAME         = var.reports_table_name
+      AUDIT_TABLE_NAME           = var.audit_log_table_name
+      USERS_TABLE_NAME           = var.users_table_name
+      EVENT_BUS_NAME             = var.events_bus_name
+      ROUTING_RULES_JSON         = var.routing_rules_json
+      DEPENDENCY_MAIL_CATEGORIES = join(",", var.dependency_mail_categories)
+      FOLLOW_UP_DELAY_MINUTES    = tostring(var.follow_up_delay_minutes)
+      FOLLOW_UP_FUNCTION_ARN     = var.follow_up_function_arn
+      FOLLOW_UP_ROLE_ARN         = var.follow_up_scheduler_role_arn
+      SCHEDULE_NAME_PREFIX       = "${local.name_prefix}-fu-"
+      LOG_LEVEL                  = var.log_level
     }
   }
 

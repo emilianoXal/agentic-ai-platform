@@ -11,7 +11,10 @@ from botocore.exceptions import ClientError
 
 
 INCIDENTS_TABLE = os.environ.get("INCIDENTS_TABLE", "")
+REPORTS_TABLE = os.environ.get("REPORTS_TABLE", "")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
+EVENT_BUS_NAME = os.environ.get("EVENT_BUS_NAME", "")
+SENT_LABEL_ES = "Enviado a dependencia"
 MAIL_FROM = os.environ.get("MAIL_FROM", "antonio.miguel@xaldigital.com")
 FALLBACK_EMAIL = os.environ.get(
     "DEPENDENCY_FALLBACK_EMAIL",
@@ -33,6 +36,7 @@ DEPENDENCY_EMAIL_MAP = _email_map()
 
 _ddb = boto3.client("dynamodb")
 _ses = boto3.client("sesv2")
+_events = boto3.client("events")
 
 logger = logging.getLogger()
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
@@ -70,6 +74,47 @@ def _mark_mail_sent(incident_id, item, message_id, to_agency):
     if message_id:
         audit["message_id"] = {"S": str(message_id)}
     _ddb.put_item(TableName=AUDIT_TABLE, Item=audit)
+    if to_agency:
+        _announce_sent(incident_id, item, dependency, now)
+
+
+def _announce_sent(incident_id, item, dependency, now):
+    """Only after the agency email: label report rows sent and tell the neighbors once."""
+    user_ids = []
+    for value in item.get("report_ids", {}).get("L", []):
+        try:
+            response = _ddb.update_item(
+                TableName=REPORTS_TABLE,
+                Key={"report_id": {"S": value["S"]}},
+                UpdateExpression="SET #s = :s, updated_at = :u",
+                ExpressionAttributeNames={"#s": "status"},
+                ExpressionAttributeValues={":s": {"S": SENT_LABEL_ES}, ":u": {"S": now}},
+                ConditionExpression="attribute_exists(report_id)",
+                ReturnValues="ALL_NEW",
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                raise
+            continue
+        user_id = _text(response.get("Attributes", {}), "user_id")
+        if user_id and user_id not in user_ids:
+            user_ids.append(user_id)
+    if not user_ids:
+        return
+    _events.put_events(Entries=[{
+        "Source": "urbanbot.mailer",
+        "DetailType": "StatusChanged",
+        "EventBusName": EVENT_BUS_NAME,
+        "Detail": json.dumps({
+            "incident_id": incident_id,
+            "category": _text(item, "category"),
+            "status": "sent_to_agency",
+            "status_label": SENT_LABEL_ES,
+            "authority": dependency or None,
+            "user_ids": user_ids,
+            "source": "mailer",
+        }),
+    }])
 
 
 def _is_creation(event, detail_type, detail):
@@ -243,6 +288,8 @@ def lambda_handler(event, context):
         raise
 
     message_id = response.get("MessageId")
+    if is_send and not to_agency:
+        _release(change_key)
     try:
         _mark_mail_sent(incident_id, item, message_id, to_agency)
     except Exception as exc:

@@ -49,6 +49,8 @@ module "compute" {
   audit_table_arn          = module.data.audit_log_table_arn
   incidents_table_name     = module.data.incidents_table_name
   incidents_table_arn      = module.data.incidents_table_arn
+  reports_table_name       = module.data.reports_table_name
+  reports_table_arn        = module.data.reports_table_arn
 
   dependency_email_map      = var.dependency_email_map
   dependency_fallback_email = var.dependency_fallback_email
@@ -150,6 +152,7 @@ module "portal" {
   events_bus_arn       = module.data.events_bus_arn
 
   routing_rules_json            = var.routing_rules_json
+  dependency_mail_categories    = keys(var.dependency_email_map)
   staff_users                   = var.staff_users
   user_pool_deletion_protection = var.environment == "prod" ? "ACTIVE" : "INACTIVE"
   log_retention_days            = var.log_retention_days

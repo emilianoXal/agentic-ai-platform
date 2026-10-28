@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from botocore.exceptions import ClientError
+
 
 ROOT = Path(__file__).resolve().parents[3]
 PORTAL = ROOT / "modules" / "portal" / "src" / "dashboard_api" / "handler.py"
@@ -24,6 +26,7 @@ def _load():
         "AUDIT_TABLE_NAME": "audit",
         "USERS_TABLE_NAME": "users",
         "EVENT_BUS_NAME": "bus",
+        "DEPENDENCY_MAIL_CATEGORIES": "agua,alumbrado,bacheo,basura,drenaje,arbol,plagas",
         "AWS_DEFAULT_REGION": "us-east-1",
         "AWS_ACCESS_KEY_ID": "testing",
         "AWS_SECRET_ACCESS_KEY": "testing",
@@ -46,7 +49,9 @@ portal = _load()
 def _load_mailer():
     env = {
         "INCIDENTS_TABLE": "incidents",
+        "REPORTS_TABLE": "reports",
         "AUDIT_TABLE": "audit",
+        "EVENT_BUS_NAME": "bus",
         "MAIL_FROM": "sender@example.com",
         "DEPENDENCY_FALLBACK_EMAIL": "supervisor@example.com",
         "DEPENDENCY_EMAIL_MAP": json.dumps({"bacheo": "obras@example.com"}),
@@ -72,28 +77,38 @@ class FakeSES:
 
 
 class FakeDynamo:
-    def __init__(self, item):
+    def __init__(self, item, reports=None):
         self.item = item
+        self.reports = reports or {}
         self.updates = []
         self.audit = []
+        self.claims = set()
 
     def get_item(self, TableName, Key, ConsistentRead=False):
         return {"Item": dict(self.item)}
 
     def update_item(self, TableName, Key, UpdateExpression, ExpressionAttributeValues,
-                    ExpressionAttributeNames=None, ConditionExpression=None):
-        self.updates.append(UpdateExpression)
+                    ExpressionAttributeNames=None, ConditionExpression=None, ReturnValues=None):
+        target = self.reports[Key["report_id"]["S"]] if TableName == "reports" else self.item
+        if TableName != "reports":
+            self.updates.append(UpdateExpression)
         names = ExpressionAttributeNames or {}
         for assignment in UpdateExpression.split(" REMOVE ")[0].replace("SET ", "").split(", "):
             attr, value = [part.strip() for part in assignment.split("=")]
-            self.item[names.get(attr, attr)] = ExpressionAttributeValues[value]
+            target[names.get(attr, attr)] = ExpressionAttributeValues[value]
+        return {"Attributes": dict(target)}
 
     def put_item(self, TableName, Item, ConditionExpression=None):
         if not ConditionExpression:
             self.audit.append(Item)
+            return
+        key = Item["entity_id"]["S"]
+        if key in self.claims:
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
+        self.claims.add(key)
 
     def delete_item(self, TableName, Key):
-        return {}
+        self.claims.discard(Key["entity_id"]["S"])
 
     def batch_get_item(self, RequestItems):
         return {"Responses": {}}
@@ -110,8 +125,8 @@ class FakeEvents:
         self.entries.extend(Entries)
 
 
-def _supervisor_sets(item, status, dependency=None):
-    ddb, events = FakeDynamo(item), FakeEvents()
+def _supervisor_sets(item, status, dependency=None, reports=None):
+    ddb, events = FakeDynamo(item, reports), FakeEvents()
     with mock.patch.object(portal, "_ddb", ddb), mock.patch.object(portal, "_events", events):
         result = portal.update_status(
             {"arguments": {"id": "inc-1", "status": status, "dependency": dependency}},
@@ -157,8 +172,9 @@ class PortalCategoriaTests(unittest.TestCase):
             "entity_id": {"S": "incident#inc-1"},
             "ts": {"S": "2026-10-28T00:02:00+00:00"},
         })
-        self.assertEqual(line["text"], "Email sent to the supervisor")
+        self.assertEqual(line["text"], "Escalated to the supervisor: no agency mailbox")
         self.assertIsNone(line["status"])
+        self.assertTrue(shown["escalated"])
         self.assertNotEqual(shown["status"], "sent_to_agency")
 
 
@@ -196,48 +212,87 @@ class PortalCategoriaTests(unittest.TestCase):
         self.assertTrue(ignored["ignored"])
         self.assertEqual(ses.sent, [])
 
-    def test_send_with_a_chosen_dependency_mails_it_then_reads_sent(self):
+    def _mail(self, ddb, entry, event_id):
+        ses, events = FakeSES(), FakeEvents()
+        with mock.patch.object(mailer, "_ddb", ddb), mock.patch.object(mailer, "_ses", ses), \
+                mock.patch.object(mailer, "_events", events):
+            result = mailer.lambda_handler({
+                "id": event_id, "source": entry["Source"], "detail-type": entry["DetailType"],
+                "detail": json.loads(entry["Detail"]),
+            }, None)
+        return result, ses, events
+
+    def test_send_with_a_chosen_dependency_mails_it_then_tells_neighbors_once(self):
+        reports = {
+            "rep-1": {"report_id": {"S": "rep-1"}, "user_id": {"S": "5215500000001"}, "status": {"S": "Recibido"}},
+            "rep-2": {"report_id": {"S": "rep-2"}, "user_id": {"S": "5215500000002"}, "status": {"S": "Recibido"}},
+        }
         incident, ddb, events = _supervisor_sets(
-            _open_item(category={"S": "otro"}, report_ids={"L": [{"S": "rep-1"}]}),
+            _open_item(category={"S": "otro"}, report_ids={"L": [{"S": "rep-1"}, {"S": "rep-2"}]}),
             "sent_to_agency",
             "Obras Publicas",
+            reports,
         )
         self.assertEqual(ddb.item["status"]["S"], "sent_to_agency")
         self.assertEqual(ddb.item["routed_to"]["S"], "Obras Publicas")
         self.assertEqual(incident["status"], "pending_send")
-        self.assertEqual(len(ddb.updates), 1)
-        entry = events.entries[0]
-        detail = json.loads(entry["Detail"])
-        self.assertEqual(detail["user_ids"], [])
-        self.assertEqual(detail["authority"], "Obras Publicas")
+        self.assertEqual({r["status"]["S"] for r in reports.values()}, {"Recibido"})
+        portal_event = events.entries[0]
+        self.assertEqual(json.loads(portal_event["Detail"])["user_ids"], [])
 
-        ses = FakeSES()
-        with mock.patch.object(mailer, "_ddb", ddb), mock.patch.object(mailer, "_ses", ses):
-            sent = mailer.lambda_handler({
-                "id": "evt-send", "source": entry["Source"], "detail-type": entry["DetailType"],
-                "detail": detail,
-            }, None)
+        sent, ses, notices = self._mail(ddb, portal_event, "evt-send")
         self.assertTrue(sent["sent"])
         self.assertEqual(ses.sent[0]["Destination"]["ToAddresses"], ["obras@example.com"])
         self.assertTrue(ddb.item["dependency_mail_sent_at"]["S"])
-        self.assertEqual(ddb.audit[-1]["message_id"]["S"], "ses-message-1")
+        self.assertTrue(any(a.get("message_id", {}).get("S") == "ses-message-1" for a in ddb.audit))
+        self.assertEqual({r["status"]["S"] for r in reports.values()}, {"Enviado a dependencia"})
+        self.assertEqual(len(notices.entries), 1)
+        notice = notices.entries[0]
+        self.assertEqual(notice["DetailType"], "StatusChanged")
+        self.assertEqual(sorted(json.loads(notice["Detail"])["user_ids"]), ["5215500000001", "5215500000002"])
+
+        echoed, ses_again, notices_again = self._mail(ddb, notice, "evt-notice")
+        self.assertTrue(echoed["ignored"])
+        redelivered, ses_dup, _ = self._mail(ddb, portal_event, "evt-send-2")
+        self.assertTrue(redelivered["duplicate"])
+        self.assertEqual(ses_again.sent + ses_dup.sent, [])
+        self.assertEqual(notices_again.entries, [])
 
         shown = portal.to_incident(ddb.item)
         self.assertEqual(shown["status"], "sent_to_agency")
         self.assertNotIn("sent_to_agency", portal.allowed_transitions(shown["status"], True))
 
-    def test_send_to_an_agency_without_mailbox_goes_to_supervisor_and_stays_pending(self):
-        _, ddb, events = _supervisor_sets(_open_item(), "sent_to_agency", "Seguridad Ciudadana")
-        entry = events.entries[0]
-        ses = FakeSES()
-        with mock.patch.object(mailer, "_ddb", ddb), mock.patch.object(mailer, "_ses", ses):
-            mailer.lambda_handler({
-                "id": "evt-sec", "source": entry["Source"], "detail-type": entry["DetailType"],
-                "detail": json.loads(entry["Detail"]),
-            }, None)
+    def test_no_mailbox_agency_is_a_supervisor_escalation_never_sent(self):
+        agencies = {a["name"]: a["mailbox"] for a in portal._agencies()}
+        self.assertFalse(agencies["Seguridad Ciudadana"])
+        self.assertTrue(agencies["Obras Publicas"])
+        self.assertNotIn("Supervisor municipal", agencies)
+        for dependency in ("Seguridad Ciudadana", "Supervisor municipal"):
+            with self.assertRaises(portal.DashboardError):
+                _supervisor_sets(_open_item(category={"S": "seguridad"}), "sent_to_agency", dependency)
+
+        mailed = {"S": "2026-10-28T00:01:00+00:00"}
+        for status in ("OPEN", "sent_to_agency"):
+            for extra in ({}, {"dependency_mail_sent_at": mailed}):
+                shown = portal.to_incident(_open_item(
+                    status={"S": status}, category={"S": "seguridad"},
+                    routed_to={"S": "Seguridad Ciudadana"}, **extra,
+                ))
+                self.assertEqual(shown["status"], "received", (status, extra))
+                self.assertTrue(shown["escalated"])
+
+    def test_dashboard_send_that_falls_back_can_be_retried(self):
+        _, ddb, events = _supervisor_sets(_open_item(), "sent_to_agency", "Obras Publicas")
+        entry = dict(events.entries[0])
+        detail = json.loads(entry["Detail"])
+        detail["dependency_categories"] = ["seguridad"]
+        entry["Detail"] = json.dumps(detail)
+        first, ses, _ = self._mail(ddb, entry, "evt-a")
         self.assertEqual(ses.sent[0]["Destination"]["ToAddresses"], ["supervisor@example.com"])
         self.assertNotIn("dependency_mail_sent_at", ddb.item)
-        self.assertEqual(portal.to_incident(ddb.item)["status"], "pending_send")
+        retry, ses_retry, _ = self._mail(ddb, entry, "evt-b")
+        self.assertTrue(retry["sent"])
+        self.assertEqual(len(ses_retry.sent), 1)
 
 
 if __name__ == "__main__":

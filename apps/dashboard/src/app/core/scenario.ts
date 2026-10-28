@@ -14,10 +14,10 @@ import { Agency, Incident, LatLng, TimelineEntry } from './models';
 export const DEMO_CITIZEN = '••42';
 
 export const AGENCIES: readonly Agency[] = [
-  { id: 'organismo-de-agua', name: 'Organismo de Agua' },
-  { id: 'obras-publicas', name: 'Obras Publicas' },
-  { id: 'servicios-publicos', name: 'Servicios Publicos' },
-  { id: 'limpia-publica', name: 'Limpia Publica' },
+  { id: 'organismo-de-agua', name: 'Organismo de Agua', mailbox: true },
+  { id: 'obras-publicas', name: 'Obras Publicas', mailbox: true },
+  { id: 'servicios-publicos', name: 'Servicios Publicos', mailbox: true },
+  { id: 'limpia-publica', name: 'Limpia Publica', mailbox: true },
 ];
 
 interface Placement {

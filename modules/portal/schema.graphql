@@ -58,6 +58,7 @@ type IncidentPage {
 type Agency {
   id: ID!
   name: String!
+  mailbox: Boolean
 }
 
 type StatusChangeResult {

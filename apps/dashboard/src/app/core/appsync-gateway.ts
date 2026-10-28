@@ -28,7 +28,7 @@ const LIST_INCIDENTS = `query ListIncidents($limit: Int, $nextToken: String) {
   listIncidents(limit: $limit, nextToken: $nextToken) { items { ${INCIDENT_FIELDS} } nextToken hasMore count }
 }`;
 const GET_INCIDENT = `query GetIncident($id: ID!) { getIncident(id: $id) { ${INCIDENT_FIELDS} } }`;
-const LIST_AGENCIES = `query ListAgencies { listAgencies { id name } }`;
+const LIST_AGENCIES = `query ListAgencies { listAgencies { id name mailbox } }`;
 const UPDATE_STATUS = `mutation UpdateIncidentStatus($id: ID!, $status: String!, $comment: String, $reason: String, $dependency: String) {
   updateIncidentStatus(id: $id, status: $status, comment: $comment, reason: $reason, dependency: $dependency) { notified incident { ${INCIDENT_FIELDS} } }
 }`;

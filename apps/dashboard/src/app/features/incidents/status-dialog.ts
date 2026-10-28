@@ -12,7 +12,9 @@ import {
 } from '@angular/core';
 import { statusMessage } from '../../core/bot-messages';
 import { IncidentsGateway } from '../../core/incidents-gateway';
-import { STATUS, STATUS_ACTION } from '../../core/labels';
+import { I18nService, TranslatePipe } from '../../core/i18n';
+import { STATUS } from '../../core/labels';
+import { localizeTitle } from '../../core/localize';
 import { Incident, StatusCode } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { StatusPill } from '../../shared/status-pill';
@@ -23,11 +25,12 @@ export interface StatusChangeRequest {
   readonly reason?: string;
 }
 
+/** Reasons shown in the UI language; the value is es-MX because it reaches neighbors on WhatsApp. */
 const NOT_APPLICABLE_REASONS = [
-  'Private property',
-  'Duplicate of another incident',
-  'Not a municipal responsibility',
-  'Could not be located',
+  { key: 'dialog.reason.private', value: 'Propiedad privada' },
+  { key: 'dialog.reason.duplicate', value: 'Duplicado de otro incidente' },
+  { key: 'dialog.reason.notMunicipal', value: 'No es competencia municipal' },
+  { key: 'dialog.reason.notFound', value: 'No se pudo ubicar' },
 ];
 
 /**
@@ -36,7 +39,7 @@ const NOT_APPLICABLE_REASONS = [
  */
 @Component({
   selector: 'fy-status-dialog',
-  imports: [Icon, StatusPill],
+  imports: [Icon, StatusPill, TranslatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './status-dialog.html',
   styleUrl: './status-dialog.css',
@@ -48,6 +51,7 @@ export class StatusDialog {
   readonly closed = output<void>();
 
   private readonly gateway = inject(IncidentsGateway);
+  private readonly i18n = inject(I18nService);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   protected readonly reasons = NOT_APPLICABLE_REASONS;
@@ -57,10 +61,11 @@ export class StatusDialog {
 
   protected readonly needsReason = computed(() => this.target() === 'not_applicable');
   protected readonly canConfirm = computed(() => !this.needsReason() || this.reason() !== '');
-  protected readonly action = computed(() => {
+  protected readonly actionLabel = computed(() => {
     const target = this.target();
-    return target ? STATUS_ACTION[target] : null;
+    return target ? this.i18n.t(`action.${target}.button`) : '';
   });
+  protected readonly title = computed(() => localizeTitle(this.incident().title, this.i18n));
   protected readonly agencyName = computed(
     () => this.incident().agencyName ?? this.gateway.agencyName(this.incident().agencyId),
   );

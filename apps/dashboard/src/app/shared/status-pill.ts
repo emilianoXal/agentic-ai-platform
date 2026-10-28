@@ -6,7 +6,9 @@ import {
   effect,
   input,
   viewChild,
+  inject,
 } from '@angular/core';
+import { I18nService } from '../core/i18n';
 import { STATUS } from '../core/labels';
 import { StatusCode } from '../core/models';
 import { Icon } from './icon';
@@ -22,14 +24,14 @@ import { Icon } from './icon';
   template: `
     <span class="content" #content>
       <svg [fyIcon]="meta().icon" [size]="16"></svg>
-      <span>{{ meta().label }}</span>
+      <span>{{ label() }}</span>
     </span>
   `,
   host: {
     class: 'pill',
     '[style.--pill-fg]': '"var(--st-" + meta().token + ")"',
     '[style.--pill-bg]': '"var(--st-" + meta().token + "-soft)"',
-    '[attr.aria-label]': '"Status: " + meta().label',
+    '[attr.aria-label]': 'aria()',
   },
   styles: `
     :host {
@@ -59,7 +61,10 @@ import { Icon } from './icon';
 })
 export class StatusPill {
   readonly status = input.required<StatusCode>();
+  private readonly i18n = inject(I18nService);
   protected readonly meta = computed(() => STATUS[this.status()]);
+  protected readonly label = computed(() => this.i18n.t(`status.${this.status()}`));
+  protected readonly aria = computed(() => this.i18n.t('status.aria', { status: this.label() }));
 
   private readonly content = viewChild.required<ElementRef<HTMLElement>>('content');
   private previous: StatusCode | null = null;

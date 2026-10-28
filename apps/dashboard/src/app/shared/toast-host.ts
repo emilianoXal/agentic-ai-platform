@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { ToastService } from '../core/toast';
+import { TranslatePipe } from '../core/i18n';
 import { Icon } from './icon';
 
 @Component({
   selector: 'fy-toast-host',
-  imports: [Icon],
+  imports: [Icon, TranslatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="stack" role="status" aria-live="polite">
@@ -21,7 +22,7 @@ import { Icon } from './icon';
             type="button"
             class="close"
             (click)="toasts.dismiss(toast.id)"
-            aria-label="Dismiss"
+            [attr.aria-label]="'toast.dismiss' | t"
           >
             <svg fyIcon="x" [size]="16"></svg>
           </button>

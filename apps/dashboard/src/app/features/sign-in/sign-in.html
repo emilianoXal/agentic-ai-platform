@@ -3,27 +3,25 @@
     <div class="brand-inner">
       <fy-brand-mark [size]="112" [assemble]="true" [onDark]="true" />
       <h1 id="brand-name">FixedYet</h1>
-      <p class="tagline">Neighborhood reports over WhatsApp that actually get closed.</p>
+      <p class="tagline">{{ 'signin.tagline' | t }}</p>
     </div>
-    <p class="municipality">Officials' dashboard · the map opens where you are</p>
+    <p class="municipality">{{ 'signin.footer' | t }}</p>
   </section>
 
   <section class="panel" aria-labelledby="sign-in-title">
+    <div class="lang-corner"><fy-language-switch /></div>
     <div class="panel-inner">
       @if (live) {
         @if (step() === 'credentials') {
-          <h2 id="sign-in-title">Sign in to the dashboard</h2>
-          <p class="muted">
-            Use the e-mail your administrator registered. Your group decides which incidents you
-            see.
-          </p>
+          <h2 id="sign-in-title">{{ 'signin.title' | t }}</h2>
+          <p class="muted">{{ 'signin.lead' | t }}</p>
           <form class="form" (submit)="submitCredentials($event)">
             <label class="field">
-              <span>E-mail</span>
+              <span>{{ 'signin.email' | t }}</span>
               <input id="email" name="email" type="email" autocomplete="username" required />
             </label>
             <label class="field">
-              <span>Password</span>
+              <span>{{ 'signin.password' | t }}</span>
               <span class="secret">
                 <input
                   id="password"
@@ -37,7 +35,7 @@
                   class="reveal"
                   (click)="toggleReveal('password')"
                   [attr.aria-pressed]="isRevealed('password')"
-                  [attr.aria-label]="isRevealed('password') ? 'Hide password' : 'Show password'"
+                  [attr.aria-label]="(isRevealed('password') ? 'signin.hide' : 'signin.show') | t"
                   [attr.aria-controls]="'password'"
                 >
                   <svg [fyIcon]="isRevealed('password') ? 'eye-off' : 'eye'" [size]="20"></svg>
@@ -48,17 +46,15 @@
               <p class="error" role="alert">{{ error() }}</p>
             }
             <button type="submit" class="btn primary" [disabled]="busy()">
-              {{ busy() ? 'Signing in…' : 'Sign in' }}
+              {{ (busy() ? 'signin.submitting' : 'signin.submit') | t }}
             </button>
           </form>
         } @else {
-          <h2 id="sign-in-title">Choose your password</h2>
-          <p class="muted">
-            This is your first sign-in. Replace the temporary password with your own.
-          </p>
+          <h2 id="sign-in-title">{{ 'signin.newTitle' | t }}</h2>
+          <p class="muted">{{ 'signin.newLead' | t }}</p>
           <form class="form" (submit)="submitNewPassword($event)">
             <label class="field">
-              <span>New password</span>
+              <span>{{ 'signin.newPassword' | t }}</span>
               <span class="secret">
                 <input
                   id="new-password"
@@ -73,7 +69,9 @@
                   class="reveal"
                   (click)="toggleReveal('new-password')"
                   [attr.aria-pressed]="isRevealed('new-password')"
-                  [attr.aria-label]="isRevealed('new-password') ? 'Hide password' : 'Show password'"
+                  [attr.aria-label]="
+                    (isRevealed('new-password') ? 'signin.hide' : 'signin.show') | t
+                  "
                   [attr.aria-controls]="'new-password'"
                 >
                   <svg [fyIcon]="isRevealed('new-password') ? 'eye-off' : 'eye'" [size]="20"></svg>
@@ -81,7 +79,7 @@
               </span>
             </label>
             <label class="field">
-              <span>Confirm new password</span>
+              <span>{{ 'signin.confirmPassword' | t }}</span>
               <span class="secret">
                 <input
                   id="confirm-password"
@@ -97,7 +95,7 @@
                   (click)="toggleReveal('confirm-password')"
                   [attr.aria-pressed]="isRevealed('confirm-password')"
                   [attr.aria-label]="
-                    isRevealed('confirm-password') ? 'Hide password' : 'Show password'
+                    (isRevealed('confirm-password') ? 'signin.hide' : 'signin.show') | t
                   "
                   [attr.aria-controls]="'confirm-password'"
                 >
@@ -108,32 +106,29 @@
                 </button>
               </span>
             </label>
-            <p class="hint">
-              At least 12 characters, with upper and lower case letters, a number and a symbol.
-            </p>
+            <p class="hint">{{ 'signin.policy' | t }}</p>
             @if (error()) {
               <p class="error" role="alert">{{ error() }}</p>
             }
             <button type="submit" class="btn primary" [disabled]="busy()">
-              {{ busy() ? 'Saving…' : 'Save password and sign in' }}
+              {{ (busy() ? 'signin.saving' : 'signin.save') | t }}
             </button>
           </form>
         }
       } @else {
-        <h2 id="sign-in-title">Sign in to the dashboard</h2>
-        <p class="muted">
-          No backend is configured for this build, so it runs on synthetic data around your location
-          ({{ placeLabel }} if the browser does not share it). Choose a demo account.
-        </p>
+        <h2 id="sign-in-title">{{ 'signin.title' | t }}</h2>
+        <p class="muted">{{ 'signin.demoLead' | t: { place: placeLabel } }}</p>
 
         <ul class="accounts">
-          @for (account of accounts; track account.title) {
+          @for (account of accounts; track account.role) {
             <li>
               <button type="button" class="account" (click)="continueAs(account)">
                 <span class="icon"><svg [fyIcon]="account.icon" [size]="22"></svg></span>
                 <span class="text">
-                  <span class="title">Continue as {{ account.title.toLowerCase() }}</span>
-                  <span class="desc">{{ account.description }}</span>
+                  <span class="title">{{
+                    'signin.continueAs' | t: { role: ('signin.role.' + account.role | t) }
+                  }}</span>
+                  <span class="desc">{{ 'signin.role.' + account.role + 'Desc' | t }}</span>
                 </span>
                 <svg fyIcon="chevron-right" [size]="20"></svg>
               </button>
@@ -143,7 +138,7 @@
 
         <p class="note">
           <svg fyIcon="alert-triangle" [size]="16"></svg>
-          Every agency in this mode is simulated, and changes are labeled as simulated.
+          {{ 'signin.demoNote' | t }}
         </p>
       }
     </div>

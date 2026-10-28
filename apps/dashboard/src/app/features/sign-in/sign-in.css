@@ -55,6 +55,7 @@ h1 {
 }
 
 .panel {
+  position: relative;
   display: grid;
   place-items: center;
   padding: var(--space-8) var(--space-6);
@@ -234,4 +235,10 @@ h2 {
 .reveal:hover {
   background: var(--surface-sunken);
   color: var(--ink);
+}
+
+.lang-corner {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
 }

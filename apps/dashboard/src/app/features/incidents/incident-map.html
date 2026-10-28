@@ -1,15 +1,15 @@
-<div class="fy-map" #map role="region" aria-label="Map of incidents"></div>
+<div class="fy-map" #map role="region" [attr.aria-label]="'map.aria' | t"></div>
 
 <div class="fy-map-tools">
-  <button type="button" class="btn" (click)="fitIncidents()">Show all incidents</button>
-  <button type="button" class="btn" (click)="locateMe()">My location</button>
+  <button type="button" class="btn" (click)="fitIncidents()">{{ 'map.showAll' | t }}</button>
+  <button type="button" class="btn" (click)="locateMe()">{{ 'map.myLocation' | t }}</button>
 </div>
 
 <div class="fy-map-legend" aria-hidden="true">
-  <span><i class="fy-size small"></i><i class="fy-size big"></i>Size: neighbors joined</span>
-  <span>Color and glyph: status</span>
-  <span><i class="fy-esc-dot"></i>Escalated</span>
+  <span><i class="fy-size small"></i><i class="fy-size big"></i>{{ 'map.legendSize' | t }}</span>
+  <span>{{ 'map.legendColor' | t }}</span>
+  <span><i class="fy-esc-dot"></i>{{ 'map.legendEscalated' | t }}</span>
   @if (usingFallbackTiles) {
-    <span class="fy-fallback">Local tiles · Amazon Location in deployed builds</span>
+    <span class="fy-fallback">{{ 'map.fallback' | t }}</span>
   }
 </div>

@@ -441,7 +441,8 @@ _SYSTEM_PROMPT = (
     # register_consent tool, not a deterministic ingest phrase.
     "You are a citizen assistant for urban-infrastructure reports "
     "over WhatsApp. You accept reports from any location; do not restrict "
-    "reports to a particular city or service area. You help people report "
+    "reports to a particular city or service area, accept any location the "
+    "citizen shares and never question where it is. You help people report "
     "potholes, street lighting, garbage, "
     "water leaks and similar problems, check the status of their reports, and "
     "register places of interest. You only propose and plan: every state change "
@@ -470,7 +471,13 @@ _SYSTEM_PROMPT = (
     "not assert a closure or reopening without an ok from the tool. When you "
     "confirm a report or mention its identity, use the folio field "
     "(UB-YYYY-XXXXXX). Never show UUIDs, report_id, or incident_id to the "
-    "citizen. Reply briefly and clearly in English."
+    "citizen. The conversation history is text only: every earlier assistant "
+    "message was sent after its tools returned ok, so treat the reports, "
+    "reopenings, consents and places it confirms as done. Never retract, "
+    "apologize for or re-litigate earlier messages, and do not ask again to "
+    "confirm a report or a location already handled there; if the citizen "
+    "asks about one, call get_status. Answer only the current message. "
+    "Reply briefly and clearly in English."
 )
 
 

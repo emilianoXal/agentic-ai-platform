@@ -169,6 +169,7 @@ class _Result:
 
 class _ScriptedAgent:
     calls_report = False
+    joins_incident = False
     report_extra = {}
     prompts = []
     locations = []
@@ -189,11 +190,19 @@ class _ScriptedAgent:
                 ),
             }, **_ScriptedAgent.report_extra))
             agent.create_report(**_ScriptedAgent.report_kwargs[-1])
+        if _ScriptedAgent.joins_incident:
+            agent.join_incident(
+                incident_id="INC1", category="bacheo",
+                geohash=agent._encode_geohash(LAT, LNG),
+            )
         return _Result()
 
 
 def _invoke_tool(FunctionName, InvocationType, Payload):
-    result = create_report.lambda_handler(json.loads(Payload), None)
+    if FunctionName == "join-incident":
+        result = {"ok": True, "incident_id": "INC1", "report_id": "R-JOIN"}
+    else:
+        result = create_report.lambda_handler(json.loads(Payload), None)
     return {"Payload": io.BytesIO(json.dumps(result).encode())}
 
 
@@ -213,6 +222,7 @@ class UbicacionWhatsAppTests(unittest.TestCase):
         agent._lambda = mock.MagicMock()
         agent._lambda.invoke.side_effect = _invoke_tool
         agent.TOOL_CREATE_REPORT_FN = "create-report"
+        agent.TOOL_JOIN_INCIDENT_FN = "join-incident"
         agent.TOOL_FOLLOW_UP_FN = ""
         agent.CONVERSATION_HISTORY_TABLE = "history"
         agent._citizen_key = lambda user_id: "ck-" + str(user_id)
@@ -220,6 +230,7 @@ class UbicacionWhatsAppTests(unittest.TestCase):
         _ScriptedAgent.locations = []
         _ScriptedAgent.report_kwargs = []
         _ScriptedAgent.calls_report = False
+        _ScriptedAgent.joins_incident = False
         _ScriptedAgent.report_extra = {}
 
     def _ingest(self, event):
@@ -372,6 +383,25 @@ class UbicacionWhatsAppTests(unittest.TestCase):
         self.assertNotIn("lat", reports[0])
         self.assertEqual(reports[0]["geohash"]["S"], "wrongcell")
         self.assertEqual(float(reports[1]["lat"]["S"]), LAT)
+
+    def test_join_incident_create_and_attach_consumes_pending_location(self):
+        loc_body = self._ingest(self._location_event())[0]
+        self.assertTrue(agent.lambda_handler(loc_body, None)["ok"])
+        _ScriptedAgent.joins_incident = True
+        body = self._ingest(self._text_event("yo tambien lo vi, sumame al incidente"))[0]
+        self.assertTrue(agent.lambda_handler(body, None)["ok"])
+
+        _ScriptedAgent.joins_incident = False
+        _ScriptedAgent.calls_report = True
+        body = self._ingest(self._text_event("otro reporte: luminaria apagada"))[0]
+        self.assertTrue(agent.lambda_handler(body, None)["ok"])
+
+        self.assertEqual(_ScriptedAgent.locations[-1], {})
+        self.assertNotIn("shared this location", _ScriptedAgent.prompts[-1])
+        reports = self._reports()
+        self.assertEqual(len(reports), 1)
+        self.assertNotIn("lat", reports[0])
+        self.assertEqual(reports[0]["geohash"]["S"], "wrongcell")
 
     def test_pending_location_expires_after_thirty_minutes(self):
         loc_body = self._ingest(self._location_event())[0]

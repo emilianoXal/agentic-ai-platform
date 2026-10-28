@@ -207,6 +207,11 @@ def _sanitized_media(media):
 
 
 # --- Tool wrappers (one per tool Lambda; typed signatures + English docstrings) -
+def _consume_pending_location():
+    _turn.pop("location", None)
+    _turn["report_created"] = True
+
+
 @tool
 def create_report(category: str, geohash: str, description: str,
                   lat: float = None, lng: float = None,
@@ -241,8 +246,7 @@ def create_report(category: str, geohash: str, description: str,
         "severity": severity,
     })
     if result.get("ok"):
-        _turn.pop("location", None)
-        _turn["report_created"] = True
+        _consume_pending_location()
     return result
 
 
@@ -263,7 +267,7 @@ def join_incident(incident_id: str, report_id: str = None,
         geohash: Precision-7 geohash cell, for create-and-attach.
         severity: Optional severity to recompute priority.
     """
-    return _invoke_tool(TOOL_JOIN_INCIDENT_FN, {
+    result = _invoke_tool(TOOL_JOIN_INCIDENT_FN, {
         "incident_id": incident_id,
         "report_id": report_id,
         "user_id": _turn.get("user_id"),
@@ -272,6 +276,9 @@ def join_incident(incident_id: str, report_id: str = None,
         "media": list(_turn.get("media", [])),
         "severity": severity,
     })
+    if result.get("ok") and not report_id:
+        _consume_pending_location()
+    return result
 
 
 @tool

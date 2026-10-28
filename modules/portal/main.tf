@@ -599,6 +599,9 @@ resource "awscc_location_api_key" "maps" {
   key_name    = "${local.name_prefix}-dashboard-maps"
   description = "UrbanBot dashboard: map tiles and reverse geocoding"
   no_expiry   = true
+  # The key is in active use, so Location requires an explicit confirmation for
+  # in-place updates (description or restrictions). The key value is unchanged.
+  force_update = true
 
   restrictions = {
     allow_actions = [

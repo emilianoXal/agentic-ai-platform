@@ -197,6 +197,42 @@ terraform:untaint:
       when: manual
 
 # =============================================================================
+# Job manual para liberar el candado del estado de Terraform.
+#
+# Cuando aparece: si un apply se cancela o muere a media ejecucion, el objeto
+# <key>.tflock (S3 native locking) queda en el bucket y todo plan/apply posterior
+# falla por timeout del candado.
+#
+# Como usar: ANTES confirmar que no hay ningun job de Terraform corriendo.
+# Luego, en la UI de GitLab, "Run pipeline" sobre main con la variable
+#   TF_FORCE_UNLOCK = true
+# El job lee el ID del candado del propio objeto .tflock, lo imprime con quien
+# y cuando lo tomo, y ejecuta terraform force-unlock con el rol OIDC (el rol SSO
+# humano no puede leer ni borrar el objeto).
+# =============================================================================
+terraform:force-unlock:
+  extends: .terraform_base
+  stage: tf_plan
+  script:
+    - cd "${TF_ROOT}"
+    - LOCK_KEY="urbanbot/${TF_ENV}/terraform.tfstate.tflock"
+    - |
+      if ! aws s3 cp "s3://${TF_STATE_BUCKET}/${LOCK_KEY}" /tmp/tflock.json; then
+        echo "No hay candado en s3://${TF_STATE_BUCKET}/${LOCK_KEY}; nada que liberar."
+        exit 0
+      fi
+    - jq '{ID, Operation, Who, Created}' /tmp/tflock.json
+    - LOCK_ID=$(jq -r '.ID' /tmp/tflock.json)
+    - test -n "${LOCK_ID}" && test "${LOCK_ID}" != "null"
+    - terraform force-unlock -force "${LOCK_ID}"
+    - echo "Candado ${LOCK_ID} liberado."
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$TF_FORCE_UNLOCK == "true" && $CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+# =============================================================================
 # Dashboard (apps/dashboard) — Angular officials' dashboard.
 #
 # dashboard:build corre en MRs y ramas: tests unitarios + build de produccion.

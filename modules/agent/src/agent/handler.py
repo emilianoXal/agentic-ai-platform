@@ -3,7 +3,7 @@
 The citizen-reporting agent for Queretaro urban infrastructure over WhatsApp.
 Runs a Strands agent loop against Amazon Bedrock through a cross-region
 inference profile, with a Bedrock Guardrail applied declaratively on the model.
-The model only plans and converses; every state change is executed by the six
+The model only plans and converses; every state change is executed by the seven
 tool Lambdas exposed here as @tool wrappers (RNF-07). The consumer Lambda invokes
 this function synchronously (RequestResponse) with the normalized inbound message.
 
@@ -45,6 +45,7 @@ TOOL_GET_STATUS_FN = os.environ.get("TOOL_GET_STATUS_FN", "")
 TOOL_REGISTER_PLACE_FN = os.environ.get("TOOL_REGISTER_PLACE_FN", "")
 TOOL_ROUTE_FN = os.environ.get("TOOL_ROUTE_FN", "")
 TOOL_ESCALATE_FN = os.environ.get("TOOL_ESCALATE_FN", "")
+TOOL_DELETE_MY_DATA_FN = os.environ.get("TOOL_DELETE_MY_DATA_FN", "")
 AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 SIMULATE_WHATSAPP_REPLY = os.environ.get("SIMULATE_WHATSAPP_REPLY", "")
@@ -313,7 +314,39 @@ def escalate(incident_id: str, reason: str = None, user_ids: list = None) -> dic
     })
 
 
-_TOOLS = [create_report, join_incident, get_status, register_place, route, escalate]
+@tool
+def delete_my_data(user_id: str, confirmed: bool = False) -> dict:
+    """Borra los datos personales del ciudadano y anonimiza sus reportes.
+
+    Solo debe llamarse despues de que el ciudadano confirme explicitamente el
+    borrado en la conversacion actual. Conserva los reportes anonimizados y los
+    conteos de incidentes para mantener la informacion operativa.
+
+    Args:
+        user_id: Identificador del ciudadano que solicita el borrado.
+        confirmed: Verdadero solo tras una confirmacion explicita del ciudadano.
+    """
+    if confirmed is not True:
+        return {
+            "ok": False,
+            "error": "confirmation_required",
+            "message": "Pide confirmacion explicita antes de borrar los datos.",
+        }
+    return _invoke_tool(TOOL_DELETE_MY_DATA_FN, {
+        "user_id": user_id,
+        "confirmed": True,
+    })
+
+
+_TOOLS = [
+    create_report,
+    join_incident,
+    get_status,
+    register_place,
+    route,
+    escalate,
+    delete_my_data,
+]
 
 # --- System prompt (concise es-MX) -------------------------------------------
 _SYSTEM_PROMPT = (
@@ -326,7 +359,11 @@ _SYSTEM_PROMPT = (
     "telefono completos ni otra informacion personal; si consent_pending es "
     "verdadero, pide el consentimiento antes de actuar. Para crear o unir "
     "reportes necesitas la ubicacion (lat/lng); si falta, pidela y no inventes "
-    "una celda. Responde corto, claro y en espanol de Mexico."
+    "una celda. Si una persona pide borrar sus datos, primero explica que sus "
+    "datos personales y lugares se eliminaran, que sus reportes se conservaran "
+    "anonimizados, y pide confirmacion explicita. No llames delete_my_data hasta "
+    "recibir esa confirmacion en la conversacion. Responde corto, claro y en "
+    "espanol de Mexico."
 )
 
 

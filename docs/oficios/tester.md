@@ -23,7 +23,7 @@ Nunca imprimirla, ni guardarla en logs, capturas o commits.
 | Tipo de cambio | Cómo se prueba | Comando |
 | --- | --- | --- |
 | Agente (Strands / Bedrock / reply) | Unit tests del consumer y del outbound simulado; humo hasta el agente (log `agent_invoked` + `WOULD_SEND_REPLY`). Los pasos del agente pueden fallar mientras main no aplique el zip nuevo. | `python3 -m unittest discover -s modules/agent/tests` <br> `AWS_PROFILE=hackathon-agentic AWS_REGION=us-east-1 python3 scripts/smoke_whatsapp.py --hasta agente` |
-| Tools Lambda (`create_report`, `join_incident`, `get_status`, `register_place`, `route`, `escalate`) | Unit tests del módulo agent (el consumer invoca al agente y el agente a las tools). Un reporte real se confirma en DynamoDB `cdshack-urbanbot-dev-reports` / `-incidents` o con el humo hasta portal. | `python3 -m unittest discover -s modules/agent/tests` <br> `AWS_PROFILE=hackathon-agentic AWS_REGION=us-east-1 python3 scripts/smoke_whatsapp.py --hasta portal` |
+| Tools Lambda (`create_report`, `join_incident`, `get_status`, `register_place`, `route`, `escalate`, `delete_my_data`) | Unit tests del módulo agent (el consumer invoca al agente y el agente a las tools). Un reporte real se confirma en DynamoDB `cdshack-urbanbot-dev-reports` / `-incidents` o con el humo hasta portal. | `python3 -m pytest -q modules/agent/tests` <br> `AWS_PROFILE=hackathon-agentic AWS_REGION=us-east-1 python3 scripts/smoke_whatsapp.py --hasta portal` |
 | Terraform (módulos / `envs/dev`) | Formato, validate local (sin backend) y `terraform test` del módulo data. El plan vive en CI; no disparar apply de main desde una rama. | `terraform fmt -check -recursive` <br> `cd envs/dev && terraform init -backend=false && terraform validate` <br> `cd modules/data && terraform test` |
 | Portal y roles (Cognito admin / supervisor / operador) | Tests del dashboard; humo hasta portal (el incidente, si el agente lo creó, debe existir en la tabla que sirve AppSync). Login manual: usuario de `envs/dev/terraform.tfvars`, contraseña solo por el Llavero. | `cd apps/dashboard && npm test -- --watch=false` <br> `AWS_PROFILE=hackathon-agentic AWS_REGION=us-east-1 python3 scripts/smoke_whatsapp.py --hasta portal` |
 | Canal WhatsApp (ingesta EUM → SQS → consumidor) | Unit tests de la ingesta; humo `--local` (mismo envelope EUM, handler del repo, sin AWS); contra dev, job manual `smoke:whatsapp` (OIDC de despliegue) o el script con perfil que pueda `SNS:Publish`. | `python3 -m unittest discover -s modules/compute/tests` <br> `python3 scripts/smoke_whatsapp.py --local --hasta ingesta` <br> job GitLab `smoke:whatsapp` (variable `SMOKE_HASTA`, default `ingesta`) |
@@ -55,3 +55,14 @@ Orden: ingesta (`enqueued`) → consumidor (`agent_invoked`) → agente
 (`WOULD_SEND_REPLY` con el `message_id` y `text_len` > 0) → portal
 (incidente en `cdshack-urbanbot-dev-incidents` de un reporte del remitente
 ficticio creado en esta corrida, cuando el agente lo crea).
+
+## Borrado de datos personales
+
+Antes de `apply`, ejecutar `python3 -m pytest -q modules/agent/tests -k delete`.
+La prueba usa DynamoDB simulado y comprueba confirmación obligatoria, eliminación
+de usuario y lugares, anonimización de reportes, conservación del conteo del
+incidente e idempotencia. Después de aplicar `main`, usar el job manual
+`agent:conversations` con el número ficticio: solicitar el borrado, comprobar
+que el agente pide confirmación y confirmarlo en un segundo mensaje. Verificar
+en DynamoDB que no quede el número ficticio en users, places ni reports y que el
+incidente conserve su `report_count`; el audit log solo debe contener el hash.

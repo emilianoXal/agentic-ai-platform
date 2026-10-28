@@ -22,11 +22,13 @@ def lambda_handler(event, context):
         metadataOnly=False,
         destinationS3File={"bucketName": event["bucket"], "key": "raw/"},
     )
+    mime_type = response.get("mimeType") or "image/jpeg"
+    extension = mime_type.split(";", 1)[0].strip().rsplit("/", 1)[-1]
     result = {
         "bucket": event["bucket"],
-        "rawKey": event["rawKey"],
+        "rawKey": "raw/" + event["mediaId"] + "." + extension,
         "sanitizedKey": event["sanitizedKey"],
-        "mimeType": response.get("mimeType", "image/jpeg"),
+        "mimeType": mime_type,
     }
     logger.info(json.dumps({"event": "media_downloaded"}))
     return result

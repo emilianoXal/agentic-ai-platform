@@ -18,7 +18,7 @@ import re
 from datetime import datetime, timezone
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 # --- Config from environment -------------------------------------------------
 INGEST_QUEUE_URL = os.environ.get("INGEST_QUEUE_URL", "")
@@ -312,14 +312,17 @@ def _prepare_media(item):
         "bucket": MEDIA_BUCKET,
         "mediaId": media_id,
         "originationPhoneNumberId": item["origination_phone_number_id"],
-        "rawKey": "raw/" + media_id,
         "sanitizedKey": sanitized_key,
     }
-    _sfn.start_execution(
-        stateMachineArn=MEDIA_STATE_MACHINE_ARN,
-        name=object_id,
-        input=json.dumps(payload),
-    )
+    try:
+        _sfn.start_execution(
+            stateMachineArn=MEDIA_STATE_MACHINE_ARN,
+            name=object_id,
+            input=json.dumps(payload),
+        )
+    except (BotoCoreError, ClientError) as exc:
+        _log(logging.ERROR, "media_pipeline_start_failed", error=type(exc).__name__)
+        return []
     return [sanitized_key]
 
 
@@ -350,13 +353,23 @@ def _process_item(item):
     consent_granted = _check_consent(user_id)
     rate_limited = _check_rate_limit(user_id)
     safe_text = _sanitize_text(item.get("text"))
+    skip_media = item.get("type") == "image" and (not consent_granted or rate_limited)
+    if skip_media:
+        _log(
+            logging.INFO,
+            "media_skipped",
+            message_id=message_id,
+            user_hash=_hash_id(user_id),
+            consent_pending=not consent_granted,
+            rate_limited=rate_limited,
+        )
 
     normalized = {
         "user_id": user_id,
         "message_id": message_id,
         "type": item.get("type") or "text",
         "text": safe_text,
-        "media": _prepare_media(item),
+        "media": [] if skip_media else _prepare_media(item),
         "origination_phone_number_id": item.get("origination_phone_number_id"),
         "received_at": _now_iso(),
         "consent_pending": not consent_granted,

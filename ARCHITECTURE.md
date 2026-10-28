@@ -67,8 +67,11 @@ relationships. Runtime history and erasure regressions run with
 Terraform plans assert the table configuration and disabled memory resource.
 
 Inbound WhatsApp images take a privacy-gated path before their references reach
-the agent. Ingest starts the compute module's Step Functions workflow and queues
-only a deterministic `sanitized/` S3 key. The workflow downloads the WhatsApp
+the agent. Images from users without opt-in consent or over the rate limit are
+never downloaded; ingest queues the message with no media reference and logs a
+PII-free `media_skipped` event. Otherwise ingest starts the compute module's
+Step Functions workflow and queues only a deterministic `sanitized/` S3 key; if
+`StartExecution` fails, the message is still queued without media. The workflow downloads the WhatsApp
 asset into the KMS-encrypted media bucket, calls Rekognition `DetectFaces` and
 `DetectText`, and invokes the media Lambda to blur face boxes and plate-shaped
 alphanumeric text lines. Images with no sensitive regions are copied unchanged.
@@ -77,5 +80,6 @@ objects and their noncurrent versions expire after 30 days. The bucket is
 private and blocks all public access. The download call follows AWS End User
 Messaging Social's `GetWhatsAppMessageMedia` contract: `mediaId` and
 `originationPhoneNumberId` are required, while `destinationS3File` supplies the
-S3 `bucketName` and key prefix. See the [AWS API reference](https://docs.aws.amazon.com/social-messaging/latest/APIReference/API_GetWhatsAppMessageMedia.html)
+S3 `bucketName` and key prefix. The service writes `raw/<mediaId>.<ext>`, so the
+download Lambda derives the raw key from the returned `mimeType`. See the [AWS API reference](https://docs.aws.amazon.com/social-messaging/latest/APIReference/API_GetWhatsAppMessageMedia.html)
 and [download guide](https://docs.aws.amazon.com/social-messaging/latest/userguide/receive-message-image.html).

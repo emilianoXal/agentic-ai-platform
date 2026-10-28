@@ -23,6 +23,12 @@ spec = importlib.util.spec_from_file_location("media_handler", os.path.join(MEDI
 media_handler = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(media_handler)
 
+download_spec = importlib.util.spec_from_file_location(
+    "media_download_handler", os.path.join(ROOT, "src", "media_download", "handler.py")
+)
+media_download_handler = importlib.util.module_from_spec(download_spec)
+download_spec.loader.exec_module(media_download_handler)
+
 create_report_spec = importlib.util.spec_from_file_location(
     "create_report_handler", os.path.join(ROOT, "..", "agent", "src", "create_report", "handler.py")
 )
@@ -119,6 +125,39 @@ def test_face_and_license_plate_detections_are_both_sanitized():
     assert len(boxes) == 2
 
 
+class FakeSocial:
+    def __init__(self, mime_type):
+        self.mime_type = mime_type
+        self.calls = []
+
+    def get_whatsapp_message_media(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"mimeType": self.mime_type}
+
+
+def test_download_returns_key_where_whatsapp_writes_the_object():
+    for mime_type, raw_key in (("image/jpeg", "raw/123.jpeg"), ("image/png", "raw/123.png")):
+        fake_social = FakeSocial(mime_type)
+        media_download_handler._social = fake_social
+        result = media_download_handler.lambda_handler(
+            {
+                "bucket": "media",
+                "mediaId": "123",
+                "originationPhoneNumberId": "arn:aws:social-messaging:us-east-1:0:phone-number-id/abc",
+                "sanitizedKey": "sanitized/report",
+            },
+            None,
+        )
+        assert fake_social.calls[0]["destinationS3File"] == {"bucketName": "media", "key": "raw/"}
+        assert fake_social.calls[0]["originationPhoneNumberId"] == "abc"
+        assert result == {
+            "bucket": "media",
+            "rawKey": raw_key,
+            "sanitizedKey": "sanitized/report",
+            "mimeType": mime_type,
+        }
+
+
 def test_report_rejects_raw_media_references():
     assert create_report_handler._sanitized_media(
         ["raw/secret", "sanitized/photo", "https://example.invalid/raw", {"id": "123"}]
@@ -168,22 +207,30 @@ def test_state_machine_runs_mocked_rekognition_before_sanitizing():
     )
     calls = []
 
+    rekognition_keys = []
+
+    def detect(result):
+        def call(params):
+            rekognition_keys.append(params["Image"]["S3Object"]["Name"])
+            return result
+        return call
+
     def invoke(params):
         calls.append(params["FunctionName"])
         if params["FunctionName"] == "download-function":
-            return {"Payload": {**params["Payload"], "mimeType": "image/jpeg"}}
+            return {"Payload": {**params["Payload"], "rawKey": "raw/123.jpeg", "mimeType": "image/jpeg"}}
         assert params["Payload"]["faces"]["FaceDetails"]
         assert params["Payload"]["texts"]["TextDetections"]
         return {"Payload": {"sanitizedKey": params["Payload"]["sanitizedKey"], "regions": 2}}
 
     services = {
         "arn:aws:states:::lambda:invoke": invoke,
-        "arn:aws:states:::aws-sdk:rekognition:detectFaces": lambda params: {
-            "FaceDetails": [{"BoundingBox": {"Left": 0, "Top": 0, "Width": 0.2, "Height": 0.2}}]
-        },
-        "arn:aws:states:::aws-sdk:rekognition:detectText": lambda params: {
-            "TextDetections": [{"DetectedText": "ABC123", "Type": "LINE"}]
-        },
+        "arn:aws:states:::aws-sdk:rekognition:detectFaces": detect(
+            {"FaceDetails": [{"BoundingBox": {"Left": 0, "Top": 0, "Width": 0.2, "Height": 0.2}}]}
+        ),
+        "arn:aws:states:::aws-sdk:rekognition:detectText": detect(
+            {"TextDetections": [{"DetectedText": "ABC123", "Type": "LINE"}]}
+        ),
     }
     result = _run_workflow(
         definition,
@@ -191,10 +238,10 @@ def test_state_machine_runs_mocked_rekognition_before_sanitizing():
             "bucket": "media",
             "mediaId": "123",
             "originationPhoneNumberId": "phone-number-id/abc",
-            "rawKey": "raw/123",
             "sanitizedKey": "sanitized/report",
         },
         services,
     )
     assert result == {"sanitizedKey": "sanitized/report", "regions": 2}
     assert calls == ["download-function", "sanitize-function"]
+    assert rekognition_keys == ["raw/123.jpeg", "raw/123.jpeg"]

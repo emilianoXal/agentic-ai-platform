@@ -17,6 +17,8 @@ import sys
 import unittest
 from unittest import mock
 
+from botocore.exceptions import ClientError
+
 os.environ.update({
     "INGEST_QUEUE_URL": "https://sqs.us-east-1.amazonaws.com/000000000000/q.fifo",
     "USERS_TABLE": "users",
@@ -174,6 +176,51 @@ class IngestEumTests(unittest.TestCase):
         self.assertEqual(result.get("enqueued", 0), 0)
         self.assertIn("webhook_parse_failed", " ".join(cm.output))
 
+    def _image_event(self):
+        value = _meta(
+            contacts=[{"profile": {"name": "Prueba"}, "wa_id": SENDER}],
+            messages=[{
+                "from": SENDER,
+                "id": "wamid.IMG1",
+                "timestamp": "1723506230",
+                "type": "image",
+                "image": {"mime_type": "image/jpeg", "sha256": "abc", "id": "530339869524171"},
+                "caption": "bache en la calle",
+            }],
+        )
+        return {"Records": [_sns_record(_eum_envelope(_entry(value)))]}
+
+    def test_image_without_consent_or_over_rate_limit_is_never_stored(self):
+        for consent, limited in ((False, False), (True, True)):
+            with self.subTest(consent=consent, rate_limited=limited):
+                self.setUp()
+                handler._check_consent = lambda *a, **k: consent
+                handler._check_rate_limit = lambda *a, **k: limited
+                with self.assertLogs(handler.logger, level="INFO") as cm:
+                    handler.lambda_handler(self._image_event(), None)
+                handler._sfn.start_execution.assert_not_called()
+                bodies = _queued_bodies()
+                self.assertEqual(len(bodies), 1)
+                self.assertEqual(bodies[0]["media"], [])
+                self.assertEqual(bodies[0]["consent_pending"], not consent)
+                self.assertEqual(bodies[0]["rate_limited"], limited)
+                joined = " ".join(cm.output)
+                self.assertIn("media_skipped", joined)
+                self.assertNotIn(SENDER, joined)
+                self.assertNotIn("530339869524171", joined)
+
+    def test_image_pipeline_start_failure_keeps_message_without_media(self):
+        handler._sfn.start_execution.side_effect = ClientError(
+            {"Error": {"Code": "ThrottlingException", "Message": "slow down"}}, "StartExecution"
+        )
+        result = handler.lambda_handler(self._image_event(), None)
+        bodies = _queued_bodies()
+        self.assertEqual(result["enqueued"], 1)
+        self.assertEqual(result["error"], 0)
+        self.assertEqual(len(bodies), 1)
+        self.assertEqual(bodies[0]["media"], [])
+        self.assertEqual(bodies[0]["type"], "image")
+
     def test_eum_image_starts_sanitization_and_only_enqueues_clean_key(self):
         value = _meta(
             contacts=[{"profile": {"name": "Prueba"}, "wa_id": SENDER}],
@@ -201,7 +248,7 @@ class IngestEumTests(unittest.TestCase):
         call = handler._sfn.start_execution.call_args.kwargs
         payload = json.loads(call["input"])
         self.assertEqual(payload["mediaId"], "530339869524171")
-        self.assertEqual(payload["rawKey"], "raw/530339869524171")
+        self.assertNotIn("rawKey", payload)
         self.assertEqual(payload["sanitizedKey"], bodies[0]["media"][0])
 
     def test_flat_json_still_enqueues(self):

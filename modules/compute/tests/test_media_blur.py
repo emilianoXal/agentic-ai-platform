@@ -98,6 +98,20 @@ def test_large_region_loses_feature_sized_detail_and_outside_is_unchanged():
         assert list(original.crop(region).getdata()) == list(blurred.crop(region).getdata())
 
 
+def test_wide_plate_region_loses_character_sized_detail_and_outside_is_unchanged():
+    original = Image.new("L", (1000, 400))
+    original.putdata([255 if (x // 40) % 2 else 0 for y in range(400) for x in range(1000)])
+    box = {"Left": 0.1, "Top": 0.25, "Width": 0.8, "Height": 0.5}
+    blurred = blur_regions(original, [box])
+    inside = (100, 100, 900, 300)
+    core = (inside[0] + 150, inside[1] + 50, inside[2] - 150, inside[3] - 50)
+    before = statistics.pstdev(original.crop(core).getdata())
+    after = statistics.pstdev(blurred.crop(core).getdata())
+    assert after < before * 0.2
+    for region in ((0, 0, 1000, inside[1]), (0, inside[3], 1000, 400), (0, 0, inside[0], 400), (inside[2], 0, 1000, 400)):
+        assert list(original.crop(region).getdata()) == list(blurred.crop(region).getdata())
+
+
 def test_image_without_detections_is_copied_byte_for_byte():
     source = _png_bytes(_synthetic_image())
     fake_s3 = FakeS3(source)

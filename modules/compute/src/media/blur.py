@@ -21,8 +21,8 @@ def blur_regions(image, boxes, radius=12):
             continue
         region = result.crop(pixels)
         width, height = region.size
-        cell = max(1, min(width, height) // _CELLS)
-        mosaic = region.resize((max(1, width // cell), max(1, height // cell)), Image.BOX)
+        mosaic = region.resize((min(_CELLS, width), min(_CELLS, height)), Image.BOX)
+        cell = max(width // mosaic.width, height // mosaic.height)
         region = mosaic.resize((width, height), Image.BILINEAR)
         result.paste(region.filter(ImageFilter.GaussianBlur(radius=max(radius, cell // 2))), pixels)
     return result

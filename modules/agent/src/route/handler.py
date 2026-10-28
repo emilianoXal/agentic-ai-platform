@@ -45,6 +45,8 @@ _DEFAULT_RULES = {
     "basura": {"dependency": "Limpia Publica", "channel": "panel"},
     "agua": {"dependency": "Organismo de Agua", "channel": "api"},
     "seguridad": {"dependency": "Seguridad Ciudadana", "channel": "email"},
+    # No agency mailbox: the mailer sends this one to the supervisor fallback.
+    "otro": {"dependency": "Supervisor municipal", "channel": "email"},
 }
 
 
@@ -102,7 +104,8 @@ def _audit(entity_id, kind, **extra):
 
 def _resolve(category):
     """Look up the routing target: env rules first, then built-in defaults."""
-    rule = _RULES.get(category) or _DEFAULT_RULES.get(category)
+    key = str(category or "").strip().lower()
+    rule = _RULES.get(category) or _RULES.get(key) or _DEFAULT_RULES.get(key)
     if not isinstance(rule, dict):
         return None
     dependency = rule.get("dependency") or rule.get("authority")

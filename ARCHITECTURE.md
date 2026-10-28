@@ -50,9 +50,18 @@ a mail to the category's agency it sets only `dependency_mail_sent_at` (status
 stays `OPEN` for the agent tools) plus an audit line `dependency_mail_sent`; a
 fallback-supervisor send records only `supervisor_mail_sent`. Marking failures
 after SES are logged (`dependency_mail_mark_failed`), not retried. The portal
-maps `OPEN` plus `routed_to` to `received` with a routing-rule timeline entry
-whose agency email is pending; `sent_to_agency` appears only after that mailer
-confirmation.
+maps `OPEN` to `received` until both `routed_to` and `dependency_mail_sent_at`
+are present; only then does the read model become `sent_to_agency`. A supervisor
+fallback keeps `received` and the timeline text `Email sent to the supervisor`.
+`create_report` stores only the closed catalog `agua`, `bacheo`, `alumbrado`,
+`basura`, `seguridad`, and `otro` (the explicit fallback). Any other code,
+including ones the model invents, is rejected with `unknown_category` and is
+not written, so the model chooses again from `allowed`. The agent wrapper calls
+`route` after a successful create or a create-and-join. `otro` resolves to
+`Supervisor municipal` and the mailer sends that notice to the supervisor
+fallback. The short live matrix is the `category_probe` cases inside the manual
+GitLab `agent:conversations` job; its markdown counts the category the model
+chose and whether the incident was routed.
 The mail contains operational incident fields only; citizen identity, phone, and
 saved places never enter the message. Terraform provisions the Lambda,
 EventBridge rule, SES identities, and least-privilege IAM policy.

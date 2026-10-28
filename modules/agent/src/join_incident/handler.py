@@ -37,6 +37,15 @@ _ddb = boto3.client("dynamodb")
 logger = logging.getLogger()
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 
+_CATALOG = frozenset({
+    "agua",
+    "alumbrado",
+    "bacheo",
+    "basura",
+    "otro",
+    "seguridad",
+})
+
 _SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 
 
@@ -85,6 +94,18 @@ def _audit(entity_id, kind, **extra):
         if val is not None:
             item[key] = {"S": str(val)}
     _ddb.put_item(TableName=AUDIT_TABLE, Item=item)
+
+
+def _canonicalize_category(category):
+    canonical = str(category or "").strip().lower()
+    if canonical in _CATALOG:
+        return canonical, None
+    return None, {
+        "ok": False,
+        "error": "unknown_category",
+        "allowed": sorted(_CATALOG),
+        "message": "Choose a category from allowed.",
+    }
 
 
 def _priority(report_count, max_severity):
@@ -155,6 +176,11 @@ def lambda_handler(event, context):
         return {"ok": False, "error": "invalid_input",
                 "message": "incident_id is required."}
 
+    if not report_id and category:
+        category, rejected = _canonicalize_category(category)
+        if rejected:
+            _log(logging.WARNING, "unknown_category", incident_id=incident_id)
+            return rejected
     has_create_triple = bool(user_id and category and geohash)
     if not report_id and not has_create_triple:
         _log(logging.WARNING, "invalid_input", reason="no_branch")
@@ -233,7 +259,7 @@ def lambda_handler(event, context):
             priority=priority,
             created=created,
         )
-        return {
+        result = {
             "ok": True,
             "folio": _portal_folio(incident_id, attrs.get("created_at", {}).get("S", "")),
             "incident_id": incident_id,
@@ -241,6 +267,9 @@ def lambda_handler(event, context):
             "report_count": report_count,
             "priority": priority,
         }
+        if created:
+            result["category"] = category
+        return result
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
             _log(logging.WARNING, "incident_not_joinable", incident_id=incident_id)

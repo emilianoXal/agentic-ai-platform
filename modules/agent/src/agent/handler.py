@@ -223,7 +223,7 @@ def create_report(category: str, geohash: str, description: str,
     lat/lng at precision 7 before calling this tool.
 
     Args:
-        category: Report category (e.g. potholes, lighting, garbage, water).
+        category: One of agua, bacheo, alumbrado, basura, seguridad, otro.
         geohash: Precision-7 geohash cell computed from lat/lng.
         description: Report description (required).
         lat: Optional latitude (stored on the report).
@@ -247,6 +247,12 @@ def create_report(category: str, geohash: str, description: str,
     })
     if result.get("ok"):
         _consume_pending_location()
+        routed = route(
+            category=result.get("category") or category,
+            incident_id=result.get("incident_id"),
+        )
+        result = dict(result)
+        result["route"] = routed
     return result
 
 
@@ -278,6 +284,13 @@ def join_incident(incident_id: str, report_id: str = None,
     })
     if result.get("ok") and not report_id:
         _consume_pending_location()
+        if result.get("category") and result.get("incident_id"):
+            routed = route(
+                category=result["category"],
+                incident_id=result["incident_id"],
+            )
+            result = dict(result)
+            result["route"] = routed
     return result
 
 
@@ -454,7 +467,13 @@ _SYSTEM_PROMPT = (
     "To create or join reports you need the location (lat/lng); if the turn "
     "includes a recently shared location, decide whether it belongs to this "
     "report; if it is missing or does not apply, ask for it and do not invent "
-    "a cell. If a person asks to delete "
+    "a cell. Set category to exactly one of agua, bacheo, alumbrado, basura, "
+    "seguridad, or otro, choosing from the description; use otro when none of "
+    "the others fit. Never invent a category. If create_report returns "
+    "unknown_category, call it again with one value from allowed. A successful "
+    "create_report routes the incident; name the route authority in your reply, "
+    "and when that authority is the municipal supervisor say the notice went to "
+    "the supervisor. If a person asks to delete "
     "their data, first explain that their personal data and places will be "
     "removed, that their reports will be kept anonymized, and ask them to reply "
     "with exactly I CONFIRM DELETE MY DATA in their next message. Call "

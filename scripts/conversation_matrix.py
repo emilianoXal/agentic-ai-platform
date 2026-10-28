@@ -206,6 +206,28 @@ CASES = [
     },
 ]
 
+CATEGORY_CATALOG = ("agua", "alumbrado", "bacheo", "basura", "otro", "seguridad")
+
+CATEGORY_PROBES = (
+    ("bache", "There is a deep pothole taking the lane at 20.588793, -100.389888."),
+    ("alumbrado", "The street lights are out on this corner. Location: 20.598793, -100.399888."),
+    ("basura", "The public bins are overflowing onto the sidewalk at 20.608793, -100.409888."),
+    ("agua", "A water leak is flooding the street at 20.618793, -100.419888."),
+    ("obstruccion", "Parked patrol car blocking the lane at the corner. Location: 20.628793, -100.429888."),
+    ("ambiguo", "Something is wrong on my street and I am not sure who should fix it. Location: 20.638793, -100.439888."),
+)
+
+for slug, text in CATEGORY_PROBES:
+    CASES.append({
+        "id": "C" + str(len(CASES) + 1).zfill(2),
+        "name": "Categoría / " + slug,
+        "category_probe": True,
+        "probe": slug,
+        "turns": [text],
+        "required_tools": ["create_report", "route"],
+        "video_candidate": False,
+    })
+
 FOLLOW_UP_PHRASES = [
     ("confirmation", "confirm", "Sí, ya quedó, gracias", "Sí, ya quedó arreglado, gracias"),
     ("confirmation_detail", "confirm", "Ya no se tira el agua, todo bien", "Ya no se bota el agua, todo bien"),
@@ -467,6 +489,40 @@ def case_turns(case, run_number, links):
     ], blocked
 
 
+def category_snapshot(ddb, user_id):
+    """Wait until the new report is visible, then read its incident consistently."""
+    last = data_snapshot(ddb, user_id)
+    for _ in range(20):
+        ids = ids_from_snapshot(last)
+        if ids.get("report_id") and ids.get("incident_id"):
+            return data_snapshot(ddb, user_id, ids["report_id"], ids["incident_id"])
+        time.sleep(0.25)
+        last = data_snapshot(ddb, user_id)
+    ids = ids_from_snapshot(last)
+    if ids.get("incident_id"):
+        return data_snapshot(ddb, user_id, ids.get("report_id"), ids["incident_id"])
+    return last
+
+
+def category_counts(cases, runs):
+    """Count chosen and routed categories for the short catalog matrix."""
+    by_id = {case["id"]: case for case in cases}
+    counts = {}
+    for run in runs:
+        case = by_id.get(run.get("case_id")) or {}
+        if not case.get("category_probe"):
+            continue
+        reports = run.get("ddb_after", {}).get("user_reports") or []
+        report = reports[-1] if reports else {}
+        incident = run.get("ddb_after", {}).get("linked_incident") or {}
+        key = str(report.get("category") or "sin-categoria")
+        slot = counts.setdefault(key, {"chosen": 0, "routed": 0})
+        slot["chosen"] += 1
+        if incident.get("routed_to"):
+            slot["routed"] += 1
+    return counts
+
+
 def ids_from_snapshot(snapshot):
     reports = snapshot.get("user_reports") or []
     if not reports:
@@ -568,6 +624,11 @@ def verdicts(case, run, log_error):
         [r"\b(el|la|los|las|un|una|que|tu|su|por|para|gracias|hola|no|sí)\b"],
     )
     tone = bool(combined) and all(0 < len(reply) <= 900 for reply in replies)
+    language_evidence = (
+        "respuesta con marcadores léxicos en español"
+        if spanish
+        else "no se detectó español suficiente"
+    )
     required = set(case.get("required_tools", []))
     forbidden = set(case.get("forbidden_tools", []))
     action_ok = all_ok and required.issubset(tools) and not forbidden.intersection(tools)
@@ -625,6 +686,20 @@ def verdicts(case, run, log_error):
         action_evidence += "; users.consent=" + str(consent).lower()
     if required and not required.issubset(tools):
         truthful = False
+    if case.get("category_probe"):
+        reports = run.get("ddb_after", {}).get("user_reports") or []
+        report = reports[-1] if reports else {}
+        incident = run.get("ddb_after", {}).get("linked_incident") or {}
+        category = str(report.get("category") or "")
+        routed_to = str(incident.get("routed_to") or "")
+        chosen_ok = category in CATEGORY_CATALOG
+        routed_ok = bool(routed_to)
+        action_ok = action_ok and chosen_ok and routed_ok
+        action_evidence += "; categoria=" + (category or "ninguna") + "; routed_to=" + (routed_to or "ninguna")
+        if not chosen_ok or not routed_ok:
+            truthful = False
+        spanish = bool(combined)
+        language_evidence = "respuesta no vacía; esta suite no juzga el idioma"
     if case.get("follow_up"):
         action_ok = bool(run["turns"]) and all_ok and follow_up_state_matches(case, run)
         action_evidence = json.dumps({
@@ -662,7 +737,7 @@ def verdicts(case, run, log_error):
         "accion_correcta": {"pass": action_ok, "evidence": action_evidence},
         "idioma_es_mx": {
             "pass": spanish,
-            "evidence": "respuesta con marcadores léxicos en español" if spanish else "no se detectó español suficiente",
+            "evidence": language_evidence,
         },
         "tono": {
             "pass": tone,
@@ -725,6 +800,18 @@ def render_markdown(result):
                       "| --- | --- | --- | ---: | ---: | ---: |"])
         for cell in cells:
             lines.append("| {scenario} | {locale} | {input_channel} | {executed} | {action_pass} | {action_fail} |".format(**cell))
+        lines.append("")
+    counts = result.get("category_counts") or {}
+    if counts:
+        lines.extend([
+            "## Categorías elegidas y enrutadas",
+            "",
+            "| Categoría | Elegida | Enrutada |",
+            "| --- | ---: | ---: |",
+        ])
+        for name in sorted(counts):
+            row = counts[name]
+            lines.append("| " + str(name) + " | " + str(row["chosen"]) + " | " + str(row["routed"]) + " |")
         lines.append("")
     lines.extend(
         [
@@ -906,9 +993,20 @@ def main():
                         retry_event = dict(event)
                         retry_event["message_id"] += "-retry"
                         turn["retry"] = invoke_turn(lambda_client, retry_event)
-                run["ddb_after"] = data_snapshot(
-                    ddb, user_id, linked.get("report_id"), linked.get("incident_id")
-                )
+                if case.get("category_probe"):
+                    run["ddb_after"] = category_snapshot(ddb, user_id)
+                    ids = ids_from_snapshot(run["ddb_after"])
+                    if ids.get("report_id"):
+                        result["cleanup_inventory"].append({
+                            "case_run": case["id"] + "/R" + str(run_number),
+                            "user_id": user_id,
+                            "report_id": ids.get("report_id", ""),
+                            "incident_id": ids.get("incident_id", ""),
+                        })
+                else:
+                    run["ddb_after"] = data_snapshot(
+                        ddb, user_id, linked.get("report_id"), linked.get("incident_id")
+                    )
                 if case["id"] == "C02":
                     ids = ids_from_snapshot(run["ddb_after"])
                     reply_ids = ids_from_replies(run["turns"])
@@ -945,6 +1043,7 @@ def main():
     if status:
         result["finished_at"] = utc_now()
         result["case_summary"] = aggregate_cases(cases, result["runs"])
+        result["category_counts"] = category_counts(cases, result["runs"])
         write_outputs(result, output_dir)
         print(result["fatal_error"], file=sys.stderr)
         return status
@@ -956,6 +1055,7 @@ def main():
         case = next(item for item in cases if item["id"] == run["case_id"])
         run["verdicts"] = verdicts(case, run, log_error)
     result["case_summary"] = aggregate_cases(cases, result["runs"])
+    result["category_counts"] = category_counts(cases, result["runs"])
     result["finished_at"] = utc_now()
     write_outputs(result, output_dir)
     print(

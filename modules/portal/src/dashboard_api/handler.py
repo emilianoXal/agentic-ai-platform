@@ -8,8 +8,8 @@ neighbor, the same contract the compute notifier already consumes (RF-19).
 
 Legacy statuses written by the tool Lambdas (OPEN / ESCALATED / Spanish labels)
 are normalized on read to the six standard codes plus an escalated flag.
-OPEN and ESCALATED become sent_to_agency only after the mailer stored
-dependency_mail_sent_at; routed_to alone keeps them received.
+OPEN and ESCALATED become sent_to_agency only when both dependency_mail_sent_at
+and routed_to are present. Either one alone keeps them received.
 
 Authorization (server side, from Cognito claims):
   - group "agency": only incidents routed to its custom:agency_id.
@@ -195,7 +195,7 @@ def normalize_status(raw, routed, mail_sent=False):
         return value, False
     upper = value.upper()
     if upper in ("OPEN", "ESCALATED"):
-        return ("sent_to_agency" if mail_sent else "received"), upper == "ESCALATED"
+        return ("sent_to_agency" if mail_sent and routed else "received"), upper == "ESCALATED"
     plain = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
     return _LEGACY_STATUS.get(plain, "received"), False
 

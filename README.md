@@ -3,6 +3,82 @@
 Infrastructure as Code (Terraform) for **urbanbot**, a WhatsApp citizen bot for
 urban infrastructure reporting. Built for the AWS CDS Agentic AI Hackathon.
 
+## For hackathon judges
+
+UrbanBot helps residents report potholes, leaks, lighting failures, and waste in
+the WhatsApp channel they already use, while municipal staff work the resulting
+incident clusters in a role-aware portal. It focuses on shared incidents rather
+than isolated tickets, so each additional nearby report can improve visibility
+and prioritization.
+
+### Architecture
+
+![UrbanBot AWS architecture](docs/architecture/urbanbot-architecture.png)
+
+The diagram source is editable in [draw.io](docs/architecture/urbanbot-architecture.drawio).
+Inbound WhatsApp events flow through AWS End User Messaging Social, SNS, ingest
+Lambda and an SQS FIFO queue to a consumer and the Strands agent Lambda. The
+agent uses Amazon Bedrock Claude Sonnet 5.5 and six scoped Lambda tools; those
+tools operate on DynamoDB. The staff portal is hosted by Amplify and reaches its
+backend through AppSync. Status changes emit EventBridge events to the notifier.
+
+| AWS service | Role in this repository |
+| --- | --- |
+| End User Messaging Social, SNS, SQS | WhatsApp inbound events, fan-out and FIFO work queue |
+| Lambda, Amazon Bedrock, Guardrails | Ingest, consumer, agent, tools and constrained model calls |
+| DynamoDB | Reports, incidents, users, places and audit data |
+| AppSync, Cognito, Amplify, Amazon Location | Authenticated officials portal, GraphQL API, hosting and map |
+| EventBridge | Domain events to the notification workflow |
+
+### CDS runtime call status
+
+The inbound integration is implemented in
+[`modules/compute/src/ingest/handler.py:135`](modules/compute/src/ingest/handler.py#L135)
+and invokes the queue at
+[`modules/compute/src/ingest/handler.py:342`](modules/compute/src/ingest/handler.py#L342).
+The agent creates its Bedrock model at
+[`modules/agent/src/agent/handler.py:401`](modules/agent/src/agent/handler.py#L401)
+and runs it at
+[`modules/agent/src/agent/handler.py:424`](modules/agent/src/agent/handler.py#L424).
+
+There is currently **no runtime import or call** to the CDS End User Messaging
+Social `SendWhatsAppMessage` client. The notifier’s outbound portion is a
+planned stub at
+[`modules/compute/src/notifier/handler.py:207`](modules/compute/src/notifier/handler.py#L207),
+and the agent returns its reply without an outbound handoff at
+[`modules/agent/src/agent/handler.py:435`](modules/agent/src/agent/handler.py#L435).
+Accordingly, this repository does not claim outbound WhatsApp delivery as a
+working feature. AgentCore Gateway and Memory are also feature-flagged and off
+in dev.
+
+### How to try it
+
+Send a WhatsApp message to **+1 319 271 6611**. Use synthetic content only.
+For example:
+
+```text
+You: There is a water leak on Calle Example near the park.
+UrbanBot (generated internally, not delivered): Please share the location and confirm that you consent to processing this report.
+You: I consent. The leak is by the north entrance.
+```
+
+Inbound processing and the agent workflow are implemented. The final outbound
+WhatsApp send is planned, so a delivered automated reply must not be expected or
+used as a judging claim. The officials portal is available to the team’s
+provisioned accounts; credentials are not stored in this repository.
+
+### Deploy through GitLab CI/CD
+
+1. Push a branch or open a merge request: GitLab runs Terraform format/validate
+   and plan jobs using OIDC authentication to AWS.
+2. Review the plan. Deployment jobs are intentionally available only on `main`.
+3. On `main`, run the manual `terraform:apply` job, then the manual
+   `dashboard:deploy` job when the dashboard changes.
+
+The pipeline needs `AWS_ROLE_ARN` and `TF_STATE_BUCKET` project variables. It
+does not use long-lived AWS keys. See [CI / authentication](#ci--authentication)
+below for the full variable and job details.
+
 Citizens report urban issues (potholes, leaks, lighting, trash, etc.) over
 WhatsApp with photos, location and description; the bot clusters nearby reports
 into incidents, tracks status proactively, escalates stale cases, and notifies

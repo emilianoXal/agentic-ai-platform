@@ -183,6 +183,27 @@ class DependencyMailerTest(unittest.TestCase):
         self.assertTrue(result["sent"])
         self.assertEqual(1, len(self.ses.sent))
 
+    def test_failed_change_claim_releases_event_claim_for_retry(self):
+        event = self.event("IncidentEscalated", "evt-throttled")
+        put_item = self.ddb.put_item
+
+        def throttle_change_claim(TableName, Item, ConditionExpression):
+            if Item["entity_id"]["S"].startswith("dependency-mail#escalado#"):
+                raise ClientError(
+                    {"Error": {"Code": "ThrottlingException"}},
+                    "PutItem",
+                )
+            return put_item(TableName, Item, ConditionExpression)
+
+        with mock.patch.object(self.ddb, "put_item", side_effect=throttle_change_claim):
+            with self.assertRaises(ClientError):
+                self.handler.lambda_handler(event, None)
+
+        result = self.handler.lambda_handler(event, None)
+
+        self.assertTrue(result["sent"])
+        self.assertEqual(1, len(self.ses.sent))
+
 
 if __name__ == "__main__":
     unittest.main()

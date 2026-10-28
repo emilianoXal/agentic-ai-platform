@@ -157,7 +157,12 @@ def lambda_handler(event, context):
 
     action = "creado" if is_creation else "escalado"
     change_key = action + "#" + incident_id
-    if not _claim(change_key):
+    try:
+        claimed_change = _claim(change_key)
+    except Exception:
+        _release(event_id)
+        raise
+    if not claimed_change:
         _log(logging.INFO, "duplicate_change", incident_id=incident_id, action=action)
         return {"duplicate": True}
 

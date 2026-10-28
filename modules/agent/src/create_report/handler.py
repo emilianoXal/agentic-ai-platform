@@ -64,6 +64,12 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _sanitized_media(media):
+    if not isinstance(media, list):
+        return []
+    return [value for value in media if isinstance(value, str) and value.startswith("sanitized/")]
+
+
 def _audit(entity_id, kind, **extra):
     """Write a lightweight audit-log entry (entity_id + ts), RF-15."""
     item = {
@@ -178,7 +184,7 @@ def lambda_handler(event, context):
 
     report_id = str(uuid.uuid4())
     now = _now_iso()
-    media = event.get("media")
+    media = _sanitized_media(event.get("media"))
     lat = event.get("lat")
     lng = event.get("lng")
     severity = event.get("severity")

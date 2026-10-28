@@ -24,6 +24,8 @@ from botocore.exceptions import ClientError
 INGEST_QUEUE_URL = os.environ.get("INGEST_QUEUE_URL", "")
 USERS_TABLE = os.environ.get("USERS_TABLE", "")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
+MEDIA_BUCKET = os.environ.get("MEDIA_BUCKET", "")
+MEDIA_STATE_MACHINE_ARN = os.environ.get("MEDIA_STATE_MACHINE_ARN", "")
 RATE_LIMIT_PER_HOUR = int(os.environ.get("RATE_LIMIT_PER_HOUR", "60"))
 MAX_TEXT_LEN = int(os.environ.get("MAX_TEXT_LEN", "4096"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -31,6 +33,7 @@ LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 # --- Clients created at module load (reused across warm invocations) ---------
 _sqs = boto3.client("sqs")
 _ddb = boto3.client("dynamodb")
+_sfn = boto3.client("stepfunctions")
 
 # --- Structured JSON-line logger ---------------------------------------------
 logger = logging.getLogger()
@@ -295,6 +298,31 @@ def _sanitize_text(text):
     return _CONTROL_CHARS.sub("", s)
 
 
+def _prepare_media(item):
+    media = item.get("media")
+    if item.get("type") != "image" or not isinstance(media, dict) or not media.get("id"):
+        return media
+    if not MEDIA_BUCKET or not MEDIA_STATE_MACHINE_ARN or not item.get("origination_phone_number_id"):
+        raise ValueError("image media pipeline is not configured")
+    media_id = str(media["id"])
+    message_id = str(item.get("message_id") or media_id)
+    object_id = hashlib.sha256(message_id.encode("utf-8")).hexdigest()[:32]
+    sanitized_key = "sanitized/" + object_id
+    payload = {
+        "bucket": MEDIA_BUCKET,
+        "mediaId": media_id,
+        "originationPhoneNumberId": item["origination_phone_number_id"],
+        "rawKey": "raw/" + media_id,
+        "sanitizedKey": sanitized_key,
+    }
+    _sfn.start_execution(
+        stateMachineArn=MEDIA_STATE_MACHINE_ARN,
+        name=object_id,
+        input=json.dumps(payload),
+    )
+    return [sanitized_key]
+
+
 def _process_item(item):
     if item.get("kind") == "status":
         _log(
@@ -328,7 +356,7 @@ def _process_item(item):
         "message_id": message_id,
         "type": item.get("type") or "text",
         "text": safe_text,
-        "media": item.get("media"),
+        "media": _prepare_media(item),
         "origination_phone_number_id": item.get("origination_phone_number_id"),
         "received_at": _now_iso(),
         "consent_pending": not consent_granted,

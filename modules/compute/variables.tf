@@ -26,6 +26,16 @@ variable "inbound_topic_arn" {
   type        = string
 }
 
+variable "media_bucket_name" {
+  description = "Name of the KMS-encrypted bucket that stores raw and sanitized WhatsApp media."
+  type        = string
+}
+
+variable "media_bucket_arn" {
+  description = "ARN of the KMS-encrypted bucket that stores raw and sanitized WhatsApp media."
+  type        = string
+}
+
 variable "event_bus_name" {
   description = "Name of the custom EventBridge bus the notifier rule listens on (maps to data events_bus_name)."
   type        = string

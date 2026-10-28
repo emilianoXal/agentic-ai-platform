@@ -6,6 +6,12 @@ variable "environment" {
 variable "media_retention_days" {
   description = "Number of days before objects under the \"raw/\" prefix in the media bucket expire."
   type        = number
+  default     = 1
+}
+
+variable "sanitized_media_retention_days" {
+  description = "Number of days before sanitized media objects expire."
+  type        = number
   default     = 30
 }
 

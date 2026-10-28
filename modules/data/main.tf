@@ -121,6 +121,27 @@ resource "aws_s3_bucket_lifecycle_configuration" "media" {
     expiration {
       days = var.media_retention_days
     }
+
+    noncurrent_version_expiration {
+      noncurrent_days = var.media_retention_days
+    }
+  }
+
+  rule {
+    id     = "expire-sanitized"
+    status = "Enabled"
+
+    filter {
+      prefix = "sanitized/"
+    }
+
+    expiration {
+      days = var.sanitized_media_retention_days
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = var.sanitized_media_retention_days
+    }
   }
 }
 

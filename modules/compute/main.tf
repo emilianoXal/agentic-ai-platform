@@ -2,6 +2,10 @@ locals {
   name_prefix = "cdshack-urbanbot-${var.environment}"
 }
 
+data "aws_partition" "current" {}
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+
 # =============================================================================
 # Packaging — archive_file zips each handler's source dir at plan time into
 # build/ (gitignored except .gitkeep); the CI plan job ships build/ as an
@@ -31,6 +35,24 @@ data "archive_file" "dependency_mailer" {
   output_path = "${path.module}/build/dependency-mailer.zip"
 }
 
+data "archive_file" "media_download" {
+  type        = "zip"
+  source_dir  = "${path.module}/src/media_download"
+  output_path = "${path.module}/build/media-download.zip"
+}
+
+data "archive_file" "media" {
+  type        = "zip"
+  source_dir  = "${path.module}/src/media"
+  output_path = "${path.module}/build/media.zip"
+}
+
+data "archive_file" "pillow_layer" {
+  type        = "zip"
+  source_dir  = "${path.module}/layers/pillow"
+  output_path = "${path.module}/build/pillow-layer.zip"
+}
+
 # =============================================================================
 # CloudWatch log groups — created explicitly so IAM can scope to a known ARN
 # and retention is managed (not auto-created by the Lambda service).
@@ -55,6 +77,16 @@ resource "aws_cloudwatch_log_group" "dependency_mailer" {
   retention_in_days = var.log_retention_days
 }
 
+resource "aws_cloudwatch_log_group" "media_download" {
+  name              = "/aws/lambda/${local.name_prefix}-media-download"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_cloudwatch_log_group" "media" {
+  name              = "/aws/lambda/${local.name_prefix}-media-sanitize"
+  retention_in_days = var.log_retention_days
+}
+
 # =============================================================================
 # Lambda assume-role policy (shared trust: lambda.amazonaws.com).
 # =============================================================================
@@ -66,6 +98,18 @@ data "aws_iam_policy_document" "lambda_assume" {
     principals {
       type        = "Service"
       identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "states_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["states.amazonaws.com"]
     }
   }
 }
@@ -122,6 +166,13 @@ data "aws_iam_policy_document" "ingest" {
       "kms:GenerateDataKey",
     ]
     resources = [var.kms_key_arn]
+  }
+
+  statement {
+    sid       = "StartMediaSanitization"
+    effect    = "Allow"
+    actions   = ["states:StartExecution"]
+    resources = [aws_sfn_state_machine.media.arn]
   }
 }
 
@@ -263,6 +314,145 @@ resource "aws_iam_role_policy_attachment" "dependency_mailer" {
   policy_arn = aws_iam_policy.dependency_mailer.arn
 }
 
+resource "aws_iam_role" "media_download" {
+  name               = "${local.name_prefix}-media-download-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+data "aws_iam_policy_document" "media_download" {
+  statement {
+    sid       = "Logs"
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.media_download.arn}:*"]
+  }
+
+  statement {
+    sid     = "DownloadWhatsAppMedia"
+    effect  = "Allow"
+    actions = ["social-messaging:GetWhatsAppMessageMedia"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:social-messaging:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:phone-number-id/*"
+    ]
+  }
+
+  statement {
+    sid       = "StoreRawMedia"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${var.media_bucket_arn}/raw/*"]
+  }
+
+  statement {
+    sid       = "EncryptRawMedia"
+    effect    = "Allow"
+    actions   = ["kms:Encrypt", "kms:GenerateDataKey"]
+    resources = [var.kms_key_arn]
+  }
+}
+
+resource "aws_iam_policy" "media_download" {
+  name   = "${local.name_prefix}-media-download-policy"
+  policy = data.aws_iam_policy_document.media_download.json
+}
+
+resource "aws_iam_role_policy_attachment" "media_download" {
+  role       = aws_iam_role.media_download.name
+  policy_arn = aws_iam_policy.media_download.arn
+}
+
+resource "aws_iam_role" "media" {
+  name               = "${local.name_prefix}-media-sanitize-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+data "aws_iam_policy_document" "media" {
+  statement {
+    sid       = "Logs"
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.media.arn}:*"]
+  }
+
+  statement {
+    sid    = "ReadAndSanitizeMedia"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+    ]
+    resources = [
+      "${var.media_bucket_arn}/raw/*",
+      "${var.media_bucket_arn}/sanitized/*",
+    ]
+  }
+
+  statement {
+    sid       = "MediaEncryption"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"]
+    resources = [var.kms_key_arn]
+  }
+}
+
+resource "aws_iam_policy" "media" {
+  name   = "${local.name_prefix}-media-sanitize-policy"
+  policy = data.aws_iam_policy_document.media.json
+}
+
+resource "aws_iam_role_policy_attachment" "media" {
+  role       = aws_iam_role.media.name
+  policy_arn = aws_iam_policy.media.arn
+}
+
+resource "aws_iam_role" "media_workflow" {
+  name               = "${local.name_prefix}-media-workflow-role"
+  assume_role_policy = data.aws_iam_policy_document.states_assume.json
+}
+
+data "aws_iam_policy_document" "media_workflow" {
+  statement {
+    sid     = "InvokeMediaFunctions"
+    effect  = "Allow"
+    actions = ["lambda:InvokeFunction"]
+    resources = [
+      aws_lambda_function.media_download.arn,
+      aws_lambda_function.media.arn,
+    ]
+  }
+
+  statement {
+    sid       = "DetectSensitiveRegions"
+    effect    = "Allow"
+    actions   = ["rekognition:DetectFaces", "rekognition:DetectText"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "ReadRawMedia"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["${var.media_bucket_arn}/raw/*"]
+  }
+
+  statement {
+    sid       = "DecryptRawMedia"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = [var.kms_key_arn]
+  }
+}
+
+resource "aws_iam_policy" "media_workflow" {
+  name   = "${local.name_prefix}-media-workflow-policy"
+  policy = data.aws_iam_policy_document.media_workflow.json
+}
+
+resource "aws_iam_role_policy_attachment" "media_workflow" {
+  role       = aws_iam_role.media_workflow.name
+  policy_arn = aws_iam_policy.media_workflow.arn
+}
+
 # =============================================================================
 # outbound — IAM role + customer-managed least-privilege policy + attachment.
 # The ONE and only role that holds social-messaging:SendWhatsAppMessage (RB-01).
@@ -332,12 +522,14 @@ resource "aws_lambda_function" "ingest" {
 
   environment {
     variables = {
-      INGEST_QUEUE_URL    = var.ingest_queue_url
-      USERS_TABLE         = var.users_table_name
-      AUDIT_TABLE         = var.audit_table_name
-      RATE_LIMIT_PER_HOUR = tostring(var.rate_limit_per_hour)
-      MAX_TEXT_LEN        = tostring(var.max_text_len)
-      LOG_LEVEL           = var.log_level
+      INGEST_QUEUE_URL        = var.ingest_queue_url
+      USERS_TABLE             = var.users_table_name
+      AUDIT_TABLE             = var.audit_table_name
+      RATE_LIMIT_PER_HOUR     = tostring(var.rate_limit_per_hour)
+      MAX_TEXT_LEN            = tostring(var.max_text_len)
+      MEDIA_BUCKET            = var.media_bucket_name
+      MEDIA_STATE_MACHINE_ARN = aws_sfn_state_machine.media.arn
+      LOG_LEVEL               = var.log_level
     }
   }
 
@@ -425,6 +617,69 @@ resource "aws_lambda_function" "dependency_mailer" {
     aws_cloudwatch_log_group.dependency_mailer,
     aws_iam_role_policy_attachment.dependency_mailer,
   ]
+}
+
+resource "aws_lambda_layer_version" "pillow" {
+  layer_name          = "${local.name_prefix}-pillow"
+  filename            = data.archive_file.pillow_layer.output_path
+  source_code_hash    = data.archive_file.pillow_layer.output_base64sha256
+  compatible_runtimes = ["python3.12"]
+}
+
+resource "aws_lambda_function" "media_download" {
+  function_name    = "${local.name_prefix}-media-download"
+  role             = aws_iam_role.media_download.arn
+  runtime          = "python3.12"
+  handler          = "handler.lambda_handler"
+  filename         = data.archive_file.media_download.output_path
+  source_code_hash = data.archive_file.media_download.output_base64sha256
+  timeout          = 60
+  memory_size      = 256
+
+  environment {
+    variables = {
+      LOG_LEVEL = var.log_level
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.media_download,
+    aws_iam_role_policy_attachment.media_download,
+  ]
+}
+
+resource "aws_lambda_function" "media" {
+  function_name    = "${local.name_prefix}-media-sanitize"
+  role             = aws_iam_role.media.arn
+  runtime          = "python3.12"
+  handler          = "handler.lambda_handler"
+  filename         = data.archive_file.media.output_path
+  source_code_hash = data.archive_file.media.output_base64sha256
+  layers           = [aws_lambda_layer_version.pillow.arn]
+  timeout          = 60
+  memory_size      = 1024
+
+  environment {
+    variables = {
+      LOG_LEVEL = var.log_level
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.media,
+    aws_iam_role_policy_attachment.media,
+  ]
+}
+
+resource "aws_sfn_state_machine" "media" {
+  name     = "${local.name_prefix}-media-sanitize"
+  role_arn = aws_iam_role.media_workflow.arn
+  definition = templatefile("${path.module}/media_state_machine.asl.json.tftpl", {
+    download_lambda_arn = aws_lambda_function.media_download.arn
+    sanitize_lambda_arn = aws_lambda_function.media.arn
+  })
+
+  depends_on = [aws_iam_role_policy_attachment.media_workflow]
 }
 
 # =============================================================================

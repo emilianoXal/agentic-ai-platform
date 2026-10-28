@@ -21,6 +21,8 @@ os.environ.update({
     "INGEST_QUEUE_URL": "https://sqs.us-east-1.amazonaws.com/000000000000/q.fifo",
     "USERS_TABLE": "users",
     "AUDIT_TABLE": "audit",
+    "MEDIA_BUCKET": "media",
+    "MEDIA_STATE_MACHINE_ARN": "arn:aws:states:us-east-1:000000000000:stateMachine:media",
     "AWS_DEFAULT_REGION": "us-east-1",
     "AWS_ACCESS_KEY_ID": "testing",
     "AWS_SECRET_ACCESS_KEY": "testing",
@@ -123,6 +125,7 @@ class IngestEumTests(unittest.TestCase):
     def setUp(self):
         handler._sqs = mock.MagicMock()
         handler._ddb = mock.MagicMock()
+        handler._sfn = mock.MagicMock()
         handler._already_processed = lambda *a, **k: False
         handler._check_consent = lambda *a, **k: True
         handler._check_rate_limit = lambda *a, **k: False
@@ -171,7 +174,7 @@ class IngestEumTests(unittest.TestCase):
         self.assertEqual(result.get("enqueued", 0), 0)
         self.assertIn("webhook_parse_failed", " ".join(cm.output))
 
-    def test_eum_media_keeps_media_id(self):
+    def test_eum_image_starts_sanitization_and_only_enqueues_clean_key(self):
         value = _meta(
             contacts=[{"profile": {"name": "Prueba"}, "wa_id": SENDER}],
             messages=[{
@@ -191,8 +194,15 @@ class IngestEumTests(unittest.TestCase):
         bodies = _queued_bodies()
         self.assertEqual(len(bodies), 1)
         self.assertEqual(bodies[0]["type"], "image")
-        self.assertEqual(bodies[0]["media"]["id"], "530339869524171")
+        self.assertEqual(len(bodies[0]["media"]), 1)
+        self.assertTrue(bodies[0]["media"][0].startswith("sanitized/"))
+        self.assertNotIn("530339869524171", json.dumps(bodies[0]["media"]))
         self.assertEqual(bodies[0]["user_id"], SENDER)
+        call = handler._sfn.start_execution.call_args.kwargs
+        payload = json.loads(call["input"])
+        self.assertEqual(payload["mediaId"], "530339869524171")
+        self.assertEqual(payload["rawKey"], "raw/530339869524171")
+        self.assertEqual(payload["sanitizedKey"], bodies[0]["media"][0])
 
     def test_flat_json_still_enqueues(self):
         inner = {"from": SENDER, "text": TEXT_HOLA, "message_id": "flat-1", "type": "text"}

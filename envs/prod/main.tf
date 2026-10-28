@@ -20,9 +20,10 @@ provider "awscc" {
 module "data" {
   source = "../../modules/data"
 
-  environment                 = var.environment
-  media_retention_days        = var.media_retention_days
-  enable_conversation_history = var.enable_conversation_history
+  environment                    = var.environment
+  media_retention_days           = var.media_retention_days
+  sanitized_media_retention_days = var.sanitized_media_retention_days
+  enable_conversation_history    = var.enable_conversation_history
 }
 
 module "compute" {
@@ -34,6 +35,8 @@ module "compute" {
   ingest_queue_url     = module.data.ingest_queue_url
   ingest_queue_arn     = module.data.ingest_queue_arn
   inbound_topic_arn    = module.data.inbound_topic_arn
+  media_bucket_name    = module.data.media_bucket_name
+  media_bucket_arn     = module.data.media_bucket_arn
   event_bus_name       = module.data.events_bus_name
   event_bus_arn        = module.data.events_bus_arn
   users_table_name     = module.data.users_table_name

@@ -65,3 +65,17 @@ in-flight turns from one SQS delivery. Terraform preconditions enforce these
 relationships. Runtime history and erasure regressions run with
 `python3 -m pytest -q modules/agent/tests/test_conversation_history.py`; mocked
 Terraform plans assert the table configuration and disabled memory resource.
+
+Inbound WhatsApp images take a privacy-gated path before their references reach
+the agent. Ingest starts the compute module's Step Functions workflow and queues
+only a deterministic `sanitized/` S3 key. The workflow downloads the WhatsApp
+asset into the KMS-encrypted media bucket, calls Rekognition `DetectFaces` and
+`DetectText`, and invokes the media Lambda to blur face boxes and plate-shaped
+alphanumeric text lines. Images with no sensitive regions are copied unchanged.
+Raw objects and every noncurrent raw version expire after one day; sanitized
+objects and their noncurrent versions expire after 30 days. The bucket is
+private and blocks all public access. The download call follows AWS End User
+Messaging Social's `GetWhatsAppMessageMedia` contract: `mediaId` and
+`originationPhoneNumberId` are required, while `destinationS3File` supplies the
+S3 `bucketName` and key prefix. See the [AWS API reference](https://docs.aws.amazon.com/social-messaging/latest/APIReference/API_GetWhatsAppMessageMedia.html)
+and [download guide](https://docs.aws.amazon.com/social-messaging/latest/userguide/receive-message-image.html).

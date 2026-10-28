@@ -3,7 +3,7 @@
 The citizen-reporting agent for Queretaro urban infrastructure over WhatsApp.
 Runs a Strands agent loop against Amazon Bedrock through a cross-region
 inference profile, with a Bedrock Guardrail applied declaratively on the model.
-The model only plans and converses; every state change is executed by the six
+The model only plans and converses; every state change is executed by the seven
 tool Lambdas exposed here as @tool wrappers (RNF-07). The consumer Lambda invokes
 this function synchronously (RequestResponse) with the normalized inbound message.
 
@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from datetime import datetime, timezone
 
 import boto3
@@ -45,6 +46,7 @@ TOOL_GET_STATUS_FN = os.environ.get("TOOL_GET_STATUS_FN", "")
 TOOL_REGISTER_PLACE_FN = os.environ.get("TOOL_REGISTER_PLACE_FN", "")
 TOOL_ROUTE_FN = os.environ.get("TOOL_ROUTE_FN", "")
 TOOL_ESCALATE_FN = os.environ.get("TOOL_ESCALATE_FN", "")
+TOOL_DELETE_MY_DATA_FN = os.environ.get("TOOL_DELETE_MY_DATA_FN", "")
 AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 SIMULATE_WHATSAPP_REPLY = os.environ.get("SIMULATE_WHATSAPP_REPLY", "")
@@ -168,6 +170,18 @@ def _invoke_tool(function_name, payload):
     except (ClientError, BotoCoreError):
         logger.exception(json.dumps({"event": "tool_invoke_exception"}))
         return {"ok": False, "error": "tool_invoke_failed"}
+
+
+_DELETE_CONFIRMATION_PHRASE = "confirmo borrar mis datos"
+
+_turn = {}
+
+
+def _is_deletion_confirmation(text):
+    folded = unicodedata.normalize("NFKD", str(text or "")).lower()
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    words = re.sub(r"[^a-z0-9]+", " ", folded).split()
+    return " ".join(words) == _DELETE_CONFIRMATION_PHRASE
 
 
 # --- Tool wrappers (one per tool Lambda; typed signatures + es-MX docstrings) -
@@ -313,7 +327,40 @@ def escalate(incident_id: str, reason: str = None, user_ids: list = None) -> dic
     })
 
 
-_TOOLS = [create_report, join_incident, get_status, register_place, route, escalate]
+@tool
+def delete_my_data() -> dict:
+    """Borra los datos personales del ciudadano y anonimiza sus reportes.
+
+    Solo debe llamarse cuando el mensaje actual del ciudadano sea exactamente
+    la frase de confirmacion que le pediste en el turno anterior. El sujeto del
+    borrado es siempre el remitente de este mensaje. Conserva los reportes
+    anonimizados y los conteos de incidentes.
+    """
+    user_id = _turn.get("user_id")
+    if not AGENTCORE_MEMORY_ID or not user_id:
+        return {"ok": False, "error": "deletion_unavailable"}
+    if not _is_deletion_confirmation(_turn.get("text")):
+        return {
+            "ok": False,
+            "error": "confirmation_required",
+            "message": "Pide al ciudadano que responda exactamente: "
+                       + _DELETE_CONFIRMATION_PHRASE.upper(),
+        }
+    return _invoke_tool(TOOL_DELETE_MY_DATA_FN, {
+        "user_id": user_id,
+        "confirmed": True,
+    })
+
+
+_TOOLS = [
+    create_report,
+    join_incident,
+    get_status,
+    register_place,
+    route,
+    escalate,
+    delete_my_data,
+]
 
 # --- System prompt (concise es-MX) -------------------------------------------
 _SYSTEM_PROMPT = (
@@ -326,7 +373,12 @@ _SYSTEM_PROMPT = (
     "telefono completos ni otra informacion personal; si consent_pending es "
     "verdadero, pide el consentimiento antes de actuar. Para crear o unir "
     "reportes necesitas la ubicacion (lat/lng); si falta, pidela y no inventes "
-    "una celda. Responde corto, claro y en espanol de Mexico."
+    "una celda. Si una persona pide borrar sus datos, primero explica que sus "
+    "datos personales y lugares se eliminaran, que sus reportes se conservaran "
+    "anonimizados, y pide que responda exactamente CONFIRMO BORRAR MIS DATOS en "
+    "su siguiente mensaje. Llama delete_my_data solo cuando el mensaje actual "
+    "sea esa frase. Responde corto, claro y en "
+    "espanol de Mexico."
 )
 
 
@@ -413,6 +465,8 @@ def lambda_handler(event, context):
         return {"ok": False, "error": "invalid_input", "reply": _ASK_FOR_TEXT}
 
     text = text.strip()
+    _turn.clear()
+    _turn.update(user_id=str(user_id), text=text)
     consent_pending = bool(event.get("consent_pending"))
     rate_limited = bool(event.get("rate_limited"))
 

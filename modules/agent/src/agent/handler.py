@@ -432,8 +432,6 @@ def lambda_handler(event, context):
 
         _log(logging.INFO, "agent_done", user_hash=_hash_id(user_id),
              reply_len=len(reply))
-        # TODO(outbound): hand this reply off to the WhatsApp outbound channel
-        # (notifier/SNS). Out of scope here; the consumer currently just returns.
         return {"ok": True, "reply": reply}
 
     except ModelThrottledException:

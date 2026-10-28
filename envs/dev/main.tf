@@ -42,11 +42,13 @@ module "compute" {
   audit_table_name  = module.data.audit_log_table_name
   audit_table_arn   = module.data.audit_log_table_arn
 
-  rate_limit_per_hour = var.rate_limit_per_hour
-  max_text_len        = var.max_text_len
-  daily_cap_default   = var.daily_cap_default
-  log_retention_days  = var.log_retention_days
-  log_level           = var.log_level
+  rate_limit_per_hour                  = var.rate_limit_per_hour
+  max_text_len                         = var.max_text_len
+  daily_cap_default                    = var.daily_cap_default
+  log_retention_days                   = var.log_retention_days
+  log_level                            = var.log_level
+  meta_api_version                     = var.meta_api_version
+  outbound_origination_phone_number_id = var.outbound_origination_phone_number_id
 }
 
 module "agent" {
@@ -82,6 +84,9 @@ module "agent" {
   log_retention_days        = var.log_retention_days
   log_level                 = var.log_level
   bedrock_model_id          = var.bedrock_model_id
+
+  outbound_function_name = module.compute.outbound_function_name
+  outbound_function_arn  = module.compute.outbound_function_arn
 }
 
 module "portal" {

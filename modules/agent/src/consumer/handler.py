@@ -27,6 +27,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 # --- Config from environment -------------------------------------------------
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
 AGENT_FUNCTION_NAME = os.environ.get("AGENT_FUNCTION_NAME", "")
+OUTBOUND_FUNCTION_NAME = os.environ.get("OUTBOUND_FUNCTION_NAME", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 # Agent error codes worth a redrive; everything else (incl. invalid_input,
@@ -139,6 +140,38 @@ def _process_record(record):
          user_hash=_hash_id(user_id), ok=ok, error=error)
 
     if ok is True:
+        # Dispatch the agent's reply to the WhatsApp outbound Lambda,
+        # fire-and-forget (InvocationType="Event") so a transient send hiccup
+        # never redrives this record and re-invokes the (expensive, possibly
+        # state-mutating) agent turn. The reply MUST come from the AGENT
+        # response payload, never from the inbound msg.get("text").
+        #
+        # NOTE: invalid_input canned replies are intentionally NOT delivered
+        # this iteration — dispatch happens only when ok is True AND reply is a
+        # non-empty string. (Backlog: deliver the invalid_input canned prompt.)
+        reply = payload.get("reply")
+        if reply and reply.strip() and OUTBOUND_FUNCTION_NAME:
+            try:
+                _lambda.invoke(
+                    FunctionName=OUTBOUND_FUNCTION_NAME,
+                    InvocationType="Event",
+                    Payload=json.dumps({
+                        "to": user_id,
+                        "text": reply,
+                        "origination_phone_number_id": origination_phone_number_id,
+                    }).encode(),
+                )
+                _log(logging.INFO, "outbound_dispatched",
+                     user=_mask_phone(user_id), reply_len=len(reply))
+            except (ClientError, BotoCoreError, TypeError, ValueError):
+                # Fire-and-forget: the agent turn already succeeded, so swallow
+                # a dispatch failure and do NOT re-raise — this must not alter
+                # the agent-invoke classification or batchItemFailures.
+                _log(logging.WARNING, "outbound_dispatch_failed",
+                     user=_mask_phone(user_id))
+        elif not OUTBOUND_FUNCTION_NAME:
+            _log(logging.INFO, "outbound_skipped_unconfigured",
+                 user=_mask_phone(user_id))
         return  # processed
     if ok is False and error in RETRIABLE_AGENT_ERRORS:
         raise ValueError("agent_retry")

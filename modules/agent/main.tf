@@ -582,6 +582,13 @@ data "aws_iam_policy_document" "consumer" {
     actions   = ["lambda:InvokeFunction"]
     resources = [aws_lambda_function.agent.arn]
   }
+
+  statement {
+    sid       = "InvokeOutbound"
+    effect    = "Allow"
+    actions   = ["lambda:InvokeFunction"]
+    resources = [var.outbound_function_arn]
+  }
 }
 
 resource "aws_iam_policy" "consumer" {
@@ -853,9 +860,10 @@ resource "aws_lambda_function" "consumer" {
 
   environment {
     variables = {
-      AUDIT_TABLE         = var.audit_log_table_name
-      AGENT_FUNCTION_NAME = aws_lambda_function.agent.function_name
-      LOG_LEVEL           = var.log_level
+      AUDIT_TABLE            = var.audit_log_table_name
+      AGENT_FUNCTION_NAME    = aws_lambda_function.agent.function_name
+      OUTBOUND_FUNCTION_NAME = var.outbound_function_name
+      LOG_LEVEL              = var.log_level
     }
   }
 

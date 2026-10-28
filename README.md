@@ -41,15 +41,21 @@ The agent creates its Bedrock model at
 and runs it at
 [`modules/agent/src/agent/handler.py:709`](modules/agent/src/agent/handler.py#L709).
 
-There is currently **no runtime import or call** to the CDS End User Messaging
-Social `SendWhatsAppMessage` client. The notifier’s outbound portion is a
-planned stub at
-[`modules/compute/src/notifier/handler.py:207`](modules/compute/src/notifier/handler.py#L207),
-and the agent returns its reply without an outbound handoff at
-[`modules/agent/src/agent/handler.py:725`](modules/agent/src/agent/handler.py#L725).
-Accordingly, this repository does not claim outbound WhatsApp delivery as a
-working feature. AgentCore Gateway and Memory are also feature-flagged and off
-in dev.
+Outbound WhatsApp replies go through a single Lambda, the only caller of the
+CDS End User Messaging Social `SendWhatsAppMessage` API, at
+[`modules/compute/src/outbound/handler.py:154`](modules/compute/src/outbound/handler.py#L154).
+The consumer hands each agent reply to it at
+[`modules/agent/src/consumer/handler.py:164`](modules/agent/src/consumer/handler.py#L164),
+and the notifier sends status notifications at
+[`modules/compute/src/notifier/handler.py:252`](modules/compute/src/notifier/handler.py#L252).
+When staff resolve an incident, the portal schedules the «¿Ya quedó?» follow-up
+with EventBridge Scheduler at
+[`modules/portal/src/dashboard_api/handler.py:420`](modules/portal/src/dashboard_api/handler.py#L420);
+the follow-up Lambda asks consenting citizens through the same outbound Lambda at
+[`modules/follow_up/src/handler.py:114`](modules/follow_up/src/handler.py#L114),
+and the agent records their answer with `respond_follow_up`. Free-text delivery
+requires an open WhatsApp conversation window. AgentCore Gateway and Memory are
+feature-flagged and off in dev.
 
 ### How to try it
 
@@ -58,14 +64,14 @@ For example:
 
 ```text
 You: There is a water leak on Calle Example near the park.
-UrbanBot (generated internally, not delivered): Please share the location and confirm that you consent to processing this report.
+UrbanBot: Please share the location and confirm that you consent to processing this report.
 You: I consent. The leak is by the north entrance.
 ```
 
-Inbound processing and the agent workflow are implemented. The final outbound
-WhatsApp send is planned, so a delivered automated reply must not be expected or
-used as a judging claim. The officials portal is available to the team’s
-provisioned accounts; credentials are not stored in this repository.
+UrbanBot replies in the same WhatsApp chat. After staff resolve the incident,
+it asks «¿Ya quedó?» and confirms or reopens it from your answer. The officials
+portal is available to the team’s provisioned accounts; credentials are not
+stored in this repository.
 
 ### Deploy through GitLab CI/CD
 

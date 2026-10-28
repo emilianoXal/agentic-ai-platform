@@ -15,6 +15,17 @@
 #   TF_TARGET    Lista separada por comas de recursos a targetear en plan.
 #   TF_DESTROY   "true" habilita el job manual de destroy.
 # =============================================================================
+# Push a rama con MR abierto: solo el pipeline del MR. Evita dos terraform plan
+# contra el mismo state lock (rama + MR). main, tags y pipelines manuales
+# (web/api, p. ej. con TF_TARGET o TF_UNTAINT_TARGET) siguen corriendo.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+
 stages:
   - tf_validate
   - app_build
@@ -86,6 +97,7 @@ terraform:validate:
 terraform:plan:
   extends: .terraform_base
   stage: tf_plan
+  resource_group: terraform-dev
   script:
     - cd "${TF_ROOT}"
     - |
@@ -96,7 +108,7 @@ terraform:plan:
         done
         echo "Plan con targets: $TARGET_ARGS"
       fi
-    - terraform plan $TARGET_ARGS -out=tfplan -input=false
+    - terraform plan $TARGET_ARGS -out=tfplan -input=false -lock-timeout=5m
   artifacts:
     paths:
       # El plan guardado congela la ruta y el hash del ZIP del placeholder.
@@ -121,9 +133,12 @@ terraform:plan:
 terraform:apply:
   extends: .terraform_base
   stage: tf_apply
+  resource_group: terraform-dev
+  environment:
+    name: dev
   script:
     - cd "${TF_ROOT}"
-    - terraform apply -auto-approve -input=false tfplan
+    - terraform apply -auto-approve -input=false -lock-timeout=5m tfplan
   dependencies:
     - terraform:plan
   when: manual
@@ -140,7 +155,7 @@ terraform:destroy:
   stage: tf_apply
   script:
     - cd "${TF_ROOT}"
-    - terraform destroy -auto-approve -input=false
+    - terraform destroy -auto-approve -input=false -lock-timeout=5m
   when: manual
   allow_failure: false
   rules:
@@ -173,7 +188,7 @@ terraform:untaint:
         exit 1
       fi
     - echo "Des-tainting ${TF_UNTAINT_TARGET}..."
-    - terraform untaint "${TF_UNTAINT_TARGET}"
+    - terraform untaint -lock-timeout=5m "${TF_UNTAINT_TARGET}"
   when: manual
   allow_failure: false
   rules:

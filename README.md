@@ -69,9 +69,15 @@ Required CI/CD **project variables** (Settings → CI/CD → Variables):
 Optional overrides: `TF_ENV` (dev|qa|prod), `TF_TARGET`, `TF_DESTROY`,
 `TF_UNTAINT_TARGET`.
 
-Pushing any branch runs validate + plan (and the dashboard build when
-`apps/dashboard/` changes). **Deployments run only on `main`:** `terraform:apply`
-and `dashboard:deploy` are manual jobs that exist only in `main` pipelines.
+Pushing a branch runs validate + plan unless that branch already has an open
+merge request, in which case only the MR pipeline runs (the dashboard build
+still runs when `apps/dashboard/` changes). Manual pipelines (web/api) still
+run on such branches, so `TF_TARGET` / `TF_UNTAINT_TARGET` runs keep working.
+Plan and apply share the `terraform-dev` resource group so concurrent pipelines
+queue instead of colliding on the S3 state lock. **Deployments run only on `main`:**
+`terraform:apply` and `dashboard:deploy` are manual jobs that exist only in
+`main` pipelines. Apply uses the GitLab environment `dev` so outdated
+deployment jobs are skipped.
 
 Dashboard deploy order on `main`: `terraform:apply` → `dashboard:deploy` (reads the
 Terraform outputs, fetches the Amazon Location key, writes `config.json` and

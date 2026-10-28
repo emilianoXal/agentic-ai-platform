@@ -73,6 +73,13 @@ def _phone_number_id(value):
     ingest handler already proves (":phone-number-id/"), NOT a blind
     last-segment split -- the id contains no "/". A bare id (or an unknown
     shape) is passed through unchanged (VP-3).
+
+    OPERATOR NOTE (AC-6): a malformed origination -- a value that looks like an
+    ARN but lacks the ":phone-number-id/" delimiter -- is NOT rejected here; it
+    is passed through verbatim and will surface downstream as a "send_failed"
+    log from send_whatsapp_message (error_code from EUM), not as "invalid_input".
+    If sends fail with no obvious cause, check that the configured
+    OUTBOUND_ORIGINATION_PHONE_NUMBER_ID / ingest-propagated ARN is well-formed.
     """
     if not value:
         return None

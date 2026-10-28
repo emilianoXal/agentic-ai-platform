@@ -1,14 +1,22 @@
-import { TestBed } from '@angular/core/testing';
+// @vitest-environment jsdom
+import { getTestBed, TestBed } from '@angular/core/testing';
+import { BrowserTestingModule, platformBrowserTesting } from '@angular/platform-browser/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { I18N_DICTIONARIES, I18nService, interpolate } from './i18n';
-import { localizeTimeline, localizeTitle } from './localize';
+import { localizeTimeline, localizeTitle, scheduledFollowUpDelay } from './localize';
 import { TimelineEntry } from './models';
+
+const bed = getTestBed();
+if (!bed.platform) {
+  bed.initTestEnvironment(BrowserTestingModule, platformBrowserTesting());
+}
 
 describe('i18n', () => {
   let i18n: I18nService;
 
   beforeEach(() => {
     localStorage.removeItem('urbanbot.lang');
+    TestBed.resetTestingModule();
     TestBed.configureTestingModule({});
     i18n = TestBed.inject(I18nService);
   });
@@ -46,8 +54,15 @@ describe('i18n', () => {
     expect(localizeTitle('Street lights out near you', i18n)).toBe(
       'Luminarias apagadas cerca de ti',
     );
-    expect(localizeTitle('Pothole near 9ewmq3h', i18n)).toBe('Bache cerca de 9ewmq3h');
+    expect(localizeTitle('Pothole near Centro', i18n)).toBe('Bache cerca de Centro');
+    expect(localizeTitle('Pothole near Verde', i18n)).toBe('Bache cerca de Verde');
+    expect(localizeTitle('Pothole', i18n)).toBe('Bache');
+    expect(localizeTitle('Other', i18n)).toBe('Otro');
     expect(localizeTitle('Something else', i18n)).toBe('Something else');
+    i18n.set('en');
+    expect(localizeTitle('Water leak at Av. Universidad 1500', i18n)).toBe(
+      'Water leak at Av. Universidad 1500',
+    );
   });
 
   it('localizes timeline entries from their kind and fields', () => {
@@ -104,5 +119,56 @@ describe('i18n', () => {
     expect(localizeTimeline(mailedNoName, i18n)).toBe('Correo enviado a la dependencia');
     expect(localizeTimeline(mailed, i18n)).toBe('Correo enviado a Organismo de Agua');
     expect(localizeTimeline(comment, i18n)).toBe('Válvula cambiada');
+    const scheduled: TimelineEntry = {
+      ...base,
+      kind: 'follow_up',
+      text: '"Is it fixed?" scheduled for neighbors in 5 min',
+    };
+    const day: TimelineEntry = {
+      ...scheduled,
+      text: '"Is it fixed?" scheduled for neighbors in 1440 min',
+    };
+    expect(localizeTimeline(scheduled, i18n)).toBe(
+      '"¿Ya quedó?" programado para los vecinos en 5 min',
+    );
+    expect(localizeTimeline(day, i18n)).toBe('"¿Ya quedó?" programado para los vecinos en 24 h');
+    i18n.set('en');
+    expect(localizeTimeline(scheduled, i18n)).toBe(
+      '"Is it fixed?" scheduled for neighbors in 5 min',
+    );
+  });
+
+  it('reads the follow-up delay from the scheduled history line', () => {
+    const scheduled: TimelineEntry = {
+      id: 'f1',
+      at: '2026-10-28T17:00:00Z',
+      kind: 'follow_up',
+      text: '"Is it fixed?" scheduled for neighbors in 5 min',
+      source: 'dashboard',
+    };
+    const sent: TimelineEntry = {
+      ...scheduled,
+      id: 'f2',
+      text: '"Is it fixed?" sent to 3 neighbors',
+    };
+    expect(scheduledFollowUpDelay([scheduled])).toBe('5 min');
+    expect(scheduledFollowUpDelay([sent, scheduled])).toBe('5 min');
+    const day: TimelineEntry = {
+      ...scheduled,
+      id: 'f0',
+      at: '2026-10-27T17:00:00Z',
+      text: '"Is it fixed?" scheduled for neighbors in 1440 min',
+    };
+    expect(scheduledFollowUpDelay([day])).toBe('24 h');
+    expect(scheduledFollowUpDelay([sent, scheduled, day])).toBe('5 min');
+    expect(scheduledFollowUpDelay([])).toBeNull();
+    i18n.set('es');
+    expect(i18n.t('detail.waitingFollowUp', { delay: '5 min' })).toBe(
+      'Esperando que los vecinos respondan "¿Ya quedó?", que se envía en 5 min.',
+    );
+    i18n.set('en');
+    expect(i18n.t('detail.waitingFollowUp', { delay: '5 min' })).toBe(
+      'Waiting for neighbors to answer "Is it fixed?", sent in 5 min.',
+    );
   });
 });

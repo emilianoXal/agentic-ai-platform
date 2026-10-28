@@ -87,6 +87,7 @@ CATEGORY_LABEL = {
     "arbol": "Fallen tree",
     "plagas": "Pests",
     "seguridad": "Safety",
+    "otro": "Other",
 }
 
 # Mirrors the route tool's default routing map (category -> dependency).
@@ -199,6 +200,34 @@ def normalize_status(raw, routed, mail_sent=False):
     return _LEGACY_STATUS.get(plain, "received"), False
 
 
+def _exposes_geohash(text, geohash):
+    """True when a word of the text is the incident's geohash cell or a 4+ char prefix of it."""
+    cell = str(geohash or "").strip().lower()
+    if not cell:
+        return False
+    for word in str(text or "").lower().split():
+        token = word.strip(".,;:()")
+        if len(token) >= 4 and (cell.startswith(token) or token.startswith(cell)):
+            return True
+    return False
+
+
+def public_title(item):
+    """Title shown in the portal: a stored place title, else the category with a street or neighborhood, else the category. Never a geohash."""
+    geohash = _s(item, "geohash", "") or ""
+    label = CATEGORY_LABEL.get(_s(item, "category", "otro"), "Incident")
+    stored = (_s(item, "title") or "").strip()
+    if stored and not _exposes_geohash(stored, geohash):
+        return stored
+    address = _s(item, "address")
+    if address and not _exposes_geohash(address, geohash):
+        return "{} at {}".format(label, address)
+    neighborhood = _s(item, "neighborhood")
+    if neighborhood and not _exposes_geohash(neighborhood, geohash):
+        return "{} near {}".format(label, neighborhood)
+    return label
+
+
 def to_incident(item, neighbors=None, timeline=None):
     incident_id = _s(item, "incident_id")
     routed_to = _s(item, "routed_to")
@@ -215,9 +244,7 @@ def to_incident(item, neighbors=None, timeline=None):
         lat, lng = decode_geohash(geohash)
     created_at = _s(item, "created_at", _now_iso())
     neighborhood = _s(item, "neighborhood")
-    title = _s(item, "title") or "{} near {}".format(
-        CATEGORY_LABEL.get(category, "Incident"), _s(item, "address") or neighborhood or geohash
-    )
+    title = public_title(item)
     return {
         "id": incident_id,
         "folio": _s(item, "folio") or "UB-{}-{}".format(created_at[:4], incident_id[:6].upper()),

@@ -28,6 +28,7 @@ import { I18nService, TranslatePipe } from '../../core/i18n';
 import { localizeTitle } from '../../core/localize';
 import { geohashBounds } from '../../core/geo';
 import { STATUS } from '../../core/labels';
+import { incidentMarkerOptions } from './marker-anchor';
 import { UserLocationService } from '../../core/location';
 import { GatewayEvent, Incident } from '../../core/models';
 import { ThemeService } from '../../core/theme';
@@ -229,7 +230,8 @@ export class IncidentMap {
             e.stopPropagation();
             this.select.emit(incident.id);
           });
-          const marker = new Marker({ element })
+          element.style.setProperty('--size', `${markerSize(incident.reportCount)}px`);
+          const marker = new Marker(incidentMarkerOptions(element))
             .setLngLat([incident.location.lng, incident.location.lat])
             .addTo(this.map!);
           entry = { marker, element };
@@ -294,13 +296,15 @@ export class IncidentMap {
       setTimeout(() => ring.remove(), 1200);
     }
     if (event.kind === 'joined' && entry && !reduce) {
-      entry.element.animate(
-        [{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }],
-        {
-          duration: 500,
-          easing: 'cubic-bezier(0.3, 0, 0, 1)',
-        },
-      );
+      entry.element
+        .querySelector('.fy-marker-dot')
+        ?.animate(
+          [{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }],
+          {
+            duration: 500,
+            easing: 'cubic-bezier(0.3, 0, 0, 1)',
+          },
+        );
     }
     if (event.kind === 'created') {
       const incident = this.incidents().find((i) => i.id === event.incidentId);

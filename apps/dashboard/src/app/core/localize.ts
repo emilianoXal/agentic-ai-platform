@@ -20,14 +20,18 @@ const TITLE_PREFIXES: readonly [string, string][] = [
   ['Safety', 'category.seguridad'],
   ['Trash', 'category.basura'],
   ['Pests', 'category.plagas'],
+  ['Other', 'category.otro'],
   ['Incident', 'category.otro'],
 ];
 
 export function localizeTitle(title: string, i18n: I18nService): string {
-  const match = TITLE_PREFIXES.find(([prefix]) => title.startsWith(prefix + ' '));
+  const match = TITLE_PREFIXES.find(
+    ([prefix]) => title === prefix || title.startsWith(prefix + ' '),
+  );
   if (!match) return title;
   const [prefix, key] = match;
   const category = i18n.t(key);
+  if (title === prefix) return category;
   const rest = title.slice(prefix.length + 1);
   if (rest === 'near you') return i18n.t('title.nearYou', { category });
   if (rest === 'near the demo point') return i18n.t('title.nearDemo', { category });
@@ -45,6 +49,30 @@ export function localizeIncidentTitle(
 
 function statusWord(status: StatusCode | null | undefined, i18n: I18nService): string {
   return status ? i18n.t(`status.${status}`).toLowerCase() : '';
+}
+
+/** Delay written by the portal (`in 5 min`) or the demo (`in 24 h`), never a fixed 24 h. */
+function followUpDelay(text: string): string | null {
+  const minutes = /in (\d+) min\b/.exec(text);
+  if (minutes) return formatFollowUpDelay(Number(minutes[1]));
+  const hours = /in (\d+) h\b/.exec(text);
+  if (hours) return formatFollowUpDelay(Number(hours[1]) * 60);
+  return null;
+}
+
+function formatFollowUpDelay(minutes: number): string {
+  if (minutes > 0 && minutes % 60 === 0) return `${minutes / 60} h`;
+  return `${minutes} min`;
+}
+
+/** Delay of the latest scheduled "Is it fixed?" on the incident's history, if any. */
+export function scheduledFollowUpDelay(timeline: readonly TimelineEntry[]): string | null {
+  for (const entry of timeline) {
+    if (entry.kind !== 'follow_up' || /sent to \d+/.test(entry.text)) continue;
+    const delay = followUpDelay(entry.text);
+    if (delay) return delay;
+  }
+  return null;
 }
 
 function firstNumber(text: string): number | null {
@@ -93,9 +121,9 @@ export function localizeTimeline(entry: TimelineEntry, i18n: I18nService): strin
     }
     case 'follow_up': {
       const sent = /sent to (\d+)/.exec(text);
-      return sent
-        ? i18n.t('timeline.followUpSent', { n: Number(sent[1]) })
-        : i18n.t('timeline.followUpScheduled');
+      if (sent) return i18n.t('timeline.followUpSent', { n: Number(sent[1]) });
+      const delay = followUpDelay(text);
+      return delay ? i18n.t('timeline.followUpScheduled', { delay }) : text;
     }
     case 'reply':
       return text.includes('No, sigue igual')

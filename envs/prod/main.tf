@@ -29,18 +29,24 @@ module "compute" {
 
   environment = var.environment
 
-  kms_key_arn       = module.data.kms_key_arn
-  ingest_queue_url  = module.data.ingest_queue_url
-  ingest_queue_arn  = module.data.ingest_queue_arn
-  inbound_topic_arn = module.data.inbound_topic_arn
-  event_bus_name    = module.data.events_bus_name
-  event_bus_arn     = module.data.events_bus_arn
-  users_table_name  = module.data.users_table_name
-  users_table_arn   = module.data.users_table_arn
-  places_table_name = module.data.places_table_name
-  places_table_arn  = module.data.places_table_arn
-  audit_table_name  = module.data.audit_log_table_name
-  audit_table_arn   = module.data.audit_log_table_arn
+  kms_key_arn          = module.data.kms_key_arn
+  ingest_queue_url     = module.data.ingest_queue_url
+  ingest_queue_arn     = module.data.ingest_queue_arn
+  inbound_topic_arn    = module.data.inbound_topic_arn
+  event_bus_name       = module.data.events_bus_name
+  event_bus_arn        = module.data.events_bus_arn
+  users_table_name     = module.data.users_table_name
+  users_table_arn      = module.data.users_table_arn
+  places_table_name    = module.data.places_table_name
+  places_table_arn     = module.data.places_table_arn
+  audit_table_name     = module.data.audit_log_table_name
+  audit_table_arn      = module.data.audit_log_table_arn
+  incidents_table_name = module.data.incidents_table_name
+  incidents_table_arn  = module.data.incidents_table_arn
+
+  dependency_email_map      = var.dependency_email_map
+  dependency_fallback_email = var.dependency_fallback_email
+  dependency_mail_from      = var.dependency_mail_from
 
   rate_limit_per_hour = var.rate_limit_per_hour
   max_text_len        = var.max_text_len

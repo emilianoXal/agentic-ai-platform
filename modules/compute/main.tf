@@ -19,6 +19,12 @@ data "archive_file" "notifier" {
   output_path = "${path.module}/build/notifier.zip"
 }
 
+data "archive_file" "outbound" {
+  type        = "zip"
+  source_dir  = "${path.module}/src/outbound"
+  output_path = "${path.module}/build/outbound.zip"
+}
+
 # =============================================================================
 # CloudWatch log groups — created explicitly so IAM can scope to a known ARN
 # and retention is managed (not auto-created by the Lambda service).
@@ -30,6 +36,11 @@ resource "aws_cloudwatch_log_group" "ingest" {
 
 resource "aws_cloudwatch_log_group" "notifier" {
   name              = "/aws/lambda/${local.name_prefix}-notifier"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_cloudwatch_log_group" "outbound" {
+  name              = "/aws/lambda/${local.name_prefix}-outbound"
   retention_in_days = var.log_retention_days
 }
 
@@ -174,6 +185,57 @@ resource "aws_iam_role_policy_attachment" "notifier" {
 }
 
 # =============================================================================
+# outbound — IAM role + customer-managed least-privilege policy + attachment.
+# The ONE and only role that holds socialmessaging:SendWhatsAppMessage (RB-01).
+# =============================================================================
+resource "aws_iam_role" "outbound" {
+  name               = "${local.name_prefix}-outbound-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+data "aws_iam_policy_document" "outbound" {
+  statement {
+    sid    = "Logs"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = [
+      aws_cloudwatch_log_group.outbound.arn,
+      "${aws_cloudwatch_log_group.outbound.arn}:*",
+    ]
+  }
+
+  # This role intentionally has NO kms grant: it touches no CMK-encrypted
+  # DynamoDB/SQS/S3. EUM's own delivery/media encryption is covered by the
+  # AllowSocialMessagingUseOfKey grant on the CMK key policy in modules/data,
+  # which grants the social-messaging.amazonaws.com service principal (not this
+  # role); text-only SendWhatsAppMessage needs no caller-side KMS.
+  statement {
+    sid     = "SendWhatsApp"
+    effect  = "Allow"
+    actions = ["socialmessaging:SendWhatsAppMessage"]
+    # VP-4: no confirmed resource-level ARN support for this action in the EUM
+    # Social service-authorization reference; tighten Resource to the
+    # phone-number-id ARN if/when the service adds it. PostWhatsAppMessageMedia
+    # is intentionally NOT granted (text-only path).
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "outbound" {
+  name   = "${local.name_prefix}-outbound-policy"
+  policy = data.aws_iam_policy_document.outbound.json
+}
+
+resource "aws_iam_role_policy_attachment" "outbound" {
+  role       = aws_iam_role.outbound.name
+  policy_arn = aws_iam_policy.outbound.arn
+}
+
+# =============================================================================
 # Lambda functions.
 # =============================================================================
 resource "aws_lambda_function" "ingest" {
@@ -226,6 +288,29 @@ resource "aws_lambda_function" "notifier" {
   depends_on = [
     aws_cloudwatch_log_group.notifier,
     aws_iam_role_policy_attachment.notifier,
+  ]
+}
+
+resource "aws_lambda_function" "outbound" {
+  function_name    = "${local.name_prefix}-outbound"
+  role             = aws_iam_role.outbound.arn
+  runtime          = "python3.12"
+  handler          = "handler.lambda_handler"
+  filename         = data.archive_file.outbound.output_path
+  source_code_hash = data.archive_file.outbound.output_base64sha256
+  timeout          = 30
+  memory_size      = 256
+
+  environment {
+    variables = {
+      META_API_VERSION = var.meta_api_version
+      LOG_LEVEL        = var.log_level
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.outbound,
+    aws_iam_role_policy_attachment.outbound,
   ]
 }
 

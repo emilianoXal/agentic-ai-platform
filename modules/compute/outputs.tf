@@ -27,3 +27,18 @@ output "notifier_role_arn" {
   description = "ARN of the notifier Lambda execution role."
   value       = aws_iam_role.notifier.arn
 }
+
+output "outbound_function_name" {
+  description = "Name of the outbound WhatsApp send Lambda function."
+  value       = aws_lambda_function.outbound.function_name
+}
+
+output "outbound_function_arn" {
+  description = "ARN of the outbound WhatsApp send Lambda function."
+  value       = aws_lambda_function.outbound.arn
+}
+
+output "outbound_role_arn" {
+  description = "ARN of the outbound Lambda execution role."
+  value       = aws_iam_role.outbound.arn
+}

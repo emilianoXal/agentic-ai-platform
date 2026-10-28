@@ -150,12 +150,15 @@ describe('i18n', () => {
     };
     const sent: TimelineEntry = { ...scheduled, id: 'f2', text: '"Is it fixed?" sent to 3 neighbors' };
     expect(scheduledFollowUpDelay([scheduled])).toBe('5 min');
-    expect(scheduledFollowUpDelay([scheduled, sent])).toBe('5 min');
+    expect(scheduledFollowUpDelay([sent, scheduled])).toBe('5 min');
     const day: TimelineEntry = {
       ...scheduled,
+      id: 'f0',
+      at: '2026-10-27T17:00:00Z',
       text: '"Is it fixed?" scheduled for neighbors in 1440 min',
     };
     expect(scheduledFollowUpDelay([day])).toBe('24 h');
+    expect(scheduledFollowUpDelay([sent, scheduled, day])).toBe('5 min');
     expect(scheduledFollowUpDelay([])).toBeNull();
     i18n.set('es');
     expect(i18n.t('detail.waitingFollowUp', { delay: '5 min' })).toBe(

@@ -67,8 +67,7 @@ function formatFollowUpDelay(minutes: number): string {
 
 /** Delay of the latest scheduled "Is it fixed?" on the incident's history, if any. */
 export function scheduledFollowUpDelay(timeline: readonly TimelineEntry[]): string | null {
-  for (let index = timeline.length - 1; index >= 0; index--) {
-    const entry = timeline[index];
+  for (const entry of timeline) {
     if (entry.kind !== 'follow_up' || /sent to \d+/.test(entry.text)) continue;
     const delay = followUpDelay(entry.text);
     if (delay) return delay;

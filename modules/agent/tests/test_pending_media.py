@@ -47,6 +47,7 @@ def _load(name, path):
 
 agent = _load("pending_media_agent", ("agent", "src", "agent", "handler.py"))
 create_report = _load("pending_media_create_report", ("agent", "src", "create_report", "handler.py"))
+join_incident = _load("pending_media_join_incident", ("agent", "src", "join_incident", "handler.py"))
 ingest = _load("pending_media_ingest", ("compute", "src", "ingest", "handler.py"))
 
 SENDER = "5215599900001"
@@ -91,6 +92,7 @@ class _Result:
 
 class _ScriptedAgent:
     calls_report = False
+    joins_incident = False
 
     def __init__(self, **kwargs):
         pass
@@ -99,11 +101,14 @@ class _ScriptedAgent:
         _ScriptedAgent.prompts.append(prompt)
         if _ScriptedAgent.calls_report:
             agent.create_report(category="bacheo", geohash="9g3qrbc", description="bache")
+        if _ScriptedAgent.joins_incident:
+            agent.join_incident(incident_id="inc-1", category="bacheo", geohash="9g3qrbc")
         return _Result()
 
 
-def _invoke_create_report(FunctionName, InvocationType, Payload):
-    result = create_report.lambda_handler(json.loads(Payload), None)
+def _invoke_tool(FunctionName, InvocationType, Payload):
+    tool = {"create-report": create_report, "join-incident": join_incident}[FunctionName]
+    result = tool.lambda_handler(json.loads(Payload), None)
     return {"Payload": io.BytesIO(json.dumps(result).encode())}
 
 
@@ -112,6 +117,7 @@ class PendingMediaSequenceTests(unittest.TestCase):
         self.ddb = FakeDynamo()
         ingest._ddb = self.ddb
         create_report._ddb = self.ddb
+        join_incident._ddb = self.ddb
         ingest._sqs = mock.MagicMock()
         ingest._sfn = mock.MagicMock()
         ingest._already_processed = lambda *a, **k: False
@@ -120,9 +126,11 @@ class PendingMediaSequenceTests(unittest.TestCase):
         agent.Agent = _ScriptedAgent
         agent.BedrockModel = mock.MagicMock()
         agent._lambda = mock.MagicMock()
-        agent._lambda.invoke.side_effect = _invoke_create_report
+        agent._lambda.invoke.side_effect = _invoke_tool
         agent.TOOL_CREATE_REPORT_FN = "create-report"
+        agent.TOOL_JOIN_INCIDENT_FN = "join-incident"
         _ScriptedAgent.prompts = []
+        _ScriptedAgent.joins_incident = False
 
     def _inbound(self, message_id, text, image=False):
         item = {
@@ -145,7 +153,7 @@ class PendingMediaSequenceTests(unittest.TestCase):
     def _report_media(self):
         reports = [
             item for item in self.ddb.tables.get("reports", {}).values()
-            if "description" in item
+            if "category" in item
         ]
         self.assertEqual(len(reports), 1)
         return [value["S"] for value in reports[0].get("media", {}).get("L", [])]
@@ -173,6 +181,21 @@ class PendingMediaSequenceTests(unittest.TestCase):
     def test_same_turn_report_does_not_duplicate_current_photo(self):
         photo = self._inbound("wamid.P3", "bache en Av. Universidad 100", image=True)
         self.assertTrue(self._turn(photo, creates_report=True)["ok"])
+        self.assertEqual(self._report_media(), photo["media"])
+
+    def test_captioned_photo_joined_to_incident_stores_its_key(self):
+        photo = self._inbound("wamid.P7", "bache en Av. Universidad 100", image=True)
+        _ScriptedAgent.joins_incident = True
+        self.assertTrue(self._turn(photo, creates_report=False)["ok"])
+        self.assertEqual(self._report_media(), photo["media"])
+        self.assertEqual(self.ddb.tables["pending-media"], {})
+
+    def test_captioned_photo_then_location_joined_to_incident_stores_its_key(self):
+        photo = self._inbound("wamid.P8", "bache enorme", image=True)
+        self.assertTrue(self._turn(photo, creates_report=False)["ok"])
+        location = self._inbound("wamid.L8", "esta en Av. Universidad 100")
+        _ScriptedAgent.joins_incident = True
+        self.assertTrue(self._turn(location, creates_report=False)["ok"])
         self.assertEqual(self._report_media(), photo["media"])
 
     def test_pending_key_uses_only_user_hash(self):

@@ -280,6 +280,13 @@ data "aws_iam_policy_document" "join_incident" {
   }
 
   statement {
+    sid       = "ConsumePendingMedia"
+    effect    = "Allow"
+    actions   = ["dynamodb:DeleteItem"]
+    resources = [var.pending_media_table_arn]
+  }
+
+  statement {
     sid       = "AuditWrite"
     effect    = "Allow"
     actions   = ["dynamodb:PutItem"]
@@ -921,10 +928,11 @@ resource "aws_lambda_function" "join_incident" {
 
   environment {
     variables = {
-      INCIDENTS_TABLE = var.incidents_table_name
-      REPORTS_TABLE   = var.reports_table_name
-      AUDIT_TABLE     = var.audit_log_table_name
-      LOG_LEVEL       = var.log_level
+      INCIDENTS_TABLE     = var.incidents_table_name
+      REPORTS_TABLE       = var.reports_table_name
+      AUDIT_TABLE         = var.audit_log_table_name
+      PENDING_MEDIA_TABLE = var.pending_media_table_name
+      LOG_LEVEL           = var.log_level
     }
   }
 

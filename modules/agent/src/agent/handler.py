@@ -257,6 +257,7 @@ def join_incident(incident_id: str, report_id: str = None,
         "user_id": _turn.get("user_id"),
         "category": category,
         "geohash": geohash,
+        "media": list(_turn.get("media", [])),
         "severity": severity,
     })
 

@@ -33,6 +33,21 @@ export class SignIn {
   protected readonly step = signal<Step>('credentials');
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
+  /** Password fields the user chose to reveal (each field has its own show/hide button). */
+  protected readonly revealed = signal<ReadonlySet<string>>(new Set());
+
+  protected isRevealed(field: string): boolean {
+    return this.revealed().has(field);
+  }
+
+  protected toggleReveal(field: string): void {
+    this.revealed.update((set) => {
+      const next = new Set(set);
+      if (next.has(field)) next.delete(field);
+      else next.add(field);
+      return next;
+    });
+  }
 
   protected readonly accounts: readonly DemoAccount[] = [
     {

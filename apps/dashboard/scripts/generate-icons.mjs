@@ -39,6 +39,8 @@ const NAMES = [
   'building-community',
   'route',
   'check',
+  'eye',
+  'eye-off',
 ];
 
 const nodes = JSON.parse(

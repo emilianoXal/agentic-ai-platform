@@ -24,13 +24,25 @@
             </label>
             <label class="field">
               <span>Password</span>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autocomplete="current-password"
-                required
-              />
+              <span class="secret">
+                <input
+                  id="password"
+                  name="password"
+                  [type]="isRevealed('password') ? 'text' : 'password'"
+                  autocomplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  class="reveal"
+                  (click)="toggleReveal('password')"
+                  [attr.aria-pressed]="isRevealed('password')"
+                  [attr.aria-label]="isRevealed('password') ? 'Hide password' : 'Show password'"
+                  [attr.aria-controls]="'password'"
+                >
+                  <svg [fyIcon]="isRevealed('password') ? 'eye-off' : 'eye'" [size]="20"></svg>
+                </button>
+              </span>
             </label>
             @if (error()) {
               <p class="error" role="alert">{{ error() }}</p>
@@ -47,25 +59,54 @@
           <form class="form" (submit)="submitNewPassword($event)">
             <label class="field">
               <span>New password</span>
-              <input
-                id="new-password"
-                name="new-password"
-                type="password"
-                autocomplete="new-password"
-                minlength="12"
-                required
-              />
+              <span class="secret">
+                <input
+                  id="new-password"
+                  name="new-password"
+                  [type]="isRevealed('new-password') ? 'text' : 'password'"
+                  autocomplete="new-password"
+                  minlength="12"
+                  required
+                />
+                <button
+                  type="button"
+                  class="reveal"
+                  (click)="toggleReveal('new-password')"
+                  [attr.aria-pressed]="isRevealed('new-password')"
+                  [attr.aria-label]="isRevealed('new-password') ? 'Hide password' : 'Show password'"
+                  [attr.aria-controls]="'new-password'"
+                >
+                  <svg [fyIcon]="isRevealed('new-password') ? 'eye-off' : 'eye'" [size]="20"></svg>
+                </button>
+              </span>
             </label>
             <label class="field">
               <span>Confirm new password</span>
-              <input
-                id="confirm-password"
-                name="confirm-password"
-                type="password"
-                autocomplete="new-password"
-                minlength="12"
-                required
-              />
+              <span class="secret">
+                <input
+                  id="confirm-password"
+                  name="confirm-password"
+                  [type]="isRevealed('confirm-password') ? 'text' : 'password'"
+                  autocomplete="new-password"
+                  minlength="12"
+                  required
+                />
+                <button
+                  type="button"
+                  class="reveal"
+                  (click)="toggleReveal('confirm-password')"
+                  [attr.aria-pressed]="isRevealed('confirm-password')"
+                  [attr.aria-label]="
+                    isRevealed('confirm-password') ? 'Hide password' : 'Show password'
+                  "
+                  [attr.aria-controls]="'confirm-password'"
+                >
+                  <svg
+                    [fyIcon]="isRevealed('confirm-password') ? 'eye-off' : 'eye'"
+                    [size]="20"
+                  ></svg>
+                </button>
+              </span>
             </label>
             <p class="hint">
               At least 12 characters, with upper and lower case letters, a number and a symbol.

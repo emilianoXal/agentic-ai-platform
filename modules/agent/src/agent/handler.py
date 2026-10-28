@@ -471,17 +471,27 @@ def _discard_unanswered_turn(session_manager):
 
     The session manager persists each message as soon as Strands adds it, so a
     turn that failed or timed out before the final reply leaves user/toolResult
-    events that would break role alternation on the next restore.
+    events that would break role alternation on the next restore. Restored
+    SessionMessages do not carry their eventId, so walk the raw events (newest
+    first) and decode each one with the session manager's converter.
     """
     config = session_manager.config
-    messages = session_manager.list_messages(config.session_id, "default")
-    while messages and not _is_answered(messages[-1].to_message()):
-        orphan = messages.pop()
+    events = session_manager.memory_client.list_events(
+        memory_id=config.memory_id,
+        actor_id=config.actor_id,
+        session_id=config.session_id,
+    )
+    for event in events:
+        messages = session_manager.converter.events_to_messages([event])
+        if not messages:
+            continue
+        if _is_answered(messages[-1].to_message()):
+            return
         session_manager.memory_client.gmdp_client.delete_event(
             memoryId=config.memory_id,
             actorId=config.actor_id,
             sessionId=config.session_id,
-            eventId=orphan.message_id,
+            eventId=event["eventId"],
         )
 
 

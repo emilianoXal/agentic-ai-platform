@@ -44,7 +44,9 @@ Actor and session identifiers are HMAC-SHA256 of the citizen number keyed by a
 Terraform-created Secrets Manager secret (generated write-only, never in state;
 the Lambda receives only its ARN), so the phone number cannot be recovered from
 them by brute force. The memory is encrypted with the project CMK and expires
-events after 7 days. Before each turn the agent deletes any persisted messages
-after the last final assistant reply, so a retried failure cannot leave an
-unanswered turn that breaks role alternation. QA and production keep the
+events after 7 days. Before each turn the agent lists the session's raw events,
+decodes them with the session manager's converter, and deletes by `eventId`
+every message event newer than the last final assistant reply, so a retried
+failure or timeout cannot leave an unanswered user/tool turn that breaks role
+alternation. QA and production keep the
 integration disabled unless their environment flag is set.

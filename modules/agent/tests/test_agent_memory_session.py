@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.util
+import json
 import os
 import sys
 import types
@@ -48,13 +49,31 @@ class _Result:
         return self.reply
 
 
-class _StoredMessage:
-    def __init__(self, event_id, message):
-        self.message_id = event_id
+class _SessionMessage:
+    """Mirrors strands SessionMessage: restored message_id is the persisted 0."""
+
+    def __init__(self, message, message_id=0):
         self.message = message
+        self.message_id = message_id
 
     def to_message(self):
         return dict(self.message)
+
+
+class _Converter:
+    """Mirrors AgentCoreMemoryConverter.events_to_messages (newest-first input)."""
+
+    @staticmethod
+    def events_to_messages(events):
+        messages = []
+        for event in reversed(events):
+            for payload in event.get("payload", []):
+                if "conversational" in payload:
+                    data = json.loads(payload["conversational"]["content"]["text"])
+                    messages.append(
+                        _SessionMessage(data["message"], data["message_id"]),
+                    )
+        return messages
 
 
 class _DataPlane:
@@ -62,27 +81,42 @@ class _DataPlane:
         self.store = store
 
     def delete_event(self, memoryId, actorId, sessionId, eventId):
+        if not isinstance(eventId, str):
+            raise TypeError("eventId must be a string")
         events = self.store.events[(memoryId, actorId, sessionId)]
-        events[:] = [event for event in events if event.message_id != eventId]
+        events[:] = [event for event in events if event["eventId"] != eventId]
 
 
-class _MemoryStore:
+class _MemoryClient:
+    """Raw AgentCore events, chronological in storage, newest first on list."""
+
     def __init__(self):
         self.events = {}
         self.calls = []
         self.gmdp_client = _DataPlane(self)
         self._next_id = 0
 
-    def list_events(self, key):
+    def list_events(self, memory_id, actor_id, session_id, max_results=100):
+        key = (memory_id, actor_id, session_id)
         self.calls.append(("list",) + key)
-        return list(self.events.get(key, []))
+        return list(reversed(self.events.get(key, [])))[:max_results]
 
-    def create_event(self, key, message):
-        self.calls.append(("create",) + key)
+    def _append(self, key, payload):
         self._next_id += 1
         self.events.setdefault(key, []).append(
-            _StoredMessage(f"event-{self._next_id}", message),
+            {"eventId": f"{self._next_id:013d}#evt", "payload": [payload]},
         )
+
+    def create_message_event(self, key, message):
+        self.calls.append(("create",) + key)
+        text = json.dumps({"message": message, "message_id": 0})
+        self._append(key, {"conversational": {
+            "content": {"text": text}, "role": message["role"].upper(),
+        }})
+
+    def create_state_event(self, key):
+        self.calls.append(("create",) + key)
+        self._append(key, {"blob": json.dumps({"agent_id": "default"})})
 
 
 class _MemoryConfig:
@@ -95,12 +129,13 @@ class _MemoryConfig:
 class _SessionManager:
     """Persists each message as soon as it is added, like the real manager."""
 
-    memory_client = _MemoryStore()
+    memory_client = _MemoryClient()
     configurations = []
 
     def __init__(self, agentcore_memory_config, region_name):
         self.config = agentcore_memory_config
         self.region_name = region_name
+        self.converter = _Converter
         self.configurations.append(agentcore_memory_config)
 
     @property
@@ -109,10 +144,15 @@ class _SessionManager:
 
     def list_messages(self, session_id, agent_id):
         assert session_id == self.config.session_id
-        return self.memory_client.list_events(self._key)
+        return self.converter.events_to_messages(
+            self.memory_client.list_events(*self._key),
+        )
 
     def append_message(self, message):
-        self.memory_client.create_event(self._key, message)
+        self.memory_client.create_message_event(self._key, message)
+
+    def sync_agent(self):
+        self.memory_client.create_state_event(self._key)
 
     def __enter__(self):
         return self
@@ -150,14 +190,21 @@ class _Agent:
         self._add(_text("user", prompt))
         self.model_inputs.append([dict(m) for m in self.messages])
         if self.model_failures:
-            raise self.model_failures.pop(0)
+            partial_messages, error = self.model_failures.pop(0)
+            for message in partial_messages:
+                self._add(message)
+            raise error
         if self.kwargs.get("session_manager") is None:
             reply = "sin memoria"
         else:
             reply = "historial: " + " | ".join(
-                m["content"][0]["text"] for m in self.messages if m["role"] == "user"
+                block["text"] for m in self.messages if m["role"] == "user"
+                for block in m["content"] if "text" in block
             )
         self._add(_text("assistant", reply))
+        manager = self.kwargs.get("session_manager")
+        if manager is not None:
+            manager.sync_agent()
         return _Result(reply)
 
 
@@ -186,7 +233,7 @@ def _agentcore_modules():
 
 class AgentMemorySessionTests(unittest.TestCase):
     def setUp(self):
-        _SessionManager.memory_client = _MemoryStore()
+        _SessionManager.memory_client = _MemoryClient()
         _SessionManager.configurations = []
         _Agent.instances = []
         _Agent.model_failures = []
@@ -213,9 +260,17 @@ class AgentMemorySessionTests(unittest.TestCase):
                 self._event(citizen, text, consent_pending), None,
             )
 
-    def _stored_events(self):
-        return [event for events in _SessionManager.memory_client.events.values()
-                for event in events]
+    def _stored_roles(self):
+        return [
+            json.loads(payload["conversational"]["content"]["text"])["message"]["role"]
+            for events in _SessionManager.memory_client.events.values()
+            for event in events
+            for payload in event["payload"]
+            if "conversational" in payload
+        ]
+
+    def _last_model_roles(self):
+        return [m["role"] for m in _Agent.instances[-1].model_inputs[-1]]
 
     def test_same_citizen_restores_previous_turn(self):
         citizen = "5215512345678"
@@ -272,19 +327,49 @@ class AgentMemorySessionTests(unittest.TestCase):
         later = self._invoke_with_memory(citizen, "Acepto")
         self.assertNotIn("Hay un bache", later["reply"])
 
+    def test_answered_history_is_kept_intact(self):
+        citizen = "5215512345678"
+        self._invoke_with_memory(citizen, "Hay un bache")
+        second = self._invoke_with_memory(citizen, "Esta en Avenida Central")
+
+        self.assertIn("Hay un bache", second["reply"])
+        self.assertEqual(self._last_model_roles(), ["user", "assistant", "user"])
+        self.assertEqual(self._stored_roles(),
+                         ["user", "assistant", "user", "assistant"])
+
     def test_retried_failed_turn_does_not_leave_orphan_user_message(self):
         citizen = "5215512345678"
         self._invoke_with_memory(citizen, "Hola")
-        _Agent.model_failures = [handler.ModelThrottledException()]
+        _Agent.model_failures = [([], handler.ModelThrottledException())]
         failed = self._invoke_with_memory(citizen, "Hay un bache")
         retried = self._invoke_with_memory(citizen, "Hay un bache")
 
         self.assertEqual(failed, {"ok": False, "error": "bedrock_throttled"})
         self.assertTrue(retried["ok"])
-        roles = [m["role"] for m in _Agent.instances[-1].model_inputs[-1]]
-        self.assertEqual(roles, ["user", "assistant", "user"])
-        stored_roles = [event.message["role"] for event in self._stored_events()]
-        self.assertEqual(stored_roles, ["user", "assistant", "user", "assistant"])
+        self.assertEqual(self._last_model_roles(), ["user", "assistant", "user"])
+        self.assertEqual(self._stored_roles(),
+                         ["user", "assistant", "user", "assistant"])
+
+    def test_retried_turn_drops_orphan_tool_exchange(self):
+        citizen = "5215512345678"
+        self._invoke_with_memory(citizen, "Hola")
+        tool_exchange = [
+            {"role": "assistant", "content": [{"toolUse": {
+                "toolUseId": "t1", "name": "create_report", "input": {},
+            }}]},
+            {"role": "user", "content": [{"toolResult": {
+                "toolUseId": "t1", "content": [{"text": "ok"}],
+            }}]},
+        ]
+        _Agent.model_failures = [(tool_exchange, RuntimeError("lambda timeout"))]
+        failed = self._invoke_with_memory(citizen, "Hay un bache")
+        retried = self._invoke_with_memory(citizen, "Hay un bache")
+
+        self.assertEqual(failed, {"ok": False, "error": "internal"})
+        self.assertTrue(retried["ok"])
+        self.assertEqual(self._last_model_roles(), ["user", "assistant", "user"])
+        self.assertEqual(self._stored_roles(),
+                         ["user", "assistant", "user", "assistant"])
 
     def test_without_memory_does_not_call_memory_client(self):
         with mock.patch.object(handler, "AGENTCORE_MEMORY_ID", ""):

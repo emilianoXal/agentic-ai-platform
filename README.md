@@ -45,7 +45,7 @@ table); the state key is isolated per environment
 | Module    | Status | Summary |
 |-----------|--------|---------|
 | `data`    | done   | CMK, S3 media (SSE-KMS + retention), DynamoDB (reports/incidents/places/users/audit-log) with streams + GSIs, SNS inbound, SQS FIFO + DLQ, EventBridge bus |
-| `compute` | done   | `ingest` (SNS→deterministic guards→SQS FIFO) and `notifier` (EventBridge→WhatsApp stub) Lambdas, least-privilege IAM |
+| `compute` | done   | `ingest` (SNS EUM WhatsApp webhook → deterministic guards → SQS FIFO) and `notifier` (EventBridge→WhatsApp stub) Lambdas, least-privilege IAM |
 | `agent`   | done   | `create_report` / `join_incident` / `get_status` / `register_place` / `route` / `escalate` tool Lambdas, SQS `consumer`, ECR, Bedrock Guardrails, AgentCore runtime/gateway/memory (flag-gated, default off) |
 | `media`   | todo   | `GetWhatsAppMessageMedia` → S3 → Step Functions → Rekognition (face/plate blur) + Transcribe + Nova |
 | `portal`  | done   | Dashboard backend and hosting: Cognito staff pool (groups agency / official / admin, users as code), AppSync GraphQL + WAF, `dashboard-api` Lambda (paginated queries, status changes that emit `StatusChanged` to the notifier, admin demo seed), `stream-publisher` Lambda (incidents stream → real-time subscription), Amazon Location API key, Amplify Hosting |

@@ -17,6 +17,10 @@ modules/portal/build/*
 # Workflow/agent task artifacts (internal planning docs, not part of the repo)
 .agents/
 
+# Python bytecode from local unittest runs
+__pycache__/
+*.pyc
+
 # Terraform crash logs
 crash.log
 

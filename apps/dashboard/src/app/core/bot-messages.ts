@@ -23,7 +23,6 @@ export function statusMessage(
   const folio = incident.folio;
   switch (status) {
     case 'sent_to_agency':
-    case 'sent_by_supervisor':
       return {
         es: `${emoji} Tu reporte ${folio} ya está con ${agencyName}. Te aviso en cuanto cambie.`,
         en: `Your report ${folio} is now with ${agencyName}. I'll message you as soon as it changes.`,

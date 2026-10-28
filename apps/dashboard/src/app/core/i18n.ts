@@ -15,7 +15,6 @@ const EN: Dictionary = {
 
   'status.received': 'Received',
   'status.sent_to_agency': 'Sent to agency',
-  'status.sent_by_supervisor': 'Sent by supervisor',
   'status.in_progress': 'In progress',
   'status.resolved': 'Resolved',
   'status.not_applicable': 'Not applicable',
@@ -282,7 +281,6 @@ const ES: Dictionary = {
 
   'status.received': 'Recibido',
   'status.sent_to_agency': 'Enviado a dependencia',
-  'status.sent_by_supervisor': 'Enviado por el supervisor',
   'status.in_progress': 'En atención',
   'status.resolved': 'Resuelto',
   'status.not_applicable': 'No procede',

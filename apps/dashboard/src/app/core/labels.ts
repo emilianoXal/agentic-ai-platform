@@ -25,13 +25,6 @@ export const STATUS: Record<StatusCode, StatusMeta> = {
     emoji: '📨',
     token: 'enviado',
   },
-  sent_by_supervisor: {
-    label: 'Sent by supervisor',
-    labelEs: 'Enviado por el supervisor',
-    icon: 'send',
-    emoji: '📨',
-    token: 'enviado',
-  },
   in_progress: {
     label: 'In progress',
     labelEs: 'En atención',
@@ -75,7 +68,6 @@ export const STATUS_ORDER: readonly StatusCode[] = [
 export const STATUS_ACTION: Record<StatusCode, { button: string; done: string }> = {
   received: { button: 'Mark received', done: 'Marked received' },
   sent_to_agency: { button: 'Send to agency', done: 'Sent to agency' },
-  sent_by_supervisor: { button: 'Send to agency', done: 'Sent by supervisor' },
   in_progress: { button: 'Mark in progress', done: 'Marked in progress' },
   resolved: { button: 'Mark resolved', done: 'Marked resolved' },
   not_applicable: { button: 'Mark not applicable', done: 'Marked not applicable' },
@@ -128,7 +120,6 @@ export function allowedTransitions(status: StatusCode, isSupervisor: boolean): S
         ? ['sent_to_agency', 'not_applicable']
         : ['in_progress', 'not_applicable'];
     case 'sent_to_agency':
-    case 'sent_by_supervisor':
       return ['in_progress', 'not_applicable'];
     case 'in_progress':
       return ['resolved'];

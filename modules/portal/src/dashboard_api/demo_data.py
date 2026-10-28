@@ -162,6 +162,8 @@ def build(lat, lng, place_for, now=None):
         if dependency:
             item["routed_to"] = {"S": dependency}
             item["delivery_channel"] = {"S": "panel"}
+            if status != "received":
+                item["dependency_mail_sent_at"] = {"S": _iso(created + timedelta(minutes=count * 3 + 1))}
         if place.get("address"):
             item["address"] = {"S": place["address"]}
         if place.get("neighborhood"):

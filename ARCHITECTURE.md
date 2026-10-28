@@ -54,8 +54,8 @@ maps `OPEN` to `received` until both `routed_to` and `dependency_mail_sent_at`
 are present; only then does the read model become `sent_to_agency`. A supervisor
 fallback keeps `received` and the timeline text `Email sent to the supervisor`.
 A supervisor "Send to agency" click assigns the category's default agency when
-`routed_to` is empty; a stored `sent_to_agency` still without `routed_to` is
-shown as `sent_by_supervisor` (display only, never stored).
+`routed_to` is empty; a stored `sent_to_agency` missing `routed_to` or
+`dependency_mail_sent_at` reads as `received` (the item is not rewritten).
 `create_report` stores only the closed catalog `agua`, `bacheo`, `alumbrado`,
 `basura`, `drenaje`, `arbol`, `plagas`, `seguridad`, and `otro` (the explicit
 fallback). Any other code,

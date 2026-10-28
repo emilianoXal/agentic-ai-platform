@@ -9,8 +9,8 @@ neighbor, the same contract the compute notifier already consumes (RF-19).
 Legacy statuses written by the tool Lambdas (OPEN / ESCALATED / Spanish labels)
 are normalized on read to the six standard codes plus an escalated flag.
 OPEN and ESCALATED become sent_to_agency only when both dependency_mail_sent_at
-and routed_to are present. Either one alone keeps them received. A stored
-sent_to_agency without routed_to is shown as sent_by_supervisor (display only).
+and routed_to are present. Either one alone keeps them received, and a stored
+sent_to_agency missing either one also reads as received (the item is not rewritten).
 
 Authorization (server side, from Cognito claims):
   - group "agency": only incidents routed to its custom:agency_id.
@@ -239,8 +239,8 @@ def to_incident(item, neighbors=None, timeline=None):
     status, legacy_escalated = normalize_status(
         _s(item, "status"), bool(routed_to), mail_sent
     )
-    if status == "sent_to_agency" and not routed_to:
-        status = "sent_by_supervisor"
+    if status == "sent_to_agency" and not (mail_sent and routed_to):
+        status = "received"
     escalated = item.get("escalated", {}).get("BOOL", False) or legacy_escalated
     category = _s(item, "category", "otro")
     geohash = _s(item, "geohash", "")
@@ -391,7 +391,6 @@ def allowed_transitions(status, supervisor):
     table = {
         "received": ["sent_to_agency", "not_applicable"] if supervisor else ["in_progress", "not_applicable"],
         "sent_to_agency": ["in_progress", "not_applicable"],
-        "sent_by_supervisor": ["in_progress", "not_applicable"],
         "in_progress": ["resolved"],
         "reopened": ["in_progress"],
         "resolved": ["reopened"] if supervisor else [],

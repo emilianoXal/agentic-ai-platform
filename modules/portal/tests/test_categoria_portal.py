@@ -126,16 +126,24 @@ class PortalCategoriaTests(unittest.TestCase):
         self.assertNotEqual(shown["status"], "sent_to_agency")
 
 
-    def test_stored_sent_to_agency_without_dependency_shows_sent_by_supervisor(self):
-        stored = _open_item(status={"S": "sent_to_agency"}, category={"S": "otro"})
-        shown = portal.to_incident(stored)
-        self.assertEqual(shown["status"], "sent_by_supervisor")
-        self.assertIsNone(shown["agencyName"])
-        self.assertEqual(stored["status"]["S"], "sent_to_agency")
-        self.assertNotIn("sent_by_supervisor", portal.STATUS_CODES)
-
-        stored["routed_to"] = {"S": "Obras Publicas"}
-        self.assertEqual(portal.to_incident(stored)["status"], "sent_to_agency")
+    def test_stored_sent_to_agency_needs_mail_and_dependency_and_read_does_not_write(self):
+        mailed = {"S": "2026-10-28T00:01:00+00:00"}
+        routed = {"S": "Obras Publicas"}
+        cases = (
+            ({"dependency_mail_sent_at": mailed, "routed_to": routed}, "sent_to_agency"),
+            ({"routed_to": routed}, "received"),
+            ({"dependency_mail_sent_at": mailed}, "received"),
+            ({}, "received"),
+        )
+        for extra, expected in cases:
+            stored = _open_item(status={"S": "sent_to_agency"}, **extra)
+            ddb = FakeDynamo(stored)
+            with mock.patch.object(portal, "_ddb", ddb):
+                shown = portal._detail(portal._get_item("inc-1"))
+            self.assertEqual(shown["status"], expected, extra)
+            self.assertEqual(ddb.updates, [])
+            self.assertEqual(ddb.audit, [])
+            self.assertEqual(ddb.item["status"]["S"], "sent_to_agency")
 
     def test_supervisor_send_assigns_the_default_agency(self):
         for category, agency in (("bacheo", "Obras Publicas"), ("drenaje", "Organismo de Agua"),
@@ -143,22 +151,20 @@ class PortalCategoriaTests(unittest.TestCase):
             incident, ddb, events = _supervisor_sets(_open_item(category={"S": category}), "sent_to_agency")
             self.assertEqual(ddb.item["status"]["S"], "sent_to_agency")
             self.assertEqual(ddb.item["routed_to"]["S"], agency)
-            self.assertEqual(incident["status"], "sent_to_agency")
+            self.assertEqual(incident["status"], "received")
             self.assertEqual(incident["agencyName"], agency)
             detail = json.loads(events.entries[0]["Detail"])
             self.assertEqual(detail["authority"], agency)
 
-    def test_supervisor_send_without_agency_is_sent_by_supervisor(self):
+            ddb.item["dependency_mail_sent_at"] = {"S": "2026-10-28T00:05:00+00:00"}
+            self.assertEqual(portal.to_incident(ddb.item)["status"], "sent_to_agency")
+
+    def test_supervisor_send_without_agency_reads_received(self):
         incident, ddb, _ = _supervisor_sets(_open_item(category={"S": "otro"}), "sent_to_agency")
         self.assertEqual(ddb.item["status"]["S"], "sent_to_agency")
         self.assertNotIn("routed_to", ddb.item)
-        self.assertEqual(incident["status"], "sent_by_supervisor")
+        self.assertEqual(incident["status"], "received")
         self.assertIsNone(incident["agencyName"])
-
-        moved, ddb, _ = _supervisor_sets(ddb.item, "in_progress")
-        self.assertEqual(moved["status"], "in_progress")
-        with self.assertRaises(portal.DashboardError):
-            _supervisor_sets(_open_item(category={"S": "otro"}), "sent_by_supervisor")
 
     def test_existing_dependency_is_kept_on_supervisor_send(self):
         _, ddb, _ = _supervisor_sets(

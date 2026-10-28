@@ -52,6 +52,12 @@ data "archive_file" "register_place" {
   output_path = "${path.module}/build/register_place.zip"
 }
 
+data "archive_file" "delete_my_data" {
+  type        = "zip"
+  source_dir  = "${path.module}/src/delete_my_data"
+  output_path = "${path.module}/build/delete_my_data.zip"
+}
+
 data "archive_file" "route" {
   type        = "zip"
   source_dir  = "${path.module}/src/route"
@@ -106,6 +112,11 @@ resource "aws_cloudwatch_log_group" "get_status" {
 
 resource "aws_cloudwatch_log_group" "register_place" {
   name              = "/aws/lambda/${local.name_prefix}-register-place"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_cloudwatch_log_group" "delete_my_data" {
+  name              = "/aws/lambda/${local.name_prefix}-delete-my-data"
   retention_in_days = var.log_retention_days
 }
 
@@ -400,6 +411,82 @@ resource "aws_iam_role_policy_attachment" "register_place" {
   policy_arn = aws_iam_policy.register_place.arn
 }
 
+resource "aws_iam_role" "delete_my_data" {
+  name               = "${local.name_prefix}-delete-my-data-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+data "aws_iam_policy_document" "delete_my_data" {
+  statement {
+    sid    = "Logs"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = [
+      aws_cloudwatch_log_group.delete_my_data.arn,
+      "${aws_cloudwatch_log_group.delete_my_data.arn}:*",
+    ]
+  }
+
+  statement {
+    sid       = "UsersDelete"
+    effect    = "Allow"
+    actions   = ["dynamodb:DeleteItem"]
+    resources = [var.users_table_arn]
+  }
+
+  statement {
+    sid       = "PlacesReadDelete"
+    effect    = "Allow"
+    actions   = ["dynamodb:Query", "dynamodb:DeleteItem"]
+    resources = [var.places_table_arn]
+  }
+
+  statement {
+    sid     = "ReportsReadAnonymize"
+    effect  = "Allow"
+    actions = ["dynamodb:Query", "dynamodb:UpdateItem"]
+    resources = [
+      var.reports_table_arn,
+      local.reports_user_index_arn,
+    ]
+  }
+
+  statement {
+    sid       = "IncidentsUnsubscribe"
+    effect    = "Allow"
+    actions   = ["dynamodb:Scan", "dynamodb:UpdateItem"]
+    resources = [var.incidents_table_arn]
+  }
+
+  statement {
+    sid       = "AuditWrite"
+    effect    = "Allow"
+    actions   = ["dynamodb:PutItem"]
+    resources = [var.audit_log_table_arn]
+  }
+
+  statement {
+    sid       = "KmsDataKey"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = [var.kms_key_arn]
+  }
+}
+
+resource "aws_iam_policy" "delete_my_data" {
+  name   = "${local.name_prefix}-delete-my-data-policy"
+  policy = data.aws_iam_policy_document.delete_my_data.json
+}
+
+resource "aws_iam_role_policy_attachment" "delete_my_data" {
+  role       = aws_iam_role.delete_my_data.name
+  policy_arn = aws_iam_policy.delete_my_data.arn
+}
+
 # =============================================================================
 # route — role + policy + attachment.
 # incidents R/W + events:PutEvents on the bus + audit + kms + logs.
@@ -683,6 +770,7 @@ data "aws_iam_policy_document" "agent" {
       aws_lambda_function.register_place.arn,
       aws_lambda_function.route.arn,
       aws_lambda_function.escalate.arn,
+      aws_lambda_function.delete_my_data.arn,
     ]
   }
 
@@ -811,6 +899,34 @@ resource "aws_lambda_function" "register_place" {
   ]
 }
 
+resource "aws_lambda_function" "delete_my_data" {
+  function_name    = "${local.name_prefix}-delete-my-data"
+  role             = aws_iam_role.delete_my_data.arn
+  runtime          = "python3.12"
+  handler          = "handler.lambda_handler"
+  filename         = data.archive_file.delete_my_data.output_path
+  source_code_hash = data.archive_file.delete_my_data.output_base64sha256
+  timeout          = 30
+  memory_size      = 256
+
+  environment {
+    variables = {
+      USERS_TABLE        = var.users_table_name
+      PLACES_TABLE       = var.places_table_name
+      REPORTS_TABLE      = var.reports_table_name
+      REPORTS_USER_INDEX = "by-user"
+      INCIDENTS_TABLE    = var.incidents_table_name
+      AUDIT_TABLE        = var.audit_log_table_name
+      LOG_LEVEL          = var.log_level
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.delete_my_data,
+    aws_iam_role_policy_attachment.delete_my_data,
+  ]
+}
+
 resource "aws_lambda_function" "route" {
   function_name    = "${local.name_prefix}-route"
   role             = aws_iam_role.route.arn
@@ -911,6 +1027,7 @@ resource "aws_lambda_function" "agent" {
       TOOL_REGISTER_PLACE_FN  = aws_lambda_function.register_place.function_name
       TOOL_ROUTE_FN           = aws_lambda_function.route.function_name
       TOOL_ESCALATE_FN        = aws_lambda_function.escalate.function_name
+      TOOL_DELETE_MY_DATA_FN  = aws_lambda_function.delete_my_data.function_name
       AGENTCORE_MEMORY_ID     = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
       LOG_LEVEL               = var.log_level
       SIMULATE_WHATSAPP_REPLY = "1"

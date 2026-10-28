@@ -248,14 +248,18 @@ def create_report(category: str, geohash: str, description: str,
     })
     if result.get("ok"):
         _consume_pending_location()
-        if result.get("routed_to"):
-            return result
-        routed = route(
-            category=result.get("category") or category,
-            incident_id=result.get("incident_id"),
-        )
-        result = dict(result)
-        result["route"] = routed
+        result = _with_route(result, result.get("category") or category)
+    return result
+
+
+def _with_route(result, category):
+    """Attach the route reply; write the route only on a not-yet-routed incident."""
+    routed = route(
+        category=category,
+        incident_id=None if result.get("routed_to") else result.get("incident_id"),
+    )
+    result = dict(result)
+    result["route"] = routed
     return result
 
 
@@ -287,14 +291,8 @@ def join_incident(incident_id: str, report_id: str = None,
     })
     if result.get("ok") and not report_id:
         _consume_pending_location()
-        if (result.get("category") and result.get("incident_id")
-                and not result.get("routed_to")):
-            routed = route(
-                category=result["category"],
-                incident_id=result["incident_id"],
-            )
-            result = dict(result)
-            result["route"] = routed
+        if result.get("category") and result.get("incident_id"):
+            result = _with_route(result, result["category"])
     return result
 
 

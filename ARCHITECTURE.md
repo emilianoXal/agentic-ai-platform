@@ -72,7 +72,8 @@ fallback). Any other code,
 including ones the model invents, is rejected with `unknown_category` and is
 not written, so the model chooses again from `allowed`. The agent wrapper calls
 `route` after a successful create or a create-and-join, with the incident's
-stored category, and only when the incident has no `routed_to` yet. `otro` resolves to
+stored category; it passes the incident id (writing `routed_to`) only when the
+incident has no `routed_to` yet, so an attach still gets the route reply. `otro` resolves to
 `Supervisor municipal` and the mailer sends that notice to the supervisor
 fallback. `route` returns `has_mailbox` (category in `dependency_email_map`)
 and a `reply_instruction`: without a mailbox the bot says the notice went to the

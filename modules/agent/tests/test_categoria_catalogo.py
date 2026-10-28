@@ -275,9 +275,10 @@ class CatalogTests(unittest.TestCase):
         for category in ("basura", "otro"):
             joined = agent.join_incident(incident_id="inc-1", category=category, geohash=GEOHASH)
             self.assertTrue(joined["ok"])
-            self.assertNotIn("route", joined)
             self.assertEqual(joined["routed_to"], "Obras Publicas")
-        self.assertNotIn("route", self.calls)
+            self.assertFalse(joined["route"]["routed"])
+            self.assertTrue(joined["route"]["has_mailbox"])
+            self.assertIn("Obras Publicas", joined["route"]["reply_instruction"])
         self.assertEqual(self.events.entries, [])
         incident = self._stored()
         self.assertEqual(incident["category"]["S"], "bacheo")
@@ -292,11 +293,30 @@ class CatalogTests(unittest.TestCase):
         self.assertTrue(attached["ok"])
         self.assertTrue(attached["attached"])
         self.assertEqual(attached["incident_id"], "inc-1")
-        self.assertEqual(self.calls, ["create-report"])
+        self.assertFalse(attached["route"]["routed"])
+        self.assertTrue(attached["route"]["has_mailbox"])
+        self.assertIn("Obras Publicas", attached["route"]["reply_instruction"])
         self.assertEqual(self.events.entries, [])
         incident = self._stored()
         self.assertEqual(incident["routed_to"]["S"], "Obras Publicas")
         self.assertEqual(incident["routed_at"]["S"], "2026-10-28T01:00:00+00:00")
+
+    def test_second_neighbor_on_a_routed_seguridad_incident_hears_supervisor(self):
+        self._incident(category="seguridad", routed_to="Seguridad Ciudadana",
+                       routed_at="2026-10-28T01:00:00+00:00")
+        attached = agent.create_report(
+            category="seguridad", geohash=GEOHASH,
+            description="Parked patrol car blocking the lane at the corner",
+        )
+        self.assertTrue(attached["attached"])
+        joined = agent.join_incident(incident_id="inc-1", category="seguridad", geohash=GEOHASH)
+        for result in (attached, joined):
+            self.assertEqual(result["routed_to"], "Seguridad Ciudadana")
+            self.assertFalse(result["route"]["routed"])
+            self.assertFalse(result["route"]["has_mailbox"])
+            self.assertIn("municipal supervisor", result["route"]["reply_instruction"])
+        self.assertEqual(self.events.entries, [])
+        self.assertEqual(self._stored()["routed_at"]["S"], "2026-10-28T01:00:00+00:00")
 
     def test_attach_onto_an_unrouted_incident_routes_it(self):
         self._incident()

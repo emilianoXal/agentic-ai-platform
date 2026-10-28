@@ -87,12 +87,22 @@ def _phone_number_id(value):
     return str(value)
 
 
-# NOTE on Mexican numbers (521 vs 52): WhatsApp delivers the Mexican sender as a
-# 13-digit wa_id starting 521... When REPLYING we must send to that exact wa_id,
-# so this path intentionally does NOT rewrite 521->52 — doing so caused
-# "Invalid destination phone number". A 521->52 normalization is only correct
-# when INITIATING a conversation to a dialed/stored number (not this reply path),
-# so no normalization helper is applied here.
+def _to_e164(to):
+    """Ensure the recipient is E.164 (leading '+'); otherwise send it verbatim.
+
+    Confirmed empirically against the live EUM backend (number-format probe):
+    send_whatsapp_message ACCEPTS and DELIVERS "+52..." and "+521..." but REJECTS
+    the same digits WITHOUT the "+" ("Invalid destination phone number"). So the
+    only transform needed is to prepend "+" when it is missing. We do NOT rewrite
+    521->52: WhatsApp hands us the Mexican sender as a 13-digit wa_id (521...) and
+    "+521..." delivers fine, so prepending "+" to the wa_id as-received is the
+    least-invasive correct form. (The 521->52 rewrite is only for INITIATING to a
+    dialed number, which this reply path never does.)
+    """
+    s = str(to).strip()
+    if not s:
+        return s
+    return s if s.startswith("+") else "+" + s
 
 
 def lambda_handler(event, context):
@@ -118,12 +128,11 @@ def lambda_handler(event, context):
         return {"ok": False, "error": "invalid_input"}
 
     # Do NOT normalize the recipient for REPLIES. WhatsApp hands us the Mexican
-    # sender as a 13-digit wa_id starting 521...; to reply we must use that same
-    # wa_id verbatim. Rewriting 521->52 produced "Invalid destination phone
-    # number" because 52... is not the wa_id WhatsApp knows this user by. The
-    # 521->52 normalization only applies when INITIATING to a dialed number
-    # (e.g. from a form/CRM), which this reply path never does.
-    to = to.strip()
+    # sender as a 13-digit wa_id starting 521...; to reply we send to that same
+    # wa_id, only ensuring the leading "+" (E.164). The number-format probe
+    # confirmed "+521..." delivers while "521..." (no "+") is rejected. We do
+    # NOT rewrite 521->52 (that is only for INITIATING to a dialed number).
+    to = _to_e164(to)
     text = text.strip()
 
     wa_obj = {

@@ -67,8 +67,8 @@ class OutboundHandlerTests(unittest.TestCase):
         self.assertEqual(kwargs["metaApiVersion"], "v20.0")
         expected_obj = {
             "messaging_product": "whatsapp",
-            # The recipient wa_id is sent verbatim (no 521->52 rewrite).
-            "to": RECIPIENT,
+            # The recipient wa_id gets a leading "+" (E.164); no 521->52 rewrite.
+            "to": "+" + RECIPIENT,
             "type": "text",
             "text": {"body": TEXT_HOLA},
         }
@@ -88,9 +88,10 @@ class OutboundHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._phone_number_id(""))
         self.assertIsNone(handler._phone_number_id(None))
 
-    def test_recipient_sent_verbatim(self):
-        # A Mexican 521... wa_id must be sent back UNCHANGED (it's the wa_id
-        # WhatsApp knows the user by); rewriting it to 52... fails delivery.
+    def test_recipient_gets_plus_no_521_rewrite(self):
+        # The 521... wa_id keeps its 521 (no 52 rewrite) and gains a leading
+        # "+". The number-format probe confirmed "+521..." delivers while
+        # "521..." (no "+") is rejected by EUM.
         event = {
             "to": RECIPIENT,
             "text": TEXT_HOLA,
@@ -99,7 +100,13 @@ class OutboundHandlerTests(unittest.TestCase):
         handler.lambda_handler(event, None)
         kwargs = handler._social.send_whatsapp_message.call_args.kwargs
         sent = json.loads(kwargs["message"])
-        self.assertEqual(sent["to"], RECIPIENT)
+        self.assertEqual(sent["to"], "+" + RECIPIENT)
+
+    def test_to_e164(self):
+        # Prepends "+" when missing; leaves an already-"+" number alone.
+        self.assertEqual(handler._to_e164("5215512345678"), "+5215512345678")
+        self.assertEqual(handler._to_e164("+5215512345678"), "+5215512345678")
+        self.assertEqual(handler._to_e164("  5215512345678  "), "+5215512345678")
 
     def test_missing_to_is_invalid_input(self):
         event = {"text": TEXT_HOLA, "origination_phone_number_id": PHONE_ARN}

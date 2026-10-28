@@ -680,7 +680,7 @@ def lambda_handler(event, context):
 
         if (CONVERSATION_HISTORY_TABLE and not consent_pending
                 and not _is_deletion_confirmation(text)):
-            _save_history(user_id, text, reply)
+            _save_history(user_id, prompt, reply)
 
         _log(logging.INFO, "agent_done", user_hash=_hash_id(user_id),
              reply_len=len(reply))

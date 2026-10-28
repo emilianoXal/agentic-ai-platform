@@ -53,11 +53,16 @@ after SES are logged (`dependency_mail_mark_failed`), not retried. The portal
 maps `OPEN` to `received` until both `routed_to` and `dependency_mail_sent_at`
 are present; only then does the read model become `sent_to_agency`. A supervisor
 fallback keeps `received` and the timeline text `Email sent to the supervisor`.
+A supervisor "Send to agency" click assigns the category's default agency when
+`routed_to` is empty; a stored `sent_to_agency` still without `routed_to` is
+shown as `sent_by_supervisor` (display only, never stored).
 `create_report` stores only the closed catalog `agua`, `bacheo`, `alumbrado`,
-`basura`, `seguridad`, and `otro` (the explicit fallback). Any other code,
+`basura`, `drenaje`, `arbol`, `plagas`, `seguridad`, and `otro` (the explicit
+fallback). Any other code,
 including ones the model invents, is rejected with `unknown_category` and is
 not written, so the model chooses again from `allowed`. The agent wrapper calls
-`route` after a successful create or a create-and-join. `otro` resolves to
+`route` after a successful create or a create-and-join, with the incident's
+stored category, and only when the incident has no `routed_to` yet. `otro` resolves to
 `Supervisor municipal` and the mailer sends that notice to the supervisor
 fallback. The short live matrix is the `category_probe` cases inside the manual
 GitLab `agent:conversations` job; its markdown counts the category the model

@@ -9,7 +9,8 @@ neighbor, the same contract the compute notifier already consumes (RF-19).
 Legacy statuses written by the tool Lambdas (OPEN / ESCALATED / Spanish labels)
 are normalized on read to the six standard codes plus an escalated flag.
 OPEN and ESCALATED become sent_to_agency only when both dependency_mail_sent_at
-and routed_to are present. Either one alone keeps them received.
+and routed_to are present. Either one alone keeps them received. A stored
+sent_to_agency without routed_to is shown as sent_by_supervisor (display only).
 
 Authorization (server side, from Cognito claims):
   - group "agency": only incidents routed to its custom:agency_id.
@@ -97,6 +98,9 @@ _DEFAULT_DEPENDENCIES = {
     "basura": "Limpia Publica",
     "agua": "Organismo de Agua",
     "seguridad": "Seguridad Ciudadana",
+    "drenaje": "Organismo de Agua",
+    "arbol": "Servicios Publicos",
+    "plagas": "Servicios Publicos",
 }
 
 SUPERVISOR_GROUPS = {"official", "admin"}
@@ -235,6 +239,8 @@ def to_incident(item, neighbors=None, timeline=None):
     status, legacy_escalated = normalize_status(
         _s(item, "status"), bool(routed_to), mail_sent
     )
+    if status == "sent_to_agency" and not routed_to:
+        status = "sent_by_supervisor"
     escalated = item.get("escalated", {}).get("BOOL", False) or legacy_escalated
     category = _s(item, "category", "otro")
     geohash = _s(item, "geohash", "")
@@ -385,6 +391,7 @@ def allowed_transitions(status, supervisor):
     table = {
         "received": ["sent_to_agency", "not_applicable"] if supervisor else ["in_progress", "not_applicable"],
         "sent_to_agency": ["in_progress", "not_applicable"],
+        "sent_by_supervisor": ["in_progress", "not_applicable"],
         "in_progress": ["resolved"],
         "reopened": ["in_progress"],
         "resolved": ["reopened"] if supervisor else [],
@@ -445,6 +452,12 @@ def update_status(event, caller):
     values = {":s": {"S": target}, ":u": {"S": now.isoformat()}, ":by": {"S": caller["name"]},
               ":previous": item["status"]}
     expression = "SET #s = :s, updated_at = :u, last_status_by = :by"
+    routed_to = _s(item, "routed_to")
+    if target == "sent_to_agency" and not routed_to:
+        routed_to = _DEFAULT_DEPENDENCIES.get(_s(item, "category"))
+        if routed_to:
+            expression += ", routed_to = :rt"
+            values[":rt"] = {"S": routed_to}
     if target == "resolved":
         due = now + timedelta(minutes=FOLLOW_UP_DELAY_MINUTES)
         due_at = due.isoformat()
@@ -507,7 +520,7 @@ def update_status(event, caller):
         "status": target,
         "status_label": STATUS_LABEL_ES[target],
         "previous_status": current,
-        "authority": _s(item, "routed_to"),
+        "authority": routed_to,
         "reason": reason or None,
         "user_ids": recipients,
         "source": "dashboard",

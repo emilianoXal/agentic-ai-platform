@@ -4,6 +4,7 @@ Run: python3 -m pytest -q modules/portal/tests/test_categoria_portal.py
 """
 
 import importlib.util
+import json
 import os
 import sys
 import unittest
@@ -39,6 +40,48 @@ def _load():
 
 
 portal = _load()
+
+
+class FakeDynamo:
+    def __init__(self, item):
+        self.item = item
+        self.updates = []
+        self.audit = []
+
+    def get_item(self, TableName, Key):
+        return {"Item": dict(self.item)}
+
+    def update_item(self, TableName, Key, UpdateExpression, ExpressionAttributeValues,
+                    ExpressionAttributeNames=None, ConditionExpression=None):
+        self.updates.append(UpdateExpression)
+        names = ExpressionAttributeNames or {}
+        for assignment in UpdateExpression.split(" REMOVE ")[0].replace("SET ", "").split(", "):
+            attr, value = [part.strip() for part in assignment.split("=")]
+            self.item[names.get(attr, attr)] = ExpressionAttributeValues[value]
+
+    def put_item(self, TableName, Item):
+        self.audit.append(Item)
+
+    def query(self, **_):
+        return {"Items": []}
+
+
+class FakeEvents:
+    def __init__(self):
+        self.entries = []
+
+    def put_events(self, Entries):
+        self.entries.extend(Entries)
+
+
+def _supervisor_sets(item, status):
+    ddb, events = FakeDynamo(item), FakeEvents()
+    with mock.patch.object(portal, "_ddb", ddb), mock.patch.object(portal, "_events", events):
+        result = portal.update_status(
+            {"arguments": {"id": "inc-1", "status": status}},
+            {"name": "Supervisor", "groups": {"official"}, "agency_id": None},
+        )
+    return result["incident"], ddb, events
 
 
 def _open_item(**extra):
@@ -81,6 +124,48 @@ class PortalCategoriaTests(unittest.TestCase):
         self.assertEqual(line["text"], "Email sent to the supervisor")
         self.assertIsNone(line["status"])
         self.assertNotEqual(shown["status"], "sent_to_agency")
+
+
+    def test_stored_sent_to_agency_without_dependency_shows_sent_by_supervisor(self):
+        stored = _open_item(status={"S": "sent_to_agency"}, category={"S": "otro"})
+        shown = portal.to_incident(stored)
+        self.assertEqual(shown["status"], "sent_by_supervisor")
+        self.assertIsNone(shown["agencyName"])
+        self.assertEqual(stored["status"]["S"], "sent_to_agency")
+        self.assertNotIn("sent_by_supervisor", portal.STATUS_CODES)
+
+        stored["routed_to"] = {"S": "Obras Publicas"}
+        self.assertEqual(portal.to_incident(stored)["status"], "sent_to_agency")
+
+    def test_supervisor_send_assigns_the_default_agency(self):
+        for category, agency in (("bacheo", "Obras Publicas"), ("drenaje", "Organismo de Agua"),
+                                 ("arbol", "Servicios Publicos"), ("plagas", "Servicios Publicos")):
+            incident, ddb, events = _supervisor_sets(_open_item(category={"S": category}), "sent_to_agency")
+            self.assertEqual(ddb.item["status"]["S"], "sent_to_agency")
+            self.assertEqual(ddb.item["routed_to"]["S"], agency)
+            self.assertEqual(incident["status"], "sent_to_agency")
+            self.assertEqual(incident["agencyName"], agency)
+            detail = json.loads(events.entries[0]["Detail"])
+            self.assertEqual(detail["authority"], agency)
+
+    def test_supervisor_send_without_agency_is_sent_by_supervisor(self):
+        incident, ddb, _ = _supervisor_sets(_open_item(category={"S": "otro"}), "sent_to_agency")
+        self.assertEqual(ddb.item["status"]["S"], "sent_to_agency")
+        self.assertNotIn("routed_to", ddb.item)
+        self.assertEqual(incident["status"], "sent_by_supervisor")
+        self.assertIsNone(incident["agencyName"])
+
+        moved, ddb, _ = _supervisor_sets(ddb.item, "in_progress")
+        self.assertEqual(moved["status"], "in_progress")
+        with self.assertRaises(portal.DashboardError):
+            _supervisor_sets(_open_item(category={"S": "otro"}), "sent_by_supervisor")
+
+    def test_existing_dependency_is_kept_on_supervisor_send(self):
+        _, ddb, _ = _supervisor_sets(
+            _open_item(routed_to={"S": "Limpia Publica"}), "sent_to_agency"
+        )
+        self.assertEqual(ddb.item["routed_to"]["S"], "Limpia Publica")
+        self.assertNotIn("routed_to", ddb.updates[0])
 
 
 if __name__ == "__main__":

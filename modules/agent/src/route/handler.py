@@ -45,6 +45,9 @@ _DEFAULT_RULES = {
     "basura": {"dependency": "Limpia Publica", "channel": "panel"},
     "agua": {"dependency": "Organismo de Agua", "channel": "api"},
     "seguridad": {"dependency": "Seguridad Ciudadana", "channel": "email"},
+    "drenaje": {"dependency": "Organismo de Agua", "channel": "api"},
+    "arbol": {"dependency": "Servicios Publicos", "channel": "panel"},
+    "plagas": {"dependency": "Servicios Publicos", "channel": "panel"},
     # No agency mailbox: the mailer sends this one to the supervisor fallback.
     "otro": {"dependency": "Supervisor municipal", "channel": "email"},
 }

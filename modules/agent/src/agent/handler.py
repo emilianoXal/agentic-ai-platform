@@ -223,7 +223,8 @@ def create_report(category: str, geohash: str, description: str,
     lat/lng at precision 7 before calling this tool.
 
     Args:
-        category: One of agua, bacheo, alumbrado, basura, seguridad, otro.
+        category: One of agua, bacheo, alumbrado, basura, drenaje, arbol,
+            plagas, seguridad, otro.
         geohash: Precision-7 geohash cell computed from lat/lng.
         description: Report description (required).
         lat: Optional latitude (stored on the report).
@@ -247,6 +248,8 @@ def create_report(category: str, geohash: str, description: str,
     })
     if result.get("ok"):
         _consume_pending_location()
+        if result.get("routed_to"):
+            return result
         routed = route(
             category=result.get("category") or category,
             incident_id=result.get("incident_id"),
@@ -284,7 +287,8 @@ def join_incident(incident_id: str, report_id: str = None,
     })
     if result.get("ok") and not report_id:
         _consume_pending_location()
-        if result.get("category") and result.get("incident_id"):
+        if (result.get("category") and result.get("incident_id")
+                and not result.get("routed_to")):
             routed = route(
                 category=result["category"],
                 incident_id=result["incident_id"],
@@ -468,7 +472,7 @@ _SYSTEM_PROMPT = (
     "includes a recently shared location, decide whether it belongs to this "
     "report; if it is missing or does not apply, ask for it and do not invent "
     "a cell. Set category to exactly one of agua, bacheo, alumbrado, basura, "
-    "seguridad, or otro, choosing from the description; use otro when none of "
+    "drenaje, arbol, plagas, seguridad, or otro, choosing from the description; use otro when none of "
     "the others fit. Never invent a category. If create_report returns "
     "unknown_category, call it again with one value from allowed. A successful "
     "create_report routes the incident; name the route authority in your reply, "

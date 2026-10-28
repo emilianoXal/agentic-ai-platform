@@ -206,7 +206,9 @@ CASES = [
     },
 ]
 
-CATEGORY_CATALOG = ("agua", "alumbrado", "bacheo", "basura", "otro", "seguridad")
+CATEGORY_CATALOG = (
+    "agua", "alumbrado", "arbol", "bacheo", "basura", "drenaje", "otro", "plagas", "seguridad",
+)
 
 CATEGORY_PROBES = (
     ("bache", "There is a deep pothole taking the lane at 20.588793, -100.389888."),

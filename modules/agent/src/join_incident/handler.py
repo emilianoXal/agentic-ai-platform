@@ -40,9 +40,12 @@ logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 _CATALOG = frozenset({
     "agua",
     "alumbrado",
+    "arbol",
     "bacheo",
     "basura",
+    "drenaje",
     "otro",
+    "plagas",
     "seguridad",
 })
 
@@ -268,7 +271,8 @@ def lambda_handler(event, context):
             "priority": priority,
         }
         if created:
-            result["category"] = category
+            result["category"] = attrs.get("category", {}).get("S") or category
+            result["routed_to"] = attrs.get("routed_to", {}).get("S")
         return result
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":

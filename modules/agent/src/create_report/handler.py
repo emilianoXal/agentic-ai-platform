@@ -43,9 +43,12 @@ logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 _CATALOG = frozenset({
     "agua",
     "alumbrado",
+    "arbol",
     "bacheo",
     "basura",
+    "drenaje",
     "otro",
+    "plagas",
     "seguridad",
 })
 
@@ -281,11 +284,13 @@ def lambda_handler(event, context):
 
         existing = _find_open_incident(geohash, category)
         photo_count = len(media)
+        routed_to = None
         if existing:
             incident_id = existing["incident_id"]["S"]
             created_at = existing.get("created_at", {}).get("S") or now
             report_count = _attach_report(incident_id, report_id, photo_count)
             attached = True
+            routed_to = existing.get("routed_to", {}).get("S")
         else:
             incident_id = _create_incident(geohash, category, report_id, photo_count)
             created_at = now
@@ -327,6 +332,7 @@ def lambda_handler(event, context):
             "category": category,
             "attached": attached,
             "report_count": report_count,
+            "routed_to": routed_to,
         }
     except ClientError:
         logger.exception(json.dumps({"event": "create_report_failed",

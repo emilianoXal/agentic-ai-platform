@@ -147,7 +147,7 @@ class CatalogTests(unittest.TestCase):
         }
 
     def test_unknown_category_is_rejected_and_stores_nothing(self):
-        for category in ("obstruction", "drenaje", "BACHE"):
+        for category in ("obstruction", "trash", "BACHE"):
             result = create_report.lambda_handler(self._report(category), None)
             self.assertFalse(result["ok"])
             self.assertEqual(result["error"], "unknown_category")
@@ -190,6 +190,9 @@ class CatalogTests(unittest.TestCase):
             authorities[category] = result["authority"]
         self.assertEqual(authorities["otro"], "Supervisor municipal")
         self.assertEqual(authorities["agua"], "Organismo de Agua")
+        self.assertEqual(authorities["drenaje"], "Organismo de Agua")
+        self.assertEqual(authorities["arbol"], "Servicios Publicos")
+        self.assertEqual(authorities["plagas"], "Servicios Publicos")
         refused = route.lambda_handler({"category": "obstruction"}, None)
         self.assertEqual(refused["error"], "no_route")
 
@@ -215,25 +218,72 @@ class CatalogTests(unittest.TestCase):
         )["Item"]
         self.assertEqual(incident["routed_to"]["S"], "Obras Publicas")
 
-    def test_wrapper_routes_a_joined_catalog_report(self):
-        self.ddb.put_item(TableName="incidents", Item={
-            "incident_id": {"S": "inc-1"},
+    def _incident(self, incident_id="inc-1", **extra):
+        item = {
+            "incident_id": {"S": incident_id},
             "status": {"S": "OPEN"},
             "category": {"S": "bacheo"},
             "geohash": {"S": GEOHASH},
-            "updated_at": {"S": "2026-10-28T00:00:00+00:00"},
+            "updated_at": {"S": "2999-01-01T00:00:00+00:00"},
             "report_count": {"N": "1"},
-        })
-        joined = agent.join_incident(incident_id="inc-1", category="Bacheo", geohash=GEOHASH)
+        }
+        item.update({key: {"S": value} for key, value in extra.items()})
+        self.ddb.put_item(TableName="incidents", Item=item)
+
+    def _stored(self, incident_id="inc-1"):
+        return self.ddb.get_item(
+            TableName="incidents",
+            Key={"incident_id": {"S": incident_id}},
+            ConsistentRead=True,
+        )["Item"]
+
+    def test_wrapper_routes_a_joined_report_with_the_incident_category(self):
+        self._incident()
+        joined = agent.join_incident(incident_id="inc-1", category="Basura", geohash=GEOHASH)
         self.assertTrue(joined["ok"])
         self.assertEqual(joined["category"], "bacheo")
         self.assertEqual(joined["route"]["authority"], "Obras Publicas")
-        incident = self.ddb.get_item(
-            TableName="incidents",
-            Key={"incident_id": {"S": "inc-1"}},
-            ConsistentRead=True,
-        )["Item"]
+        incident = self._stored()
+        self.assertEqual(incident["category"]["S"], "bacheo")
         self.assertEqual(incident["routed_to"]["S"], "Obras Publicas")
+
+    def test_join_onto_a_routed_incident_keeps_its_route(self):
+        self._incident(routed_to="Obras Publicas", routed_at="2026-10-28T01:00:00+00:00")
+        for category in ("basura", "otro"):
+            joined = agent.join_incident(incident_id="inc-1", category=category, geohash=GEOHASH)
+            self.assertTrue(joined["ok"])
+            self.assertNotIn("route", joined)
+            self.assertEqual(joined["routed_to"], "Obras Publicas")
+        self.assertNotIn("route", self.calls)
+        self.assertEqual(self.events.entries, [])
+        incident = self._stored()
+        self.assertEqual(incident["category"]["S"], "bacheo")
+        self.assertEqual(incident["routed_to"]["S"], "Obras Publicas")
+        self.assertEqual(incident["routed_at"]["S"], "2026-10-28T01:00:00+00:00")
+
+    def test_attach_onto_a_routed_incident_does_not_reroute(self):
+        self._incident(routed_to="Obras Publicas", routed_at="2026-10-28T01:00:00+00:00")
+        attached = agent.create_report(
+            category="bacheo", geohash=GEOHASH, description="same pothole",
+        )
+        self.assertTrue(attached["ok"])
+        self.assertTrue(attached["attached"])
+        self.assertEqual(attached["incident_id"], "inc-1")
+        self.assertEqual(self.calls, ["create-report"])
+        self.assertEqual(self.events.entries, [])
+        incident = self._stored()
+        self.assertEqual(incident["routed_to"]["S"], "Obras Publicas")
+        self.assertEqual(incident["routed_at"]["S"], "2026-10-28T01:00:00+00:00")
+
+    def test_attach_onto_an_unrouted_incident_routes_it(self):
+        self._incident()
+        attached = agent.create_report(
+            category="bacheo", geohash=GEOHASH, description="same pothole",
+        )
+        self.assertTrue(attached["attached"])
+        self.assertEqual(self.calls, ["create-report", "route"])
+        self.assertEqual(attached["route"]["authority"], "Obras Publicas")
+        self.assertEqual(self._stored()["routed_to"]["S"], "Obras Publicas")
 
 
 class MatrixCatalogTests(unittest.TestCase):

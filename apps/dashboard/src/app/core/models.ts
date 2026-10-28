@@ -1,7 +1,8 @@
-/** The six standard incident statuses (RF-17). Escalation is a separate flag. */
+/** The six standard incident statuses (RF-17) plus the read-only sent_by_supervisor display code. Escalation is a separate flag. */
 export type StatusCode =
   | 'received'
   | 'sent_to_agency'
+  | 'sent_by_supervisor'
   | 'in_progress'
   | 'resolved'
   | 'not_applicable'

@@ -87,8 +87,8 @@ neighbors about issues near their registered places.
 - **AWS account:** `636487155766` (aws-xaldigital-hackathon-agentic)
 - **Region:** `us-east-1` (required — AgentCore and Rekognition are not in
   mx-central-1)
-- **IaC:** Terraform 1.11, providers `aws ~> 5.0`, `archive ~> 2.0`,
-  `awscc ~> 1.0`
+- **IaC:** Terraform 1.11, providers `aws ~> 5.0` (`~> 5.90` in
+  `modules/agent`), `archive ~> 2.0`, `awscc ~> 1.0`
 - **Architecture:** Proposal 1 — event-driven serverless + Amazon Bedrock
   AgentCore
 

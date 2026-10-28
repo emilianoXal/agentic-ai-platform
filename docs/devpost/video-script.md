@@ -15,4 +15,4 @@
 
 - Use only synthetic reports, locations, names, and media.
 - The outgoing WhatsApp response is **pending recording**: the committed runtime code does not yet call `SendWhatsAppMessage`. Show the generated/returned agent reply only if it is clearly labeled “pending outbound handoff”; do not portray it as delivered.
-- AgentCore Gateway and Memory are disabled in dev. Do not show them as active services.
+- AgentCore Gateway is disabled in dev. Do not show it as an active service. AgentCore Memory is enabled in dev (see `ARCHITECTURE.md`).

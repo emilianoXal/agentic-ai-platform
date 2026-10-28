@@ -69,7 +69,7 @@ variable "enable_agentcore_gateway" {
 }
 
 variable "enable_agentcore_memory" {
-  description = "Create the AgentCore Memory (awscc). Default false."
+  description = "Create the AgentCore Memory (awscc) and its HMAC identity secret, and persist consenting citizens' conversations from the agent Lambda. Default false."
   type        = bool
   default     = false
 }

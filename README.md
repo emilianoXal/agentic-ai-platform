@@ -1,93 +1,89 @@
-# agentic-ai-platform
+# agentic-ai-platform — urbanbot infrastructure
 
+Infrastructure as Code (Terraform) for **urbanbot**, a WhatsApp citizen bot for
+urban infrastructure reporting. Built for the AWS CDS Agentic AI Hackathon.
 
+Citizens report urban issues (potholes, leaks, lighting, trash, etc.) over
+WhatsApp with photos, location and description; the bot clusters nearby reports
+into incidents, tracks status proactively, escalates stale cases, and notifies
+neighbors about issues near their registered places.
 
-## Getting started
+- **AWS account:** `636487155766` (aws-xaldigital-hackathon-agentic)
+- **Region:** `us-east-1` (required — AgentCore and Rekognition are not in
+  mx-central-1)
+- **IaC:** Terraform 1.10, providers `aws ~> 5.0`, `archive ~> 2.0`,
+  `awscc ~> 1.0`
+- **Architecture:** Proposal 1 — event-driven serverless + Amazon Bedrock
+  AgentCore
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+> New to the repo? Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for conventions and
+> how to add a module. If you use the Kiro IDE, the `.kiro/steering/` files load
+> this context automatically.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## Repository layout
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.xalcloud.com/hackaton-aws-cds-agentic-ai/agentic-ai-platform.git
-git branch -M main
-git push -uf origin main
+envs/<env>/        # dev | qa | prod — each is an isolated Terraform root (own state)
+modules/data/      # [done] KMS CMK, S3 media, 5 DynamoDB tables, SNS, SQS FIFO, EventBridge
+modules/compute/   # [done] ingest + notifier Lambdas (ingestion glue)
+modules/agent/     # [done] 6 tool Lambdas, SQS consumer, ECR, Guardrails, AgentCore (awscc)
+modules/media/     # [todo] Rekognition blur + Transcribe + Nova multimodal
+modules/portal/    # [todo] Amplify + Cognito + AppSync + WAF
+.kiro/steering/    # IA context (product, structure, tech, terraform conventions)
 ```
 
-## Integrate with your tools
+Each `envs/<env>` configures the AWS + awscc providers (region + `default_tags`)
+and wires the shared modules. Modules never reach into each other — the
+environment passes one module's outputs as explicit inputs to the next. State
+lives in a single S3 bucket with native locking (`use_lockfile`, no DynamoDB
+table); the state key is isolated per environment
+(`urbanbot/<env>/terraform.tfstate`).
 
-* [Set up project integrations](https://gitlab.xalcloud.com/hackaton-aws-cds-agentic-ai/agentic-ai-platform/-/settings/integrations)
+## What exists today
 
-## Collaborate with your team
+| Module    | Status | Summary |
+|-----------|--------|---------|
+| `data`    | done   | CMK, S3 media (SSE-KMS + retention), DynamoDB (reports/incidents/places/users/audit-log) with streams + GSIs, SNS inbound, SQS FIFO + DLQ, EventBridge bus |
+| `compute` | done   | `ingest` (SNS→deterministic guards→SQS FIFO) and `notifier` (EventBridge→WhatsApp stub) Lambdas, least-privilege IAM |
+| `agent`   | done   | `create_report` / `join_incident` / `get_status` / `register_place` / `route` / `escalate` tool Lambdas, SQS `consumer`, ECR, Bedrock Guardrails, AgentCore runtime/gateway/memory (flag-gated, default off) |
+| `media`   | todo   | `GetWhatsAppMessageMedia` → S3 → Step Functions → Rekognition (face/plate blur) + Transcribe + Nova |
+| `portal`  | todo   | Official dashboard: Amplify (React + map), Cognito, AppSync, WAF |
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for carried-forward TODOs.
 
-## Test and Deploy
+## CI / authentication
 
-Use the built-in continuous integration in GitLab.
+The GitLab pipeline (`.gitlab-ci.yml`) authenticates to AWS via OIDC
+(`id_tokens` → `sts assume-role-with-web-identity`) — no long-lived credentials.
+Stages: `tf_validate` → `tf_plan` → `tf_apply` (manual) plus manual
+`tf_destroy` / `tf_untaint`.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+Required CI/CD **project variables** (Settings → CI/CD → Variables):
 
-***
+- `AWS_ROLE_ARN` — OIDC deploy role in account `636487155766`.
+- `TF_STATE_BUCKET` — existing S3 state bucket (versioning ON); injected at
+  `terraform init` via `-backend-config="bucket=${TF_STATE_BUCKET}"`.
 
-# Editing this README
+Optional overrides: `TF_ENV` (dev|qa|prod), `TF_TARGET`, `TF_DESTROY`,
+`TF_UNTAINT_TARGET`.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+Pushing to a `feat/*` / `fix/*` / `hotfix/*` / `release/*` branch runs
+validate + plan automatically and exposes `apply` as a manual job.
 
-## Suggestions for a good README
+## Local verification (no AWS credentials needed)
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+```bash
+terraform fmt -check -recursive          # from repo root
+cd envs/dev
+terraform init -backend=false            # downloads providers, no remote backend
+terraform validate
+```
 
-## Name
-Choose a self-explaining name for your project.
+Do not run `terraform plan` / `apply` locally — those need account credentials
+and the remote backend, which the pipeline provides via OIDC.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+## Model classification accuracy
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Category/severity classification accuracy must be measured on the synthetic test
+set and reported here honestly (RNF-22, no inflated numbers) once the media
+module lands.

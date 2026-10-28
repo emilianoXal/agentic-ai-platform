@@ -62,11 +62,13 @@ Antes de `apply`, ejecutar `python3 -m pytest -q modules/agent/tests -k delete`.
 La prueba usa DynamoDB simulado y comprueba confirmación obligatoria, que el
 sujeto es siempre el remitente del evento, que sin `AGENTCORE_MEMORY_ID` no se
 borra nada, eliminación de usuario y lugares, baja de `incidents.subscribers`,
-anonimización de reportes, conservación del conteo del incidente e idempotencia.
-El borrado en dev requiere AgentCore Memory habilitada (otro MR); sin ella la
+anonimización de reportes, conservación del conteo del incidente e idempotencia,
+además del borrado de AgentCore Memory y su fallo seguro (`memory_erasure_failed`).
+El borrado requiere AgentCore Memory habilitada (lo está en dev); sin ella la
 herramienta responde `deletion_unavailable`. Con Memory, usar el job manual
 `agent:conversations` con el número ficticio: solicitar el borrado, comprobar
 que el agente pide responder `CONFIRMO BORRAR MIS DATOS` y enviarlo en un
 segundo mensaje. Verificar en DynamoDB que no quede el número ficticio en users,
 places, reports ni en `subscribers` de incidents y que el incidente conserve su
-`report_count`; el audit log solo debe contener el hash.
+`report_count`; el audit log solo debe contener el hash y, tras un mensaje
+nuevo, el agente no debe recordar la conversación anterior al borrado.

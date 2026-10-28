@@ -1,9 +1,10 @@
 """urbanbot notifier Lambda.
 
 EventBridge (StatusChanged / IncidentNearby on the custom bus) -> look up the
-affected users -> quiet-hours / daily-cap gate -> STUBBED WhatsApp send. The
-real CDS End User Messaging Social SendWhatsAppMessage call is left as a
-clearly-marked TODO; no CDS SDK is imported here.
+affected users -> quiet-hours / daily-cap gate -> async invoke of the outbound
+Lambda, which is the one and only CDS End User Messaging Social
+SendWhatsAppMessage caller (RB-01). No CDS SDK is imported here; the notifier
+only fires-and-forgets a payload to outbound.
 
 Uses only the stdlib + boto3 (bundled in the python3.12 Lambda runtime).
 """
@@ -24,11 +25,24 @@ PLACES_TABLE = os.environ.get("PLACES_TABLE", "")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
 DAILY_CAP_DEFAULT = int(os.environ.get("DAILY_CAP_DEFAULT", "10"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+OUTBOUND_FUNCTION_NAME = os.environ.get("OUTBOUND_FUNCTION_NAME", "")
+OUTBOUND_ORIGINATION_PHONE_NUMBER_ID = os.environ.get(
+    "OUTBOUND_ORIGINATION_PHONE_NUMBER_ID", ""
+)
 
 SUPPORTED_DETAIL_TYPES = ("StatusChanged", "IncidentNearby")
 
+# es-MX notification bodies keyed by EventBridge detail-type. Full template
+# rendering (per-report details, deep links, localization variants) is out of
+# scope -- TODO: replace this minimal map with real template rendering.
+_DETAIL_MSG = {
+    "StatusChanged": "Hay una actualización en el estatus de tu reporte.",
+    "IncidentNearby": "Se registró un incidente cerca de un lugar que te interesa.",
+}
+
 # --- Clients created at module load ------------------------------------------
 _ddb = boto3.client("dynamodb")
+_lambda = boto3.client("lambda")
 
 # --- Structured JSON-line logger ---------------------------------------------
 logger = logging.getLogger()
@@ -198,17 +212,28 @@ def _notify_user(user_id, detail_type, template_id, now):
         _log(logging.INFO, "skipped_quiet_hours", user=_mask_phone(user_id))
         return "skipped"
 
+    # Empty-origination skip MUST run before _bump_daily_count (alongside the
+    # other skipped_* gates): without a configured origination phone-number id
+    # an inert notifier cannot send, so it must not burn users' daily caps or
+    # write an audit record -- otherwise it would throttle them once the number
+    # IS configured (VP-6).
+    if not OUTBOUND_ORIGINATION_PHONE_NUMBER_ID:
+        _log(logging.INFO, "skipped_no_origination", user=_mask_phone(user_id))
+        return "skipped"
+
     count = _bump_daily_count(user_id, now)
     cap = _daily_cap(user_item)
     over_cap = count > cap
 
     phone = user_item.get("phone", {}).get("S") or user_id
 
-    # --- STUBBED SEND --------------------------------------------------------
-    # TODO: replace this WOULD_SEND log with the real CDS End User Messaging
-    # Social SendWhatsAppMessage call (socialmessaging client). That belongs to
-    # a later channel/agent module; do NOT import a CDS SDK here.
+    # Minimal es-MX body from the detail-type map; full template rendering is
+    # out of scope (TODO above on _DETAIL_MSG).
+    text = _DETAIL_MSG.get(detail_type, "Tienes una actualización de Urbanbot.")
+
     if over_cap:
+        # Over daily cap: still NO individual send -- the digest-batching
+        # mechanism is out of scope and unchanged. Only log the decision.
         _log(
             logging.INFO,
             "WOULD_SEND_DIGEST",
@@ -221,14 +246,29 @@ def _notify_user(user_id, detail_type, template_id, now):
         )
         outcome = "digest"
     else:
+        # Under cap: fire-and-forget async invoke of the outbound Lambda (the
+        # one socialmessaging caller). Never log the rendered body -- only the
+        # template id, detail-type, and text_len.
+        _lambda.invoke(
+            FunctionName=OUTBOUND_FUNCTION_NAME,
+            InvocationType="Event",
+            Payload=json.dumps(
+                {
+                    "to": phone,
+                    "text": text,
+                    "origination_phone_number_id": OUTBOUND_ORIGINATION_PHONE_NUMBER_ID,
+                }
+            ).encode(),
+        )
         _log(
             logging.INFO,
-            "WOULD_SEND",
+            "notify_dispatched",
             recipient=_mask_phone(phone),
             template=template_id,
             detail_type=detail_type,
             daily_count=count,
             daily_cap=cap,
+            text_len=len(text),
         )
         outcome = "sent"
 

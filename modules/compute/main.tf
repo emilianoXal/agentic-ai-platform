@@ -172,6 +172,13 @@ data "aws_iam_policy_document" "notifier" {
     ]
     resources = [var.kms_key_arn]
   }
+
+  statement {
+    sid       = "InvokeOutbound"
+    effect    = "Allow"
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.outbound.arn]
+  }
 }
 
 resource "aws_iam_policy" "notifier" {
@@ -282,6 +289,9 @@ resource "aws_lambda_function" "notifier" {
       AUDIT_TABLE       = var.audit_table_name
       DAILY_CAP_DEFAULT = tostring(var.daily_cap_default)
       LOG_LEVEL         = var.log_level
+
+      OUTBOUND_FUNCTION_NAME               = aws_lambda_function.outbound.function_name
+      OUTBOUND_ORIGINATION_PHONE_NUMBER_ID = var.outbound_origination_phone_number_id
     }
   }
 

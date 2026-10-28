@@ -28,7 +28,8 @@ modules/data/      # [done] KMS CMK, S3 media, 5 DynamoDB tables, SNS, SQS FIFO,
 modules/compute/   # [done] ingest + notifier Lambdas (ingestion glue)
 modules/agent/     # [done] 6 tool Lambdas, SQS consumer, ECR, Guardrails, AgentCore (awscc)
 modules/media/     # [todo] Rekognition blur + Transcribe + Nova multimodal
-modules/portal/    # [todo] Amplify + Cognito + AppSync + WAF
+modules/portal/    # [done] Cognito + AppSync + dashboard Lambdas + Location key + WAF + Amplify Hosting
+apps/dashboard/    # [done] Angular officials' dashboard (FixedYet): live AppSync data + real map
 .kiro/steering/    # IA context (product, structure, tech, terraform conventions)
 ```
 
@@ -47,7 +48,8 @@ table); the state key is isolated per environment
 | `compute` | done   | `ingest` (SNS→deterministic guards→SQS FIFO) and `notifier` (EventBridge→WhatsApp stub) Lambdas, least-privilege IAM |
 | `agent`   | done   | `create_report` / `join_incident` / `get_status` / `register_place` / `route` / `escalate` tool Lambdas, SQS `consumer`, ECR, Bedrock Guardrails, AgentCore runtime/gateway/memory (flag-gated, default off) |
 | `media`   | todo   | `GetWhatsAppMessageMedia` → S3 → Step Functions → Rekognition (face/plate blur) + Transcribe + Nova |
-| `portal`  | todo   | Official dashboard: Amplify (React + map), Cognito, AppSync, WAF |
+| `portal`  | done   | Dashboard backend and hosting: Cognito staff pool (groups agency / official / admin, users as code), AppSync GraphQL + WAF, `dashboard-api` Lambda (paginated queries, status changes that emit `StatusChanged` to the notifier, admin demo seed), `stream-publisher` Lambda (incidents stream → real-time subscription), Amazon Location API key, Amplify Hosting |
+| `apps/dashboard` | done | Angular dashboard: priority queue, MapLibre + Amazon Location map opening at the user's location, status changes, demo console. See [`apps/dashboard/README.md`](apps/dashboard/README.md) |
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for carried-forward TODOs.
 
@@ -67,8 +69,16 @@ Required CI/CD **project variables** (Settings → CI/CD → Variables):
 Optional overrides: `TF_ENV` (dev|qa|prod), `TF_TARGET`, `TF_DESTROY`,
 `TF_UNTAINT_TARGET`.
 
-Pushing to a `feat/*` / `fix/*` / `hotfix/*` / `release/*` branch runs
-validate + plan automatically and exposes `apply` as a manual job.
+Pushing any branch runs validate + plan (and the dashboard build when
+`apps/dashboard/` changes). **Deployments run only on `main`:** `terraform:apply`
+and `dashboard:deploy` are manual jobs that exist only in `main` pipelines.
+
+Dashboard deploy order on `main`: `terraform:apply` → `dashboard:deploy` (reads the
+Terraform outputs, fetches the Amazon Location key, writes `config.json` and
+uploads the build to Amplify Hosting).
+
+Dashboard staff accounts live in `envs/<env>/terraform.tfvars` (`staff_users`);
+Cognito e-mails each new user a temporary password.
 
 ## Local verification (no AWS credentials needed)
 

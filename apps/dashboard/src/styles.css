@@ -1,0 +1,273 @@
+/*
+ * FixedYet design tokens, mirrored from the FixedYet design system (tokens.json).
+ * Light values on :root; dark values follow the OS unless data-theme forces one.
+ */
+:root {
+  --surface-page: #f4f5f1;
+  --surface-raised: #ffffff;
+  --surface-sunken: #e9ece6;
+  --ink: #182024;
+  --ink-muted: #545f66;
+  --line: #cdd3cc;
+  --line-strong: #7d8a86;
+  --asfalto: #1f282d;
+  --on-asfalto: #f4f5f1;
+  --amarillo-vial: #f6c400;
+  --on-amarillo: #182024;
+  --focus-ring: #182024;
+  --st-recibido: #6b5300;
+  --st-recibido-soft: #fff3bf;
+  --st-enviado: #1d5f9e;
+  --st-enviado-soft: #e2eefa;
+  --st-atencion: #a94300;
+  --st-atencion-soft: #fce9da;
+  --st-resuelto: #1e6e43;
+  --st-resuelto-soft: #dff1e6;
+  --st-noprocede: #4b5359;
+  --st-noprocede-soft: #e7e9ea;
+  --st-reabierto: #7a2fb8;
+  --st-reabierto-soft: #f0e6fa;
+  --danger: #b3261e;
+  --danger-soft: #fbe4e2;
+  --map-block: #e2e6df;
+  --map-street: #ffffff;
+  --map-park: #d8e6d3;
+  --map-water: #cfe0ea;
+  --chat-bg: #e9ece6;
+  --bubble-in: #ffffff;
+  --bubble-out: #dcf3d3;
+  --shadow-overlay: 0 6px 24px rgba(24, 32, 36, 0.18);
+  --topbar-bg: #1f282d;
+  --topbar-fg: #f4f5f1;
+
+  --font-sans: 'Overpass', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Overpass Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  --radius-cell: 2px;
+  --radius-control: 6px;
+  --radius-panel: 10px;
+  --radius-pill: 999px;
+
+  --motion-fast: 150ms;
+  --motion-base: 240ms;
+  --motion-slow: 400ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface-page: #111618;
+    --surface-raised: #192024;
+    --surface-sunken: #0c1012;
+    --ink: #e9edea;
+    --ink-muted: #a2adb2;
+    --line: #2e383d;
+    --line-strong: #6e7d82;
+    --asfalto: #4a5960;
+    --focus-ring: #f6c400;
+    --st-recibido: #f6c400;
+    --st-recibido-soft: #352b05;
+    --st-enviado: #86b8ee;
+    --st-enviado-soft: #14273c;
+    --st-atencion: #f59a55;
+    --st-atencion-soft: #3a2212;
+    --st-resuelto: #6ccb94;
+    --st-resuelto-soft: #12301f;
+    --st-noprocede: #b9c1c5;
+    --st-noprocede-soft: #262c30;
+    --st-reabierto: #c59af0;
+    --st-reabierto-soft: #2b1a3d;
+    --danger: #f2867e;
+    --danger-soft: #3b1715;
+    --map-block: #1f272b;
+    --map-street: #141a1d;
+    --map-park: #1b2a20;
+    --map-water: #15252f;
+    --chat-bg: #0c1012;
+    --bubble-in: #192024;
+    --bubble-out: #1e3a28;
+    --shadow-overlay: 0 6px 24px rgba(0, 0, 0, 0.55);
+    --topbar-bg: #192024;
+    --topbar-fg: #e9edea;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --surface-page: #111618;
+  --surface-raised: #192024;
+  --surface-sunken: #0c1012;
+  --ink: #e9edea;
+  --ink-muted: #a2adb2;
+  --line: #2e383d;
+  --line-strong: #6e7d82;
+  --asfalto: #4a5960;
+  --focus-ring: #f6c400;
+  --st-recibido: #f6c400;
+  --st-recibido-soft: #352b05;
+  --st-enviado: #86b8ee;
+  --st-enviado-soft: #14273c;
+  --st-atencion: #f59a55;
+  --st-atencion-soft: #3a2212;
+  --st-resuelto: #6ccb94;
+  --st-resuelto-soft: #12301f;
+  --st-noprocede: #b9c1c5;
+  --st-noprocede-soft: #262c30;
+  --st-reabierto: #c59af0;
+  --st-reabierto-soft: #2b1a3d;
+  --danger: #f2867e;
+  --danger-soft: #3b1715;
+  --map-block: #1f272b;
+  --map-street: #141a1d;
+  --map-park: #1b2a20;
+  --map-water: #15252f;
+  --chat-bg: #0c1012;
+  --bubble-in: #192024;
+  --bubble-out: #1e3a28;
+  --shadow-overlay: 0 6px 24px rgba(0, 0, 0, 0.55);
+  --topbar-bg: #192024;
+  --topbar-fg: #e9edea;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 22px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Buttons: one yellow primary per view, outlined secondary, quiet ghost. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 38px;
+  padding: 8px 14px 7px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.btn:hover {
+  background: var(--surface-sunken);
+}
+
+.btn.primary {
+  background: var(--amarillo-vial);
+  border-color: var(--amarillo-vial);
+  color: var(--on-amarillo);
+}
+
+.btn.primary:hover {
+  filter: brightness(0.96);
+}
+
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Shared enter/leave animation classes used with Angular's animate.enter / animate.leave. */
+.fade-in {
+  animation: fade-in var(--motion-base) var(--ease-standard);
+}
+
+.fade-out {
+  animation: fade-in var(--motion-fast) var(--ease-standard) reverse forwards;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+app-root {
+  display: block;
+  height: 100%;
+}

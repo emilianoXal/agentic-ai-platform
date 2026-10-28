@@ -1,0 +1,155 @@
+:host {
+  display: block;
+  min-height: 0;
+}
+
+.phone {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  border: 1px solid var(--line-strong);
+  border-radius: 28px;
+  background: var(--surface-raised);
+  padding: 10px;
+  min-height: 0;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #1f282d;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.who {
+  display: grid;
+  line-height: 18px;
+  min-width: 0;
+}
+
+.who span {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.gloss-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.banner {
+  font-size: 11px;
+  line-height: 16px;
+  padding: 6px 10px;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.chat {
+  background: var(--chat-bg);
+  border-radius: 0 0 20px 20px;
+  padding: var(--space-3);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+}
+
+.msg {
+  align-self: flex-start;
+  max-width: 88%;
+  background: var(--bubble-in);
+  border-radius: 10px;
+  border-top-left-radius: 2px;
+  padding: 8px 10px 6px;
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+  line-height: 19px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+}
+
+.msg.out {
+  align-self: flex-end;
+  background: var(--bubble-out);
+  border-top-left-radius: 10px;
+  border-top-right-radius: 2px;
+}
+
+.gloss {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+.time {
+  justify-self: end;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.replies {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.replies button {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+  border-radius: var(--radius-control);
+  padding: 7px 10px 6px;
+  font-weight: 700;
+  color: var(--st-enviado);
+  cursor: pointer;
+}
+
+.replies button:hover {
+  background: var(--surface-sunken);
+}
+
+.empty {
+  margin: auto;
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 18px;
+  max-width: 240px;
+}
+
+.bubble-in {
+  animation: bubble-in 320ms var(--ease-emphasized);
+  transform-origin: left bottom;
+}
+
+.msg.out.bubble-in {
+  transform-origin: right bottom;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+}

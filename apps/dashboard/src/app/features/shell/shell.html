@@ -1,0 +1,67 @@
+<header class="topbar">
+  <a class="brand" routerLink="/incidents" aria-label="FixedYet home">
+    <fy-brand-mark [size]="26" [onDark]="true" />
+    <span>FixedYet</span>
+  </a>
+
+  <nav aria-label="Main">
+    <a routerLink="/incidents" routerLinkActive="active" ariaCurrentWhenActive="page">Incidents</a>
+    @if (sessions.isPresenter()) {
+      <a routerLink="/demo" routerLinkActive="active" ariaCurrentWhenActive="page">Demo console</a>
+    }
+  </nav>
+
+  <div class="meta">
+    <span class="place">{{ place() }}</span>
+    @if (simulated) {
+      <span class="sim" title="Synthetic data set; every agency is simulated">Simulated data</span>
+    }
+  </div>
+
+  <div class="actions">
+    @if (sessions.isPresenter() && simulated) {
+      <button
+        type="button"
+        class="icon-btn"
+        [class.on]="phoneOpen()"
+        (click)="phoneOpen.set(!phoneOpen())"
+        [attr.aria-pressed]="phoneOpen()"
+        aria-label="Show the neighbor's WhatsApp"
+      >
+        <svg fyIcon="device-mobile" [size]="20"></svg>
+        <span class="label">Phone</span>
+      </button>
+    }
+    <button
+      type="button"
+      class="icon-btn"
+      (click)="theme.toggle()"
+      [attr.aria-label]="theme.isDark() ? 'Switch to light theme' : 'Switch to dark theme'"
+    >
+      <svg [fyIcon]="theme.isDark() ? 'sun' : 'moon'" [size]="20"></svg>
+    </button>
+    <div class="user">
+      <strong>{{ sessions.session()?.name }}</strong>
+      <span>{{ scope() }}</span>
+    </div>
+    <button type="button" class="icon-btn" (click)="signOut()" aria-label="Sign out">
+      <svg fyIcon="logout" [size]="20"></svg>
+    </button>
+  </div>
+</header>
+
+<div class="body" [class.with-phone]="phoneOpen()">
+  <main class="content">
+    <router-outlet />
+  </main>
+  @if (phoneOpen() && simulated) {
+    <aside
+      class="phone-dock"
+      aria-label="Neighbor's WhatsApp"
+      animate.enter="dock-in"
+      animate.leave="dock-out"
+    >
+      <fy-phone-mirror [compact]="true" />
+    </aside>
+  }
+</div>

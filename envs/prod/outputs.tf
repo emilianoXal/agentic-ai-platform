@@ -218,3 +218,41 @@ output "agentcore_memory_id" {
   description = "Id of the AgentCore Memory (null when disabled)."
   value       = module.agent.agentcore_memory_id
 }
+
+# =============================================================================
+# Portal (dashboard) — consumed by the dashboard deploy job to build config.json.
+# =============================================================================
+output "portal_user_pool_id" {
+  description = "Cognito user pool for dashboard staff."
+  value       = module.portal.user_pool_id
+}
+
+output "portal_user_pool_client_id" {
+  description = "Cognito app client for the dashboard."
+  value       = module.portal.user_pool_client_id
+}
+
+output "portal_graphql_url" {
+  description = "AppSync GraphQL endpoint of the dashboard API."
+  value       = module.portal.graphql_url
+}
+
+output "portal_maps_api_key_name" {
+  description = "Amazon Location API key name for the dashboard map."
+  value       = module.portal.maps_api_key_name
+}
+
+output "portal_dashboard_app_id" {
+  description = "Amplify Hosting app of the dashboard."
+  value       = module.portal.dashboard_app_id
+}
+
+output "portal_dashboard_branch_name" {
+  description = "Amplify branch that receives dashboard deployments."
+  value       = module.portal.dashboard_branch_name
+}
+
+output "portal_dashboard_url" {
+  description = "Public URL of the dashboard."
+  value       = module.portal.dashboard_url
+}

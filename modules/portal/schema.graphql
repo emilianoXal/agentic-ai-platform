@@ -1,0 +1,96 @@
+# =============================================================================
+# urbanbot dashboard API (AppSync).
+# Default auth: Cognito user pools (staff). AWS_IAM is used only by the incidents
+# stream publisher to push change notifications to subscribed dashboards.
+# =============================================================================
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+type Location {
+  lat: Float!
+  lng: Float!
+}
+
+type TimelineEntry {
+  id: ID!
+  at: AWSDateTime!
+  kind: String!
+  text: String!
+  source: String!
+  status: String
+  actor: String
+}
+
+type Incident {
+  id: ID!
+  folio: String!
+  category: String!
+  title: String!
+  neighborhood: String
+  geohash: String!
+  location: Location!
+  status: String!
+  escalated: Boolean!
+  severity: String!
+  reportCount: Int!
+  agencyId: String
+  agencyName: String
+  agencyCaseId: String
+  photoCount: Int!
+  # Masked phone suffixes only (e.g. "••42"); full numbers never leave the API.
+  neighbors: [String!]!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  followUpPending: Boolean!
+  timeline: [TimelineEntry!]!
+}
+
+type IncidentPage {
+  items: [Incident!]!
+  nextToken: String
+  hasMore: Boolean!
+  count: Int!
+}
+
+type Agency {
+  id: ID!
+  name: String!
+}
+
+type StatusChangeResult {
+  incident: Incident!
+  # Neighbors the StatusChanged event was addressed to (the notifier sends the WhatsApp).
+  notified: Int!
+}
+
+type IncidentChange @aws_iam @aws_cognito_user_pools {
+  id: ID!
+  kind: String!
+  updatedAt: AWSDateTime
+}
+
+type Query {
+  listIncidents(limit: Int, nextToken: String): IncidentPage!
+  getIncident(id: ID!): Incident
+  listAgencies: [Agency!]!
+}
+
+type Mutation {
+  updateIncidentStatus(id: ID!, status: String!, comment: String, reason: String): StatusChangeResult!
+  addIncidentComment(id: ID!, text: String!): Incident!
+  escalateIncident(id: ID!): Incident!
+  # Admin only: writes the synthetic demo set (30 reports in 4 incidents) around a point,
+  # every item flagged synthetic so it can be told apart and removed.
+  seedDemoData(lat: Float!, lng: Float!): IncidentPage!
+  # Admin only: deletes every synthetic item created by seedDemoData.
+  resetDemoData: Int!
+  # Called only by the stream publisher Lambda (IAM).
+  publishIncidentChange(id: ID!, kind: String!, updatedAt: AWSDateTime): IncidentChange @aws_iam
+}
+
+type Subscription {
+  onIncidentChange: IncidentChange @aws_subscribe(mutations: ["publishIncidentChange"])
+}

@@ -1,0 +1,134 @@
+@let i = incident();
+<header class="head">
+  <div class="kicker">
+    <svg [fyIcon]="category().icon" [size]="18"></svg>
+    <span>{{ category().label }}@if (i.neighborhood) { · {{ i.neighborhood }}}</span>
+    <button
+      type="button"
+      class="btn ghost close"
+      (click)="closeDetail.emit()"
+      aria-label="Close details"
+    >
+      <svg fyIcon="x" [size]="20"></svg>
+    </button>
+  </div>
+  <h2>{{ i.title }}</h2>
+  <div class="facts">
+    <fy-status-pill [status]="i.status" />
+    @if (i.escalated) {
+      <span class="flag"><svg fyIcon="arrow-big-up-lines" [size]="14"></svg>Escalated</span>
+    }
+    <fy-neighbor-count [count]="i.reportCount" [long]="true" />
+    <fy-severity [severity]="i.severity" [showLabel]="true" />
+  </div>
+  <dl class="ids">
+    <div>
+      <dt>Case</dt>
+      <dd class="mono">{{ i.folio }}</dd>
+    </div>
+    <div>
+      <dt>Agency</dt>
+      <dd>
+        {{ agencyName() }}
+        @if (i.agencyCaseId) {
+          · <span class="mono">{{ i.agencyCaseId }}</span>
+        }
+      </dd>
+    </div>
+    <div>
+      <dt>Updated</dt>
+      <dd [title]="absolute(i.updatedAt)">{{ relative(i.updatedAt) }}</dd>
+    </div>
+  </dl>
+</header>
+
+<section class="actions" aria-label="Next action">
+  @if (primary(); as next) {
+    <button type="button" class="btn primary wide" (click)="requestStatus.emit(next)">
+      {{ actionLabel[next].button }}
+    </button>
+    <p class="hint">
+      {{ i.neighbors.length || i.reportCount }} neighbors will be notified on WhatsApp
+    </p>
+  } @else {
+    <p class="hint">
+      @if (i.status === 'resolved' && i.followUpPending) {
+        Waiting for neighbors to answer "Is it fixed?" in the next 24 h.
+      } @else {
+        No status change is available for your role.
+      }
+    </p>
+  }
+  <div class="secondary">
+    @for (s of secondary(); track s) {
+      <button type="button" class="btn" (click)="requestStatus.emit(s)">
+        {{ actionLabel[s].button }}
+      </button>
+    }
+    <button
+      type="button"
+      class="btn"
+      (click)="commenting.set(!commenting())"
+      [attr.aria-expanded]="commenting()"
+    >
+      Add comment
+    </button>
+    @if (isSupervisor() && !i.escalated) {
+      <button type="button" class="btn" (click)="escalate()">Escalate</button>
+    }
+  </div>
+  @if (commenting()) {
+    <div class="comment" animate.enter="fade-in">
+      <label for="detail-comment" class="visually-hidden">Comment</label>
+      <textarea
+        id="detail-comment"
+        rows="3"
+        [value]="commentDraft()"
+        (input)="onDraft($event)"
+        placeholder="Visible to staff only"
+      ></textarea>
+      <button type="button" class="btn" (click)="saveComment()" [disabled]="!commentDraft().trim()">
+        Save comment
+      </button>
+    </div>
+  }
+</section>
+
+<section aria-labelledby="photos-title">
+  <h3 id="photos-title">Photos <span class="muted">· faces and plates blurred</span></h3>
+  <div class="photos">
+    @for (p of photos(); track p) {
+      <div class="photo" role="img" [attr.aria-label]="'Blurred photo ' + (p + 1)">
+        <svg fyIcon="photo" [size]="20"></svg>
+      </div>
+    }
+  </div>
+</section>
+
+<section aria-labelledby="timeline-title">
+  <h3 id="timeline-title">Status history</h3>
+  <ol class="timeline">
+    @for (e of i.timeline; track e.id) {
+      <li [class.fresh]="isFresh(e.at)" [class.simulated]="e.source === 'simulated'">
+        <span class="node"><svg [fyIcon]="timelineIcon[e.kind]" [size]="14"></svg></span>
+        <div>
+          <p>{{ e.text }}</p>
+          <p class="when">
+            <span [title]="absolute(e.at)">{{ relative(e.at) }}</span>
+            <span class="source">{{ sourceLabel[e.source] }}</span>
+          </p>
+        </div>
+      </li>
+    }
+  </ol>
+</section>
+
+<section aria-labelledby="neighbors-title">
+  <h3 id="neighbors-title">Joined neighbors</h3>
+  <p class="muted small">Phone numbers stay masked. Saved places are never shown here.</p>
+  <ul class="neighbors">
+    @for (n of i.neighbors; track n) {
+      <li class="mono">{{ n }}</li>
+    }
+  </ul>
+</section>

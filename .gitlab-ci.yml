@@ -99,7 +99,7 @@ media:build:
   stage: app_build
   image: python:3.12-alpine
   script:
-    - pip install --requirement modules/compute/layers/pillow/requirements.txt --target modules/compute/layers/pillow/python --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 --only-binary=:all:
+    - pip install --requirement modules/compute/layers/pillow/requirements.txt --target modules/compute/layers/pillow/python --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 --only-binary=":all:"
   artifacts:
     paths:
       - modules/compute/layers/pillow/python/

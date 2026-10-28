@@ -399,6 +399,20 @@ _SYSTEM_PROMPT = (
 _ASK_FOR_TEXT = (
     "Hola, cuentame que problema de infraestructura urbana quieres reportar."
 )
+_MEDIA_DROPPED_NOTES = {
+    "consent_pending": (
+        "[El usuario envio una foto que no se guardo porque aun no da su "
+        "consentimiento: pide opt-in y despues pidele que reenvie la foto.]"
+    ),
+    "rate_limited": (
+        "[El usuario envio una foto que no se proceso porque supero el limite "
+        "de mensajes por hora: explicalo y pidele que reenvie la foto mas tarde.]"
+    ),
+    "processing_error": (
+        "[El usuario envio una foto que no se pudo procesar: explicalo y pidele "
+        "que reenvie la foto.]"
+    ),
+}
 _TRY_AGAIN = (
     "Tuve un problema al procesar tu solicitud. Por favor intenta de nuevo en "
     "un momento."
@@ -596,17 +610,18 @@ def lambda_handler(event, context):
     event = event if isinstance(event, dict) else {}
     user_id = event.get("user_id")
     text = event.get("text")
+    media_note = _MEDIA_DROPPED_NOTES.get(event.get("media_dropped"))
 
     # Defensive validation (invalid_input is terminal; consumer does not redrive).
     if not user_id:
         _log(logging.WARNING, "invalid_input", reason="missing_user_id")
         return {"ok": False, "error": "invalid_input", "reply": _ASK_FOR_TEXT}
-    if not isinstance(text, str) or not text.strip():
+    if not media_note and (not isinstance(text, str) or not text.strip()):
         _log(logging.WARNING, "invalid_input", reason="missing_text",
              user=_mask_phone(user_id))
         return {"ok": False, "error": "invalid_input", "reply": _ASK_FOR_TEXT}
 
-    text = text.strip()
+    text = text.strip() if isinstance(text, str) else ""
     _turn.clear()
     _turn.update(user_id=str(user_id), text=text)
     consent_pending = bool(event.get("consent_pending"))
@@ -634,6 +649,8 @@ def lambda_handler(event, context):
         # Shape the turn with the ingest-provided flags; ingest already enforced
         # consent/rate limits, the agent only reflects them in the conversation.
         prompt = text
+        if media_note:
+            prompt = media_note + "\n" + prompt
         if consent_pending:
             prompt = (
                 "[El usuario aun no ha dado su consentimiento: pide opt-in antes "

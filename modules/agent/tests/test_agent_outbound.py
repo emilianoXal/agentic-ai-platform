@@ -143,5 +143,63 @@ class SimulatedOutboundTests(unittest.TestCase):
         self.assertNotIn("WOULD_SEND_REPLY", " ".join(cm.output))
 
 
+class _CapturingAgent(_Agent):
+    prompts = []
+
+    def __call__(self, prompt):
+        _CapturingAgent.prompts.append(prompt)
+        return _Result()
+
+
+class DroppedMediaPromptTests(unittest.TestCase):
+    def setUp(self):
+        _CapturingAgent.prompts = []
+        handler.Agent = _CapturingAgent
+        handler.BedrockModel = mock.MagicMock()
+        handler._lambda = mock.MagicMock()
+
+    def _run(self, text, reason, consent_pending=False):
+        return handler.lambda_handler({
+            "user_id": SENDER,
+            "text": text,
+            "message_id": WAMID,
+            "type": "image",
+            "media": [],
+            "media_dropped": reason,
+            "consent_pending": consent_pending,
+        }, None)
+
+    def test_captionless_dropped_image_still_reaches_agent(self):
+        for text in (None, "", "   "):
+            with self.subTest(text=text):
+                _CapturingAgent.prompts = []
+                result = self._run(text, "consent_pending", consent_pending=True)
+                self.assertTrue(result.get("ok"))
+                self.assertEqual(result.get("reply"), REPLY)
+                prompt = _CapturingAgent.prompts[-1]
+                self.assertIn(handler._MEDIA_DROPPED_NOTES["consent_pending"], prompt)
+                self.assertIn("consentimiento", prompt)
+
+    def test_captioned_dropped_image_prompt_keeps_caption_and_reason(self):
+        for reason in ("consent_pending", "rate_limited", "processing_error"):
+            with self.subTest(reason=reason):
+                result = self._run("bache en la calle", reason)
+                self.assertTrue(result.get("ok"))
+                prompt = _CapturingAgent.prompts[-1]
+                self.assertTrue(prompt.startswith(handler._MEDIA_DROPPED_NOTES[reason]))
+                self.assertIn("reenvie la foto", prompt)
+                self.assertTrue(prompt.endswith("bache en la calle"))
+
+    def test_text_without_dropped_media_has_no_photo_note(self):
+        result = self._run("hola", None)
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(_CapturingAgent.prompts[-1], "hola")
+
+    def test_captionless_image_without_drop_reason_is_invalid_input(self):
+        result = self._run("", None)
+        self.assertEqual(result.get("error"), "invalid_input")
+        self.assertEqual(_CapturingAgent.prompts, [])
+
+
 if __name__ == "__main__":
     unittest.main()

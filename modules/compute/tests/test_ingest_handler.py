@@ -184,14 +184,23 @@ class IngestEumTests(unittest.TestCase):
                 "id": "wamid.IMG1",
                 "timestamp": "1723506230",
                 "type": "image",
-                "image": {"mime_type": "image/jpeg", "sha256": "abc", "id": "530339869524171"},
-                "caption": "bache en la calle",
+                "image": {
+                    "mime_type": "image/jpeg",
+                    "sha256": "abc",
+                    "id": "530339869524171",
+                    "caption": "bache en la calle",
+                },
             }],
         )
         return {"Records": [_sns_record(_eum_envelope(_entry(value)))]}
 
     def test_image_without_consent_or_over_rate_limit_is_never_stored(self):
-        for consent, limited in ((False, False), (True, True)):
+        cases = (
+            (False, False, "consent_pending"),
+            (False, True, "consent_pending"),
+            (True, True, "rate_limited"),
+        )
+        for consent, limited, reason in cases:
             with self.subTest(consent=consent, rate_limited=limited):
                 self.setUp()
                 handler._check_consent = lambda *a, **k: consent
@@ -202,10 +211,12 @@ class IngestEumTests(unittest.TestCase):
                 bodies = _queued_bodies()
                 self.assertEqual(len(bodies), 1)
                 self.assertEqual(bodies[0]["media"], [])
+                self.assertEqual(bodies[0]["media_dropped"], reason)
+                self.assertEqual(bodies[0]["text"], "bache en la calle")
                 self.assertEqual(bodies[0]["consent_pending"], not consent)
                 self.assertEqual(bodies[0]["rate_limited"], limited)
                 joined = " ".join(cm.output)
-                self.assertIn("media_skipped", joined)
+                self.assertIn("media_dropped", joined)
                 self.assertNotIn(SENDER, joined)
                 self.assertNotIn("530339869524171", joined)
 
@@ -219,6 +230,7 @@ class IngestEumTests(unittest.TestCase):
         self.assertEqual(result["error"], 0)
         self.assertEqual(len(bodies), 1)
         self.assertEqual(bodies[0]["media"], [])
+        self.assertEqual(bodies[0]["media_dropped"], "processing_error")
         self.assertEqual(bodies[0]["type"], "image")
 
     def test_eum_image_starts_sanitization_and_only_enqueues_clean_key(self):
@@ -243,6 +255,7 @@ class IngestEumTests(unittest.TestCase):
         self.assertEqual(bodies[0]["type"], "image")
         self.assertEqual(len(bodies[0]["media"]), 1)
         self.assertTrue(bodies[0]["media"][0].startswith("sanitized/"))
+        self.assertIsNone(bodies[0]["media_dropped"])
         self.assertNotIn("530339869524171", json.dumps(bodies[0]["media"]))
         self.assertEqual(bodies[0]["user_id"], SENDER)
         call = handler._sfn.start_execution.call_args.kwargs

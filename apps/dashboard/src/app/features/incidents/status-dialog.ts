@@ -23,6 +23,7 @@ export interface StatusChangeRequest {
   readonly to: StatusCode;
   readonly comment: string;
   readonly reason?: string;
+  readonly dependency?: string;
 }
 
 /** Reasons shown in the UI language; the value is es-MX because it reaches neighbors on WhatsApp. */
@@ -57,10 +58,17 @@ export class StatusDialog {
   protected readonly reasons = NOT_APPLICABLE_REASONS;
   protected readonly comment = signal('');
   protected readonly reason = signal('');
+  protected readonly dependency = signal('');
+  protected readonly agencies = computed(() => this.gateway.agencies().filter((a) => a.mailbox));
   protected readonly status = STATUS;
 
   protected readonly needsReason = computed(() => this.target() === 'not_applicable');
-  protected readonly canConfirm = computed(() => !this.needsReason() || this.reason() !== '');
+  protected readonly needsDependency = computed(() => this.target() === 'sent_to_agency');
+  protected readonly canConfirm = computed(
+    () =>
+      (!this.needsReason() || this.reason() !== '') &&
+      (!this.needsDependency() || this.dependency() !== ''),
+  );
   protected readonly actionLabel = computed(() => {
     const target = this.target();
     return target ? this.i18n.t(`action.${target}.button`) : '';
@@ -87,6 +95,7 @@ export class StatusDialog {
       if (this.target()) {
         this.comment.set('');
         this.reason.set('');
+        this.dependency.set('');
         if (!el.open) el.showModal();
       } else if (el.open) {
         el.close();
@@ -102,12 +111,13 @@ export class StatusDialog {
       to: target,
       comment: this.comment(),
       reason: this.reason() || undefined,
+      dependency: this.needsDependency() ? this.dependency() : undefined,
     });
   }
 
-  protected onTextInput(field: 'comment' | 'reason', event: Event): void {
+  protected onTextInput(field: 'comment' | 'reason' | 'dependency', event: Event): void {
     const value = (event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement)
       .value;
-    (field === 'comment' ? this.comment : this.reason).set(value);
+    ({ comment: this.comment, reason: this.reason, dependency: this.dependency })[field].set(value);
   }
 }

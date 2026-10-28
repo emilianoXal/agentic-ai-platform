@@ -131,6 +131,12 @@ variable "routing_rules_json" {
   default     = "{}"
 }
 
+variable "dependency_mail_categories" {
+  description = "Categories with an agency mailbox (keys of dependency_email_map); route tells the citizen the others went to the municipal supervisor."
+  type        = list(string)
+  default     = []
+}
+
 variable "escalate_report_threshold" {
   description = "Report-count at/above which an incident may be escalated."
   type        = number

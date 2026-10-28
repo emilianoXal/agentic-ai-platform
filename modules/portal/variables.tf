@@ -78,6 +78,12 @@ variable "routing_rules_json" {
   default     = "{}"
 }
 
+variable "dependency_mail_categories" {
+  description = "Categories with an agency mailbox (keys of dependency_email_map); only their agencies can be chosen for Send to agency."
+  type        = list(string)
+  default     = []
+}
+
 variable "follow_up_delay_minutes" {
   description = "Minutes after resolution before the one-time citizen follow-up."
   type        = number

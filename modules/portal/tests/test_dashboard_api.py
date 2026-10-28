@@ -17,6 +17,7 @@ os.environ.update({
     "AUDIT_TABLE_NAME": "audit",
     "USERS_TABLE_NAME": "users",
     "EVENT_BUS_NAME": "bus",
+    "DEPENDENCY_MAIL_CATEGORIES": "agua,alumbrado,bacheo,basura,drenaje,arbol,plagas",
     "AWS_DEFAULT_REGION": "us-east-1",
 })
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "dashboard_api"))

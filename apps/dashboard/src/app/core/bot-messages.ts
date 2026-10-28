@@ -48,6 +48,7 @@ export function statusMessage(
         en: `We reopened your report ${folio} and told ${agencyName}.`,
       };
     case 'received':
+    case 'pending_send':
       return {
         es: `${emoji} Recibimos tu reporte ${folio}. Te aviso cuando cambie.`,
         en: `We received your report ${folio}. I'll message you when it changes.`,

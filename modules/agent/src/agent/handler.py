@@ -223,7 +223,8 @@ def create_report(category: str, geohash: str, description: str,
     lat/lng at precision 7 before calling this tool.
 
     Args:
-        category: Report category (e.g. potholes, lighting, garbage, water).
+        category: One of agua, bacheo, alumbrado, basura, drenaje, arbol,
+            plagas, seguridad, otro.
         geohash: Precision-7 geohash cell computed from lat/lng.
         description: Report description (required).
         lat: Optional latitude (stored on the report).
@@ -247,6 +248,18 @@ def create_report(category: str, geohash: str, description: str,
     })
     if result.get("ok"):
         _consume_pending_location()
+        result = _with_route(result, result.get("category") or category)
+    return result
+
+
+def _with_route(result, category):
+    """Attach the route reply; write the route only on a not-yet-routed incident."""
+    routed = route(
+        category=category,
+        incident_id=None if result.get("routed_to") else result.get("incident_id"),
+    )
+    result = dict(result)
+    result["route"] = routed
     return result
 
 
@@ -278,6 +291,8 @@ def join_incident(incident_id: str, report_id: str = None,
     })
     if result.get("ok") and not report_id:
         _consume_pending_location()
+        if result.get("category") and result.get("incident_id"):
+            result = _with_route(result, result["category"])
     return result
 
 
@@ -455,7 +470,13 @@ _SYSTEM_PROMPT = (
     "To create or join reports you need the location (lat/lng); if the turn "
     "includes a recently shared location, decide whether it belongs to this "
     "report; if it is missing or does not apply, ask for it and do not invent "
-    "a cell. If a person asks to delete "
+    "a cell. Set category to exactly one of agua, bacheo, alumbrado, basura, "
+    "drenaje, arbol, plagas, seguridad, or otro, choosing from the description; use otro when none of "
+    "the others fit. Never invent a category. If create_report returns "
+    "unknown_category, call it again with one value from allowed. A successful "
+    "create_report routes the incident; in your reply follow "
+    "route.reply_instruction, and name a dependency only when it tells you to. "
+    "If a person asks to delete "
     "their data, first explain that their personal data and places will be "
     "removed, that their reports will be kept anonymized, and ask them to reply "
     "with exactly I CONFIRM DELETE MY DATA in their next message. Call "

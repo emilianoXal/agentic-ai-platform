@@ -15,6 +15,9 @@ dependency_email_map = {
   alumbrado = "emiliano.obregon+luz@xaldigital.com"
   bacheo    = "karla.segura+baches@xaldigital.com"
   basura    = "josue.jimenez+basura@xaldigital.com"
+  drenaje   = "antonio.miguel+agua@xaldigital.com"
+  arbol     = "emiliano.obregon+luz@xaldigital.com"
+  plagas    = "emiliano.obregon+luz@xaldigital.com"
 }
 dependency_fallback_email = "antonio.miguel+supervisor@xaldigital.com"
 dependency_mail_from      = "antonio.miguel@xaldigital.com"

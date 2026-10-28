@@ -82,6 +82,7 @@ def _load(path, name, ddb, ses=None):
         "AUDIT_TABLE_NAME": "audit",
         "USERS_TABLE_NAME": "users",
         "EVENT_BUS_NAME": "bus",
+        "DEPENDENCY_MAIL_CATEGORIES": "bacheo",
         "MAIL_FROM": "antonio.miguel@xaldigital.com",
         "DEPENDENCY_FALLBACK_EMAIL": "antonio.miguel+supervisor@xaldigital.com",
         "DEPENDENCY_EMAIL_MAP": json.dumps({"bacheo": "obras@example.com"}),
@@ -199,7 +200,7 @@ class EstadoDependenciaTest(unittest.TestCase):
 
         self.assertEqual(portal.to_incident(ddb.incident)["status"], "received")
         mail_line = portal._timeline_entry(ddb.audit[-1])
-        self.assertEqual(mail_line["text"], "Email sent to the supervisor")
+        self.assertEqual(mail_line["text"], "Escalated to the supervisor: no agency mailbox")
         self.assertIsNone(mail_line["status"])
 
     def test_failed_mail_does_not_mark_sent_to_agency(self):

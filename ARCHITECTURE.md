@@ -50,9 +50,36 @@ a mail to the category's agency it sets only `dependency_mail_sent_at` (status
 stays `OPEN` for the agent tools) plus an audit line `dependency_mail_sent`; a
 fallback-supervisor send records only `supervisor_mail_sent`. Marking failures
 after SES are logged (`dependency_mail_mark_failed`), not retried. The portal
-maps `OPEN` plus `routed_to` to `received` with a routing-rule timeline entry
-whose agency email is pending; `sent_to_agency` appears only after that mailer
-confirmation.
+maps `OPEN` to `received` until both `routed_to` and `dependency_mail_sent_at`
+are present; only then does the read model become `sent_to_agency`. A supervisor
+fallback keeps `received` and the timeline text `Escalated to the supervisor: no
+agency mailbox`.
+A supervisor "Send to agency" click must name an agency whose category has a
+mailbox in `dependency_email_map` (the dialog lists only those); it sets
+`routed_to` and emits `StatusChanged` (source `urbanbot.dashboard`, no
+neighbors) that the dependency mailer sends to that agency's mailbox. Only after
+an agency send writes `dependency_mail_sent_at` does the mailer label the report
+rows `Enviado a dependencia` and emit one `StatusChanged` (source
+`urbanbot.mailer`, with the neighbors' user ids) that the mailer itself ignores.
+An incident routed to an agency without a mailbox (Seguridad Ciudadana,
+Supervisor municipal) is a supervisor escalation: escalated, never sent or
+pending send. A stored `sent_to_agency` missing `routed_to`
+or `dependency_mail_sent_at` reads as the display-only `pending_send`
+("Received, pending send"); the item is not rewritten.
+`create_report` stores only the closed catalog `agua`, `bacheo`, `alumbrado`,
+`basura`, `drenaje`, `arbol`, `plagas`, `seguridad`, and `otro` (the explicit
+fallback). Any other code,
+including ones the model invents, is rejected with `unknown_category` and is
+not written, so the model chooses again from `allowed`. The agent wrapper calls
+`route` after a successful create or a create-and-join, with the incident's
+stored category; it passes the incident id (writing `routed_to`) only when the
+incident has no `routed_to` yet, so an attach still gets the route reply. `otro` resolves to
+`Supervisor municipal` and the mailer sends that notice to the supervisor
+fallback. `route` returns `has_mailbox` (category in `dependency_email_map`)
+and a `reply_instruction`: without a mailbox the bot says the notice went to the
+municipal supervisor, never to the dependency. The short live matrix is the `category_probe` cases inside the manual
+GitLab `agent:conversations` job; its markdown counts the category the model
+chose and whether the incident was routed.
 The mail contains operational incident fields only; citizen identity, phone, and
 saved places never enter the message. Terraform provisions the Lambda,
 EventBridge rule, SES identities, and least-privilege IAM policy.

@@ -38,6 +38,20 @@ _ddb = boto3.client("dynamodb")
 logger = logging.getLogger()
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 
+# Codes the portal already labels and the route tool can deliver. "otro" is the
+# explicit fallback (supervisor), not a free-text bucket.
+_CATALOG = frozenset({
+    "agua",
+    "alumbrado",
+    "arbol",
+    "bacheo",
+    "basura",
+    "drenaje",
+    "otro",
+    "plagas",
+    "seguridad",
+})
+
 
 def _log(level, event, **fields):
     """Emit one structured JSON log line. Never logs raw PII."""
@@ -99,6 +113,19 @@ def _consume_pending_media(user_id):
         if key.startswith("sanitized/") and "N" in value and int(value["N"]) > now
     ]
     return [key for _, key in sorted(pending)]
+
+
+def _canonicalize_category(category):
+    """Return the catalog code, or an error dict the model can retry from."""
+    canonical = str(category or "").strip().lower()
+    if canonical in _CATALOG:
+        return canonical, None
+    return None, {
+        "ok": False,
+        "error": "unknown_category",
+        "allowed": sorted(_CATALOG),
+        "message": "Choose a category from allowed.",
+    }
 
 
 def _audit(entity_id, kind, **extra):
@@ -216,6 +243,10 @@ def lambda_handler(event, context):
         _log(logging.WARNING, "invalid_input_description", user=_mask_phone(user_id))
         return {"ok": False, "error": "invalid_input",
                 "message": "A report description is required."}
+    category, rejected = _canonicalize_category(category)
+    if rejected:
+        _log(logging.WARNING, "unknown_category", user=_mask_phone(user_id))
+        return rejected
 
     description = str(description)
     if len(description) > MAX_TEXT_LEN:
@@ -253,11 +284,13 @@ def lambda_handler(event, context):
 
         existing = _find_open_incident(geohash, category)
         photo_count = len(media)
+        routed_to = None
         if existing:
             incident_id = existing["incident_id"]["S"]
             created_at = existing.get("created_at", {}).get("S") or now
             report_count = _attach_report(incident_id, report_id, photo_count)
             attached = True
+            routed_to = existing.get("routed_to", {}).get("S")
         else:
             incident_id = _create_incident(geohash, category, report_id, photo_count)
             created_at = now
@@ -296,8 +329,10 @@ def lambda_handler(event, context):
             "folio": _portal_folio(incident_id, created_at),
             "report_id": report_id,
             "incident_id": incident_id,
+            "category": category,
             "attached": attached,
             "report_count": report_count,
+            "routed_to": routed_to,
         }
     except ClientError:
         logger.exception(json.dumps({"event": "create_report_failed",

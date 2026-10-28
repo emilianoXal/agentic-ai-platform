@@ -1129,11 +1129,12 @@ resource "aws_lambda_function" "route" {
 
   environment {
     variables = {
-      ROUTING_RULES_JSON = var.routing_rules_json
-      INCIDENTS_TABLE    = var.incidents_table_name
-      EVENTS_BUS_NAME    = var.events_bus_name
-      AUDIT_TABLE        = var.audit_log_table_name
-      LOG_LEVEL          = var.log_level
+      ROUTING_RULES_JSON         = var.routing_rules_json
+      DEPENDENCY_MAIL_CATEGORIES = join(",", var.dependency_mail_categories)
+      INCIDENTS_TABLE            = var.incidents_table_name
+      EVENTS_BUS_NAME            = var.events_bus_name
+      AUDIT_TABLE                = var.audit_log_table_name
+      LOG_LEVEL                  = var.log_level
     }
   }
 

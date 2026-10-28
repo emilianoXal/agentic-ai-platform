@@ -28,6 +28,8 @@ variables {
   audit_table_arn          = "arn:aws:dynamodb:us-east-1:123456789012:table/audit"
   incidents_table_name     = "incidents"
   incidents_table_arn      = "arn:aws:dynamodb:us-east-1:123456789012:table/incidents"
+  reports_table_name       = "reports"
+  reports_table_arn        = "arn:aws:dynamodb:us-east-1:123456789012:table/reports"
   dependency_email_map = {
     bacheo = "obras@example.com"
   }

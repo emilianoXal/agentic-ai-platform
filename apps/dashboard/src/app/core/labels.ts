@@ -18,6 +18,13 @@ export const STATUS: Record<StatusCode, StatusMeta> = {
     emoji: '📥',
     token: 'recibido',
   },
+  pending_send: {
+    label: 'Received, pending send',
+    labelEs: 'Recibido pendiente de envío',
+    icon: 'inbox',
+    emoji: '📥',
+    token: 'recibido',
+  },
   sent_to_agency: {
     label: 'Sent to agency',
     labelEs: 'Enviado a dependencia',
@@ -67,6 +74,7 @@ export const STATUS_ORDER: readonly StatusCode[] = [
 /** Verb used on buttons and toasts, so the action keeps one name through the flow. */
 export const STATUS_ACTION: Record<StatusCode, { button: string; done: string }> = {
   received: { button: 'Mark received', done: 'Marked received' },
+  pending_send: { button: 'Send to agency', done: 'Received, pending send' },
   sent_to_agency: { button: 'Send to agency', done: 'Sent to agency' },
   in_progress: { button: 'Mark in progress', done: 'Marked in progress' },
   resolved: { button: 'Mark resolved', done: 'Marked resolved' },
@@ -116,6 +124,7 @@ export function compareForQueue(a: Incident, b: Incident): number {
 export function allowedTransitions(status: StatusCode, isSupervisor: boolean): StatusCode[] {
   switch (status) {
     case 'received':
+    case 'pending_send':
       return isSupervisor
         ? ['sent_to_agency', 'not_applicable']
         : ['in_progress', 'not_applicable'];

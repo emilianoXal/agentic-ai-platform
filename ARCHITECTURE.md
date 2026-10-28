@@ -20,7 +20,7 @@ message. Terraform provisions the Lambda, EventBridge rule, SES identities, and
 least-privilege IAM policy.
 
 The manual GitLab `agent:conversations` job invokes the deployed dev agent with
-the consumer's normalized event contract. It records three runs of the Sonnet
-conversation matrix, correlates tool Lambda logs and DynamoDB observations, and
+the consumer's normalized event contract. It records three runs per Sonnet
+conversation case, correlates tool Lambda logs and DynamoDB observations, and
 publishes JSON and Markdown transcripts as CI artifacts; it never sends a real
 WhatsApp message.

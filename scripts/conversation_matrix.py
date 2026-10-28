@@ -24,6 +24,7 @@ FUNCTION_NAME = "cdshack-urbanbot-dev-agent"
 NAME_PREFIX = "cdshack-urbanbot-dev"
 REPORTS_TABLE = NAME_PREFIX + "-reports"
 INCIDENTS_TABLE = NAME_PREFIX + "-incidents"
+PLACES_TABLE = NAME_PREFIX + "-places"
 TOOL_LOG_GROUPS = {
     "create_report": "/aws/lambda/" + NAME_PREFIX + "-create-report",
     "join_incident": "/aws/lambda/" + NAME_PREFIX + "-join-incident",
@@ -152,6 +153,16 @@ CASES = [
         "forbidden_tools": list(TOOL_LOG_GROUPS),
         "video_candidate": True,
     },
+    {
+        "id": "C13",
+        "name": "Registrar lugar y consultar avisos cercanos",
+        "turns": [
+            "Registra mi casa en Juriquilla. La ubicación es 20.704800, -100.447300.",
+            "¿Qué hay reportado cerca de mi casa?",
+        ],
+        "required_tools": ["register_place"],
+        "video_candidate": True,
+    },
 ]
 
 
@@ -198,6 +209,14 @@ def data_snapshot(ddb, user_id, report_id=None, incident_id=None):
             ExpressionAttributeValues={":u": {"S": user_id}},
         )
         snapshot["user_reports"] = [
+            deserialize_item(item) for item in response.get("Items", [])
+        ]
+        response = ddb.query(
+            TableName=PLACES_TABLE,
+            KeyConditionExpression="user_id = :u",
+            ExpressionAttributeValues={":u": {"S": user_id}},
+        )
+        snapshot["user_places"] = [
             deserialize_item(item) for item in response.get("Items", [])
         ]
         if report_id:
@@ -401,6 +420,23 @@ def verdicts(case, run, log_error):
         truthful = truthful and not has_any(lower, [r"ya quedó", r"quedó resuelto", r"marqué.*resuelto"])
     elif cid == "C12":
         truthful = truthful and "911" in lower and not has_any(lower, [r"envié ayuda", r"ayuda.*en camino"])
+    elif cid == "C13":
+        places = run.get("ddb_after", {}).get("user_places") or []
+        place_registered = any(
+            str(place.get("alias") or place.get("label") or "").lower() == "casa"
+            for place in places
+        )
+        final_reply = replies[-1].lower() if replies else ""
+        uses_place = "casa" in final_reply or "juriquilla" in final_reply
+        claims_registered = has_any(lower, [r"(lugar|casa).*(registrad|guardad)"])
+        truthful = truthful and (place_registered or not claims_registered)
+        action_ok = action_ok and place_registered and uses_place
+        action_evidence += (
+            "; lugar Casa en DynamoDB="
+            + str(place_registered).lower()
+            + "; segunda respuesta usa el lugar="
+            + str(uses_place).lower()
+        )
     if required and not required.issubset(tools):
         truthful = False
     return {

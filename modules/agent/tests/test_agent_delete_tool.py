@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import sys
+from contextlib import contextmanager
 from unittest import mock
 
 os.environ.update({
@@ -50,8 +51,13 @@ class _AgentCallingDelete:
         return _Result()
 
 
+@contextmanager
+def _agent_without_session(model, user_id, consent_pending):
+    yield _AgentCallingDelete()
+
+
 def _run(text, memory_id="memory-1"):
-    handler.Agent = _AgentCallingDelete
+    handler._agent_for_citizen = _agent_without_session
     handler.BedrockModel = mock.MagicMock()
     handler.AGENTCORE_MEMORY_ID = memory_id
     handler._lambda = mock.MagicMock()

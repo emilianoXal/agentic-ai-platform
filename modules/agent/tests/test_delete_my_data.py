@@ -1,9 +1,15 @@
 """Behavior tests for the personal-data deletion Lambda."""
 
+import hashlib
+import hmac
 import importlib.util
+import json
+import logging
 import os
 from pathlib import Path
 from unittest import mock
+
+from botocore.exceptions import ClientError
 
 os.environ.update({
     "AWS_DEFAULT_REGION": "us-east-1",
@@ -128,7 +134,13 @@ def test_delete_removes_personal_data_and_preserves_incident_count():
         {"user_id": "5215512345678", "confirmed": True}, None,
     )
 
-    assert result == {"ok": True, "places_deleted": 1, "reports_anonymized": 2}
+    assert result == {
+        "ok": True,
+        "places_deleted": 1,
+        "reports_anonymized": 2,
+        "memory_events_deleted": 0,
+        "memory_records_deleted": 0,
+    }
     assert database.users == {}
     assert database.places == {}
     assert database.reports["report-1"] == {
@@ -155,6 +167,8 @@ def test_delete_is_idempotent():
         "ok": True,
         "places_deleted": 0,
         "reports_anonymized": 0,
+        "memory_events_deleted": 0,
+        "memory_records_deleted": 0,
     }
 
 
@@ -168,3 +182,157 @@ def test_delete_requires_explicit_confirmation_without_writes():
     handler._ddb.delete_item.assert_not_called()
     handler._ddb.update_item.assert_not_called()
     handler._ddb.put_item.assert_not_called()
+
+
+CITIZEN = "5215512345678"
+OTHER_CITIZEN = "5215500000000"
+IDENTITY_KEY = "identity-key-one"
+MEMORY_ID = "memory-1234567890"
+
+
+def _key(citizen):
+    return hmac.new(IDENTITY_KEY.encode(), citizen.encode(), hashlib.sha256).hexdigest()
+
+
+class FakeAgentCore:
+    """Paginated AgentCore data plane keyed by (actorId, sessionId)."""
+
+    def __init__(self, fail_records=False, events_per_citizen=3):
+        self.fail_records = fail_records
+        self.events = {}
+        self.records = {}
+        for citizen in (CITIZEN, OTHER_CITIZEN):
+            key = _key(citizen)
+            self.events[(f"citizen-{key}", f"conversation-{key}")] = [
+                f"{citizen}-event-{n}" for n in range(events_per_citizen)
+            ]
+            self.records[f"{citizen}-record"] = [f"/strategies/s1/actors/citizen-{key}"]
+
+    def list_events(self, memoryId, actorId, sessionId, includePayloads, nextToken=None):
+        assert memoryId == MEMORY_ID and includePayloads is False
+        events = self.events.get((actorId, sessionId), [])
+        start = int(nextToken or 0)
+        page = {"events": [{"eventId": e} for e in events[start:start + 2]]}
+        if start + 2 < len(events):
+            page["nextToken"] = str(start + 2)
+        return page
+
+    def delete_event(self, memoryId, actorId, sessionId, eventId):
+        self.events[(actorId, sessionId)].remove(eventId)
+
+    def list_memory_records(self, memoryId, namespace, nextToken=None):
+        assert namespace == "/"
+        return {"memoryRecordSummaries": [
+            {"memoryRecordId": record_id, "namespaces": namespaces}
+            for record_id, namespaces in self.records.items()
+        ]}
+
+    def batch_delete_memory_records(self, memoryId, records):
+        if self.fail_records:
+            return {"successfulRecords": [], "failedRecords": [
+                {"memoryRecordId": r["memoryRecordId"], "errorCode": 500}
+                for r in records
+            ]}
+        for record in records:
+            del self.records[record["memoryRecordId"]]
+        return {"successfulRecords": records, "failedRecords": []}
+
+
+def _with_memory(agentcore):
+    secrets = mock.MagicMock()
+    secrets.get_secret_value.return_value = {"SecretString": IDENTITY_KEY}
+    return mock.patch.multiple(
+        handler,
+        _agentcore=agentcore,
+        _secrets=secrets,
+        AGENTCORE_MEMORY_ID=MEMORY_ID,
+        AGENTCORE_IDENTITY_SECRET_ARN="arn:aws:secretsmanager:us-east-1:1:secret:id",
+    )
+
+
+def test_delete_erases_only_this_citizens_agentcore_memory():
+    database = FakeDynamoDB()
+    handler._ddb = database
+    agentcore = FakeAgentCore()
+
+    with _with_memory(agentcore):
+        result = handler.lambda_handler({"user_id": CITIZEN, "confirmed": True}, None)
+
+    assert result["ok"] is True
+    assert result["memory_events_deleted"] == 3
+    assert result["memory_records_deleted"] == 1
+    key, other = _key(CITIZEN), _key(OTHER_CITIZEN)
+    assert agentcore.events[(f"citizen-{key}", f"conversation-{key}")] == []
+    assert len(agentcore.events[(f"citizen-{other}", f"conversation-{other}")]) == 3
+    assert list(agentcore.records) == [f"{OTHER_CITIZEN}-record"]
+    assert database.audit[0]["memory_erased"] == {"BOOL": True}
+
+
+def test_delete_reports_incomplete_memory_erasure_without_personal_data(caplog):
+    database = FakeDynamoDB()
+    handler._ddb = database
+    agentcore = FakeAgentCore(fail_records=True)
+
+    with _with_memory(agentcore), caplog.at_level(logging.INFO):
+        result = handler.lambda_handler({"user_id": CITIZEN, "confirmed": True}, None)
+
+    assert result["ok"] is False
+    assert result["error"] == "memory_erasure_failed"
+    assert database.users == {}
+    assert database.audit[0]["memory_erased"] == {"BOOL": False}
+    logged = [json.loads(r.getMessage()) for r in caplog.records]
+    assert [entry["event"] for entry in logged] == ["agentcore_memory_erasure_failed"]
+    assert CITIZEN not in caplog.text and _key(CITIZEN) not in caplog.text
+
+
+def test_delete_reports_memory_api_error_as_incomplete():
+    handler._ddb = FakeDynamoDB()
+    agentcore = mock.MagicMock()
+    agentcore.list_events.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "denied"}}, "ListEvents",
+    )
+
+    with _with_memory(agentcore):
+        result = handler.lambda_handler({"user_id": CITIZEN, "confirmed": True}, None)
+
+    assert result["ok"] is False
+    assert result["error"] == "memory_erasure_failed"
+
+
+class FakeLambdaContext:
+    """Remaining time drops 1 s per check, starting from start_ms."""
+
+    def __init__(self, start_ms):
+        self.remaining_ms = start_ms
+
+    def get_remaining_time_in_millis(self):
+        self.remaining_ms -= 1000
+        return self.remaining_ms
+
+
+def test_delete_stops_memory_erasure_before_timeout_and_retry_finishes(caplog):
+    database = FakeDynamoDB()
+    handler._ddb = database
+    agentcore = FakeAgentCore(events_per_citizen=40)
+    key = _key(CITIZEN)
+    session = (f"citizen-{key}", f"conversation-{key}")
+    event = {"user_id": CITIZEN, "confirmed": True}
+
+    with _with_memory(agentcore), caplog.at_level(logging.INFO):
+        first = handler.lambda_handler(event, FakeLambdaContext(start_ms=30000))
+
+    assert first["ok"] is False
+    assert first["error"] == "memory_erasure_failed"
+    assert 0 < len(agentcore.events[session]) < 40
+    assert database.audit[-1]["memory_erased"] == {"BOOL": False}
+    logged = [json.loads(r.getMessage()) for r in caplog.records]
+    assert logged[-1]["event"] == "agentcore_memory_erasure_failed"
+    assert CITIZEN not in caplog.text and key not in caplog.text
+
+    with _with_memory(agentcore):
+        retried = handler.lambda_handler(event, FakeLambdaContext(start_ms=900000))
+
+    assert retried["ok"] is True
+    assert agentcore.events[session] == []
+    assert list(agentcore.records) == [f"{OTHER_CITIZEN}-record"]
+    assert database.audit[-1]["memory_erased"] == {"BOOL": True}

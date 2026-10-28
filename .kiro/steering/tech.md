@@ -19,6 +19,8 @@ inclusion: always
   - `hashicorp/awscc ~> 1.0` — recursos de AgentCore
     (`awscc_bedrockagentcore_runtime` / `_gateway` / `_memory`), porque el
     provider `aws` aún no los cubre todos.
+  - `hashicorp/random ~> 3.0` — llave HMAC de AgentCore Memory
+    (`random_password` en `modules/agent`).
 - **Backend:** S3 con **native locking** (`use_lockfile = true`, sin tabla
   DynamoDB). El bucket NO se hardcodea: se pasa en `init` vía
   `-backend-config="bucket=${TF_STATE_BUCKET}"`. State aislado por entorno con

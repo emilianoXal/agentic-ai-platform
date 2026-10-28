@@ -68,3 +68,16 @@ run "inbound_topic_policy_allows_social_messaging_publish" {
     error_message = "data CMK policy must let social-messaging.amazonaws.com use the key to publish to the encrypted inbound topic"
   }
 }
+
+run "ingest_queue_visibility_covers_six_consumer_timeouts" {
+  command = plan
+
+  variables {
+    environment = "dev"
+  }
+
+  assert {
+    condition     = output.ingest_queue_visibility_timeout_seconds >= 6 * 120
+    error_message = "ingest queue visibility timeout must be at least six 120 s consumer timeouts"
+  }
+}

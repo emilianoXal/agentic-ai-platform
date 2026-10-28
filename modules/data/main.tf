@@ -351,6 +351,7 @@ resource "aws_sqs_queue" "ingest" {
   fifo_queue                  = true
   content_based_deduplication = true
   kms_master_key_id           = aws_kms_key.this.arn
+  visibility_timeout_seconds  = 720
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.ingest_dlq.arn

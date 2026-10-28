@@ -4,3 +4,4 @@
 # provided by the python3.12 Lambda runtime and MUST NOT be vendored here —
 # build.sh removes them if pip pulls them transitively.
 strands-agents==1.62.0
+bedrock-agentcore==1.25.1

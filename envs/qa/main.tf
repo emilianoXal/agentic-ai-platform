@@ -79,8 +79,10 @@ module "agent" {
   audit_log_table_arn  = module.data.audit_log_table_arn
   ingest_queue_arn     = module.data.ingest_queue_arn
   ingest_queue_url     = module.data.ingest_queue_url
-  events_bus_name      = module.data.events_bus_name
-  events_bus_arn       = module.data.events_bus_arn
+
+  ingest_queue_visibility_timeout_seconds = module.data.ingest_queue_visibility_timeout_seconds
+  events_bus_name                         = module.data.events_bus_name
+  events_bus_arn                          = module.data.events_bus_arn
 
   routing_rules_json        = var.routing_rules_json
   escalate_report_threshold = var.escalate_report_threshold

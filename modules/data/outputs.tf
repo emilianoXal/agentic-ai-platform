@@ -103,6 +103,11 @@ output "ingest_queue_arn" {
   value       = aws_sqs_queue.ingest.arn
 }
 
+output "ingest_queue_visibility_timeout_seconds" {
+  description = "Visibility timeout (seconds) of the FIFO ingest queue."
+  value       = aws_sqs_queue.ingest.visibility_timeout_seconds
+}
+
 output "ingest_queue_url" {
   description = "URL of the FIFO ingest queue."
   value       = aws_sqs_queue.ingest.url

@@ -88,7 +88,7 @@ neighbors about issues near their registered places.
 - **Region:** `us-east-1` (required — AgentCore and Rekognition are not in
   mx-central-1)
 - **IaC:** Terraform 1.10, providers `aws ~> 5.0`, `archive ~> 2.0`,
-  `awscc ~> 1.0`
+  `awscc ~> 1.0`, `random ~> 3.0`
 - **Architecture:** Proposal 1 — event-driven serverless + Amazon Bedrock
   AgentCore
 

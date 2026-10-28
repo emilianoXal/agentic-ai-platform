@@ -20,8 +20,8 @@ The officials portal uses Amazon Cognito, AWS AppSync, AWS Amplify Hosting, Amaz
 
 The important challenge was keeping an agent useful without allowing it to write directly to operational data. We addressed it with deterministic checks before model use, Bedrock Guardrails, explicit typed tools, least-privilege IAM, and tool-owned data access. We also designed for privacy: consent precedes actions, logs mask identifiers, and the media pipeline is deliberately marked as future work.
 
-The outbound WhatsApp handoff is not complete today: the notifier records what it would send, but it does not yet create a `socialmessaging` client or call `SendWhatsAppMessage` at runtime. This is planned work, not a demonstrated capability. AgentCore Gateway and Memory resources are also flag-gated and disabled in dev.
+The outbound WhatsApp handoff is not complete today: the notifier records what it would send, but it does not yet create a `socialmessaging` client or call `SendWhatsAppMessage` at runtime. This is planned work, not a demonstrated capability. AgentCore Gateway is also flag-gated and disabled in dev; AgentCore Memory is enabled in dev for consenting citizens' conversation history.
 
 ## What's next
 
-We will complete the runtime End User Messaging Social outbound call, connect agent replies to that channel, and validate it with controlled test messages. We will add the planned media workflow for retrieval, face/plate blurring, transcription, and multimodal classification. We also plan to enable and secure AgentCore Gateway and Memory when the identity-provider configuration is ready, while continuing to measure classification quality on a synthetic evaluation set.
+We will complete the runtime End User Messaging Social outbound call, connect agent replies to that channel, and validate it with controlled test messages. We will add the planned media workflow for retrieval, face/plate blurring, transcription, and multimodal classification. We also plan to enable and secure AgentCore Gateway when the identity-provider configuration is ready, while continuing to measure classification quality on a synthetic evaluation set.

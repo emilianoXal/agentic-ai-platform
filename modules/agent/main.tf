@@ -1,6 +1,14 @@
 locals {
   name_prefix = "cdshack-urbanbot-${var.environment}"
 
+  # One SQS delivery must drive exactly one agent turn at a time: the consumer
+  # waits past the agent timeout, the whole batch fits in the consumer timeout,
+  # and the message stays invisible for six consumer timeouts.
+  agent_timeout_seconds             = 90
+  agent_invoke_read_timeout_seconds = 110
+  consumer_timeout_seconds          = 120
+  consumer_batch_size               = 1
+
   # awscc does NOT honour provider default_tags, so AgentCore resources that
   # accept tags set these six inline (same keys/values as the env default_tags).
   tags = {
@@ -475,6 +483,33 @@ data "aws_iam_policy_document" "delete_my_data" {
     actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
     resources = [var.kms_key_arn]
   }
+
+  dynamic "statement" {
+    for_each = var.enable_agentcore_memory ? [1] : []
+
+    content {
+      sid    = "AgentCoreMemoryErase"
+      effect = "Allow"
+      actions = [
+        "bedrock-agentcore:ListEvents",
+        "bedrock-agentcore:DeleteEvent",
+        "bedrock-agentcore:ListMemoryRecords",
+        "bedrock-agentcore:BatchDeleteMemoryRecords",
+      ]
+      resources = [one(awscc_bedrockagentcore_memory.this[*].memory_arn)]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_agentcore_memory ? [1] : []
+
+    content {
+      sid       = "AgentCoreMemoryIdentityKey"
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [one(aws_secretsmanager_secret.agentcore_identity[*].arn)]
+    }
+  }
 }
 
 resource "aws_iam_policy" "delete_my_data" {
@@ -759,6 +794,33 @@ data "aws_iam_policy_document" "agent" {
     resources = [aws_bedrock_guardrail.this.guardrail_arn]
   }
 
+  dynamic "statement" {
+    for_each = var.enable_agentcore_memory ? [1] : []
+
+    content {
+      sid    = "AgentCoreMemorySession"
+      effect = "Allow"
+      actions = [
+        "bedrock-agentcore:CreateEvent",
+        "bedrock-agentcore:DeleteEvent",
+        "bedrock-agentcore:GetEvent",
+        "bedrock-agentcore:ListEvents",
+      ]
+      resources = [one(awscc_bedrockagentcore_memory.this[*].memory_arn)]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_agentcore_memory ? [1] : []
+
+    content {
+      sid       = "AgentCoreMemoryIdentityKey"
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [one(aws_secretsmanager_secret.agentcore_identity[*].arn)]
+    }
+  }
+
   statement {
     sid     = "InvokeTools"
     effect  = "Allow"
@@ -911,13 +973,15 @@ resource "aws_lambda_function" "delete_my_data" {
 
   environment {
     variables = {
-      USERS_TABLE        = var.users_table_name
-      PLACES_TABLE       = var.places_table_name
-      REPORTS_TABLE      = var.reports_table_name
-      REPORTS_USER_INDEX = "by-user"
-      INCIDENTS_TABLE    = var.incidents_table_name
-      AUDIT_TABLE        = var.audit_log_table_name
-      LOG_LEVEL          = var.log_level
+      USERS_TABLE                   = var.users_table_name
+      PLACES_TABLE                  = var.places_table_name
+      REPORTS_TABLE                 = var.reports_table_name
+      REPORTS_USER_INDEX            = "by-user"
+      INCIDENTS_TABLE               = var.incidents_table_name
+      AUDIT_TABLE                   = var.audit_log_table_name
+      LOG_LEVEL                     = var.log_level
+      AGENTCORE_MEMORY_ID           = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
+      AGENTCORE_IDENTITY_SECRET_ARN = var.enable_agentcore_memory ? one(aws_secretsmanager_secret.agentcore_identity[*].arn) : ""
     }
   }
 
@@ -987,15 +1051,16 @@ resource "aws_lambda_function" "consumer" {
   handler          = "handler.lambda_handler"
   filename         = data.archive_file.consumer.output_path
   source_code_hash = data.archive_file.consumer.output_base64sha256
-  timeout          = 120
+  timeout          = local.consumer_timeout_seconds
   memory_size      = 256
 
   environment {
     variables = {
-      AUDIT_TABLE            = var.audit_log_table_name
-      AGENT_FUNCTION_NAME    = aws_lambda_function.agent.function_name
-      OUTBOUND_FUNCTION_NAME = var.outbound_function_name
-      LOG_LEVEL              = var.log_level
+      AUDIT_TABLE               = var.audit_log_table_name
+      AGENT_FUNCTION_NAME       = aws_lambda_function.agent.function_name
+      AGENT_INVOKE_READ_TIMEOUT = local.agent_invoke_read_timeout_seconds
+      OUTBOUND_FUNCTION_NAME    = var.outbound_function_name
+      LOG_LEVEL                 = var.log_level
     }
   }
 
@@ -1012,25 +1077,26 @@ resource "aws_lambda_function" "agent" {
   handler          = "handler.lambda_handler"
   filename         = data.archive_file.agent.output_path
   source_code_hash = data.archive_file.agent.output_base64sha256
-  timeout          = 90
+  timeout          = local.agent_timeout_seconds
   memory_size      = 1024
   layers           = [aws_lambda_layer_version.strands.arn]
 
   environment {
     variables = {
-      BEDROCK_MODEL_ID        = var.bedrock_model_id
-      GUARDRAIL_ID            = aws_bedrock_guardrail.this.guardrail_id
-      GUARDRAIL_VERSION       = aws_bedrock_guardrail_version.this.version
-      TOOL_CREATE_REPORT_FN   = aws_lambda_function.create_report.function_name
-      TOOL_JOIN_INCIDENT_FN   = aws_lambda_function.join_incident.function_name
-      TOOL_GET_STATUS_FN      = aws_lambda_function.get_status.function_name
-      TOOL_REGISTER_PLACE_FN  = aws_lambda_function.register_place.function_name
-      TOOL_ROUTE_FN           = aws_lambda_function.route.function_name
-      TOOL_ESCALATE_FN        = aws_lambda_function.escalate.function_name
-      TOOL_DELETE_MY_DATA_FN  = aws_lambda_function.delete_my_data.function_name
-      AGENTCORE_MEMORY_ID     = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
-      LOG_LEVEL               = var.log_level
-      SIMULATE_WHATSAPP_REPLY = "1"
+      BEDROCK_MODEL_ID              = var.bedrock_model_id
+      GUARDRAIL_ID                  = aws_bedrock_guardrail.this.guardrail_id
+      GUARDRAIL_VERSION             = aws_bedrock_guardrail_version.this.version
+      TOOL_CREATE_REPORT_FN         = aws_lambda_function.create_report.function_name
+      TOOL_JOIN_INCIDENT_FN         = aws_lambda_function.join_incident.function_name
+      TOOL_GET_STATUS_FN            = aws_lambda_function.get_status.function_name
+      TOOL_REGISTER_PLACE_FN        = aws_lambda_function.register_place.function_name
+      TOOL_ROUTE_FN                 = aws_lambda_function.route.function_name
+      TOOL_ESCALATE_FN              = aws_lambda_function.escalate.function_name
+      TOOL_DELETE_MY_DATA_FN        = aws_lambda_function.delete_my_data.function_name
+      AGENTCORE_MEMORY_ID           = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
+      AGENTCORE_IDENTITY_SECRET_ARN = var.enable_agentcore_memory ? one(aws_secretsmanager_secret.agentcore_identity[*].arn) : ""
+      LOG_LEVEL                     = var.log_level
+      SIMULATE_WHATSAPP_REPLY       = "1"
     }
   }
 
@@ -1048,9 +1114,24 @@ resource "aws_lambda_function" "agent" {
 resource "aws_lambda_event_source_mapping" "consumer" {
   event_source_arn        = var.ingest_queue_arn
   function_name           = aws_lambda_function.consumer.function_name
-  batch_size              = 5
+  batch_size              = local.consumer_batch_size
   enabled                 = true
   function_response_types = ["ReportBatchItemFailures"]
+
+  lifecycle {
+    precondition {
+      condition     = local.agent_invoke_read_timeout_seconds > local.agent_timeout_seconds
+      error_message = "The consumer must wait longer for the agent than the agent timeout."
+    }
+    precondition {
+      condition     = local.consumer_batch_size * local.agent_invoke_read_timeout_seconds < local.consumer_timeout_seconds
+      error_message = "A full batch of serial agent invocations must finish within the consumer timeout."
+    }
+    precondition {
+      condition     = var.ingest_queue_visibility_timeout_seconds >= 6 * local.consumer_timeout_seconds
+      error_message = "The ingest queue visibility timeout must be at least six consumer timeouts."
+    }
+  }
 }
 
 # =============================================================================
@@ -1217,7 +1298,32 @@ resource "awscc_bedrockagentcore_memory" "this" {
   count = var.enable_agentcore_memory ? 1 : 0
 
   name                  = replace("${local.name_prefix}-memory", "-", "_")
-  event_expiry_duration = 30
+  event_expiry_duration = 7
+  encryption_key_arn    = var.kms_key_arn
 
   tags = local.tags
+}
+
+# HMAC key for the AgentCore Memory actor/session ids. The value lives only in
+# Secrets Manager and in the encrypted Terraform state; the agent Lambda only
+# receives the secret ARN. Never output or log it.
+resource "random_password" "agentcore_identity" {
+  count = var.enable_agentcore_memory ? 1 : 0
+
+  length  = 64
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "agentcore_identity" {
+  count = var.enable_agentcore_memory ? 1 : 0
+
+  name       = "${local.name_prefix}-agentcore-identity-key"
+  kms_key_id = var.kms_key_arn
+}
+
+resource "aws_secretsmanager_secret_version" "agentcore_identity" {
+  count = var.enable_agentcore_memory ? 1 : 0
+
+  secret_id     = aws_secretsmanager_secret.agentcore_identity[0].id
+  secret_string = random_password.agentcore_identity[0].result
 }

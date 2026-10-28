@@ -47,6 +47,7 @@ TOOL_ROUTE_FN = os.environ.get("TOOL_ROUTE_FN", "")
 TOOL_ESCALATE_FN = os.environ.get("TOOL_ESCALATE_FN", "")
 AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+SIMULATE_WHATSAPP_REPLY = os.environ.get("SIMULATE_WHATSAPP_REPLY", "")
 
 AWS_REGION = "us-east-1"
 # Target the cross-region inference profile, not the bare model id — matches
@@ -362,6 +363,26 @@ def _extract_reply(result):
     return ""
 
 
+def _simulate_outbound_enabled():
+    value = os.environ.get("SIMULATE_WHATSAPP_REPLY", SIMULATE_WHATSAPP_REPLY)
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _record_simulated_reply(user_id, reply, message_id=None):
+    """Log a verifiable outbound stand-in. Does not send WhatsApp."""
+    if not _simulate_outbound_enabled():
+        return
+    text = reply if isinstance(reply, str) else ""
+    _log(
+        logging.INFO,
+        "WOULD_SEND_REPLY",
+        recipient=_mask_phone(user_id),
+        text=text,
+        text_len=len(text),
+        message_id=message_id,
+    )
+
+
 def lambda_handler(event, context):
     """Run the Strands agent on one inbound message and return {ok, reply, error?}.
 
@@ -432,8 +453,7 @@ def lambda_handler(event, context):
 
         _log(logging.INFO, "agent_done", user_hash=_hash_id(user_id),
              reply_len=len(reply))
-        # TODO(outbound): hand this reply off to the WhatsApp outbound channel
-        # (notifier/SNS). Out of scope here; the consumer currently just returns.
+        _record_simulated_reply(user_id, reply, event.get("message_id"))
         return {"ok": True, "reply": reply}
 
     except ModelThrottledException:

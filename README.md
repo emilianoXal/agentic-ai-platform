@@ -98,6 +98,10 @@ terraform validate
 Do not run `terraform plan` / `apply` locally — those need account credentials
 and the remote backend, which the pipeline provides via OIDC.
 
+How to test each kind of change (agent, tool Lambdas, Terraform, portal
+roles, WhatsApp channel), including the live smoke that publishes a fictional
+WhatsApp event to SNS, is in [`docs/oficios/tester.md`](docs/oficios/tester.md).
+
 ## Model classification accuracy
 
 Category/severity classification accuracy must be measured on the synthetic test

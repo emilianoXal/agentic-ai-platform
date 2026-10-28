@@ -1,6 +1,11 @@
 /** The six standard incident statuses (RF-17). Escalation is a separate flag. */
 export type StatusCode =
-  'received' | 'sent_to_agency' | 'in_progress' | 'resolved' | 'not_applicable' | 'reopened';
+  | 'received'
+  | 'sent_to_agency'
+  | 'in_progress'
+  | 'resolved'
+  | 'not_applicable'
+  | 'reopened';
 
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -32,7 +37,14 @@ export interface LatLng {
 }
 
 export type TimelineKind =
-  'status' | 'joined' | 'routed' | 'comment' | 'notified' | 'follow_up' | 'reply' | 'escalated';
+  | 'status'
+  | 'joined'
+  | 'routed'
+  | 'comment'
+  | 'notified'
+  | 'follow_up'
+  | 'reply'
+  | 'escalated';
 
 export interface TimelineEntry {
   readonly id: string;
@@ -86,7 +98,13 @@ export interface OutboundMessage {
 }
 
 export type GatewayEventKind =
-  'status' | 'joined' | 'created' | 'removed' | 'reopened' | 'notified' | 'escalated';
+  | 'status'
+  | 'joined'
+  | 'created'
+  | 'removed'
+  | 'reopened'
+  | 'notified'
+  | 'escalated';
 
 export interface GatewayEvent {
   readonly kind: GatewayEventKind;

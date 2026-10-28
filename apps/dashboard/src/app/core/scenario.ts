@@ -179,14 +179,9 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
           status: 'in_progress',
           actor: 'Servicios Publicos',
         }),
-        entry(
-          60 * 24 * 4 - 30,
-          'status',
-          'Agency email sent to Servicios Publicos',
-          'email',
-          now,
-          { status: 'sent_to_agency' },
-        ),
+        entry(60 * 24 * 4 - 30, 'status', 'Agency email sent to Servicios Publicos', 'email', now, {
+          status: 'sent_to_agency',
+        }),
         entry(
           60 * 24 * 4 - 29,
           'routed',

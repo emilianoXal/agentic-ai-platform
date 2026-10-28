@@ -3,6 +3,13 @@ media_retention_days        = 1
 enable_agentcore_memory     = false
 enable_conversation_history = true
 
+# WhatsApp phone-number id the notifier sends proactive notifications FROM
+# (status changes, nearby incidents). Without it the notifier skips every
+# proactive send ("skipped_no_origination"), so citizens never get status
+# updates even though the portal publishes StatusChanged correctly. Conversational
+# replies don't need this (they reuse the inbound message's origination id).
+outbound_origination_phone_number_id = "arn:aws:social-messaging:us-east-1:636487155766:phone-number-id/e644d37f4dab45d5a57a5676effc9956"
+
 dependency_email_map = {
   agua      = "antonio.miguel+agua@xaldigital.com"
   alumbrado = "emiliano.obregon+luz@xaldigital.com"

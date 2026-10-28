@@ -25,6 +25,12 @@ data "archive_file" "outbound" {
   output_path = "${path.module}/build/outbound.zip"
 }
 
+data "archive_file" "dependency_mailer" {
+  type        = "zip"
+  source_dir  = "${path.module}/src/dependency_mailer"
+  output_path = "${path.module}/build/dependency-mailer.zip"
+}
+
 # =============================================================================
 # CloudWatch log groups — created explicitly so IAM can scope to a known ARN
 # and retention is managed (not auto-created by the Lambda service).
@@ -41,6 +47,11 @@ resource "aws_cloudwatch_log_group" "notifier" {
 
 resource "aws_cloudwatch_log_group" "outbound" {
   name              = "/aws/lambda/${local.name_prefix}-outbound"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_cloudwatch_log_group" "dependency_mailer" {
+  name              = "/aws/lambda/${local.name_prefix}-dependency-mailer"
   retention_in_days = var.log_retention_days
 }
 
@@ -191,6 +202,67 @@ resource "aws_iam_role_policy_attachment" "notifier" {
   policy_arn = aws_iam_policy.notifier.arn
 }
 
+resource "aws_iam_role" "dependency_mailer" {
+  name               = "${local.name_prefix}-dependency-mailer-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_sesv2_email_identity" "dependency_mail" {
+  for_each = toset(concat(
+    values(var.dependency_email_map),
+    [var.dependency_fallback_email, var.dependency_mail_from],
+  ))
+
+  email_identity = each.value
+}
+
+data "aws_iam_policy_document" "dependency_mailer" {
+  statement {
+    sid    = "Logs"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = [
+      aws_cloudwatch_log_group.dependency_mailer.arn,
+      "${aws_cloudwatch_log_group.dependency_mailer.arn}:*",
+    ]
+  }
+
+  statement {
+    sid    = "IncidentAndDedupState"
+    effect = "Allow"
+    actions = [
+      "dynamodb:DeleteItem",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+    ]
+    resources = [
+      var.incidents_table_arn,
+      var.audit_table_arn,
+    ]
+  }
+
+  statement {
+    sid       = "SendDependencyEmail"
+    effect    = "Allow"
+    actions   = ["ses:SendEmail"]
+    resources = [for identity in aws_sesv2_email_identity.dependency_mail : identity.arn]
+  }
+}
+
+resource "aws_iam_policy" "dependency_mailer" {
+  name   = "${local.name_prefix}-dependency-mailer-policy"
+  policy = data.aws_iam_policy_document.dependency_mailer.json
+}
+
+resource "aws_iam_role_policy_attachment" "dependency_mailer" {
+  role       = aws_iam_role.dependency_mailer.name
+  policy_arn = aws_iam_policy.dependency_mailer.arn
+}
+
 # =============================================================================
 # outbound — IAM role + customer-managed least-privilege policy + attachment.
 # The ONE and only role that holds socialmessaging:SendWhatsAppMessage (RB-01).
@@ -324,6 +396,34 @@ resource "aws_lambda_function" "outbound" {
   ]
 }
 
+resource "aws_lambda_function" "dependency_mailer" {
+  function_name    = "${local.name_prefix}-dependency-mailer"
+  role             = aws_iam_role.dependency_mailer.arn
+  runtime          = "python3.12"
+  handler          = "handler.lambda_handler"
+  filename         = data.archive_file.dependency_mailer.output_path
+  source_code_hash = data.archive_file.dependency_mailer.output_base64sha256
+  timeout          = 30
+  memory_size      = 256
+
+  environment {
+    variables = {
+      INCIDENTS_TABLE           = var.incidents_table_name
+      AUDIT_TABLE               = var.audit_table_name
+      DEPENDENCY_EMAIL_MAP      = jsonencode(var.dependency_email_map)
+      DEPENDENCY_FALLBACK_EMAIL = var.dependency_fallback_email
+      MAIL_FROM                 = var.dependency_mail_from
+      PORTAL_URL                = "${var.portal_url}/incidents"
+      LOG_LEVEL                 = var.log_level
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.dependency_mailer,
+    aws_iam_role_policy_attachment.dependency_mailer,
+  ]
+}
+
 # =============================================================================
 # Event wiring — ingest (SNS → Lambda).
 # =============================================================================
@@ -365,4 +465,27 @@ resource "aws_lambda_permission" "notifier_events" {
   function_name = aws_lambda_function.notifier.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.notifier.arn
+}
+
+resource "aws_cloudwatch_event_rule" "dependency_mailer" {
+  name           = "${local.name_prefix}-dependency-mailer"
+  event_bus_name = var.event_bus_name
+
+  event_pattern = jsonencode({
+    "detail-type" = ["StatusChanged", "IncidentEscalated", "IncidentNearby"]
+  })
+}
+
+resource "aws_cloudwatch_event_target" "dependency_mailer" {
+  rule           = aws_cloudwatch_event_rule.dependency_mailer.name
+  event_bus_name = var.event_bus_name
+  arn            = aws_lambda_function.dependency_mailer.arn
+}
+
+resource "aws_lambda_permission" "dependency_mailer_events" {
+  statement_id  = "AllowEventBridgeInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.dependency_mailer.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.dependency_mailer.arn
 }

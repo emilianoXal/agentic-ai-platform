@@ -41,6 +41,24 @@ variable "log_level" {
   default     = "INFO"
 }
 
+variable "dependency_email_map" {
+  description = "Incident category to responsible agency e-mail address."
+  type        = map(string)
+  default     = {}
+}
+
+variable "dependency_fallback_email" {
+  description = "Fallback agency recipient for incident e-mails."
+  type        = string
+  default     = "antonio.miguel+supervisor@xaldigital.com"
+}
+
+variable "dependency_mail_from" {
+  description = "SES sender identity for incident e-mails."
+  type        = string
+  default     = "antonio.miguel@xaldigital.com"
+}
+
 # =============================================================================
 # Agent module — feature flags + tunables.
 # =============================================================================

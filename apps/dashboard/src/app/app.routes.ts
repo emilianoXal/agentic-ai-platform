@@ -4,7 +4,7 @@ import { roleGuard, signedInGuard } from './core/session';
 export const routes: Routes = [
   {
     path: 'sign-in',
-    title: 'Sign in · FixedYet',
+    title: 'Sign in · UrbanBot',
     loadComponent: () => import('./features/sign-in/sign-in').then((m) => m.SignIn),
   },
   {
@@ -15,19 +15,19 @@ export const routes: Routes = [
       { path: '', pathMatch: 'full', redirectTo: 'incidents' },
       {
         path: 'incidents',
-        title: 'Incidents · FixedYet',
+        title: 'Incidents · UrbanBot',
         loadComponent: () =>
           import('./features/incidents/incidents-page').then((m) => m.IncidentsPage),
       },
       {
         path: 'incidents/:id',
-        title: 'Incident · FixedYet',
+        title: 'Incident · UrbanBot',
         loadComponent: () =>
           import('./features/incidents/incidents-page').then((m) => m.IncidentsPage),
       },
       {
         path: 'demo',
-        title: 'Demo console · FixedYet',
+        title: 'Demo console · UrbanBot',
         canActivate: [roleGuard('admin')],
         loadComponent: () => import('./features/demo/demo-page').then((m) => m.DemoPage),
       },

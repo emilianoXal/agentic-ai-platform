@@ -47,6 +47,8 @@ TOOL_ROUTE_FN = os.environ.get("TOOL_ROUTE_FN", "")
 TOOL_ESCALATE_FN = os.environ.get("TOOL_ESCALATE_FN", "")
 AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+SIMULATE_WHATSAPP_REPLY = os.environ.get("SIMULATE_WHATSAPP_REPLY", "")
+SMOKE_TEST_NUMBER = os.environ.get("SMOKE_TEST_NUMBER", "5215599900001")
 
 AWS_REGION = "us-east-1"
 # Target the cross-region inference profile, not the bare model id — matches
@@ -362,6 +364,34 @@ def _extract_reply(result):
     return ""
 
 
+def _simulate_outbound_enabled():
+    value = os.environ.get("SIMULATE_WHATSAPP_REPLY", SIMULATE_WHATSAPP_REPLY)
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _is_smoke_sender(user_id):
+    smoke = re.sub(r"\D", "", os.environ.get("SMOKE_TEST_NUMBER", SMOKE_TEST_NUMBER))
+    return bool(smoke) and re.sub(r"\D", "", str(user_id or "")) == smoke
+
+
+def _record_simulated_reply(user_id, reply, message_id=None):
+    """Log a verifiable outbound stand-in for the smoke sender only.
+
+    Does not send WhatsApp and never logs the reply text.
+    """
+    if not _simulate_outbound_enabled() or not _is_smoke_sender(user_id):
+        return
+    text = reply if isinstance(reply, str) else ""
+    _log(
+        logging.INFO,
+        "WOULD_SEND_REPLY",
+        recipient=_mask_phone(user_id),
+        text_len=len(text),
+        text_hash=_hash_id(text),
+        message_id=message_id,
+    )
+
+
 def lambda_handler(event, context):
     """Run the Strands agent on one inbound message and return {ok, reply, error?}.
 
@@ -432,6 +462,7 @@ def lambda_handler(event, context):
 
         _log(logging.INFO, "agent_done", user_hash=_hash_id(user_id),
              reply_len=len(reply))
+        _record_simulated_reply(user_id, reply, event.get("message_id"))
         return {"ok": True, "reply": reply}
 
     except ModelThrottledException:

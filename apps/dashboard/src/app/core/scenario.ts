@@ -67,7 +67,7 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
   return [
     {
       id: 'inc-leak',
-      folio: 'FY-2026-000214',
+      folio: 'UB-2026-000214',
       category: 'agua',
       title: 'Water leak near you',
       titleEs: 'la fuga de agua que reportaste',
@@ -95,7 +95,7 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
     },
     {
       id: 'inc-pothole',
-      folio: 'FY-2026-000198',
+      folio: 'UB-2026-000198',
       category: 'bacheo',
       title: 'Pothole near you',
       titleEs: 'el bache que reportaste',
@@ -137,7 +137,7 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
     },
     {
       id: 'inc-light',
-      folio: 'FY-2026-000171',
+      folio: 'UB-2026-000171',
       category: 'alumbrado',
       title: 'Street lights out near you',
       titleEs: 'las luminarias apagadas que reportaste',
@@ -180,7 +180,7 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
     },
     {
       id: 'inc-trash',
-      folio: 'FY-2026-000231',
+      folio: 'UB-2026-000231',
       category: 'basura',
       title: 'Overflowing bins near you',
       titleEs: 'los contenedores llenos que reportaste',
@@ -210,7 +210,7 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
 export function buildNewIncident(center: LatLng, now: number = Date.now()): Incident {
   return {
     id: 'inc-drain',
-    folio: 'FY-2026-000236',
+    folio: 'UB-2026-000236',
     category: 'drenaje',
     title: 'Blocked storm drain near you',
     titleEs: 'la coladera tapada que reportaste',

@@ -1,6 +1,15 @@
 environment          = "dev"
 media_retention_days = 30
 
+dependency_email_map = {
+  agua      = "antonio.miguel+agua@xaldigital.com"
+  alumbrado = "emiliano.obregon+luz@xaldigital.com"
+  bacheo    = "karla.segura+baches@xaldigital.com"
+  basura    = "josue.jimenez+basura@xaldigital.com"
+}
+dependency_fallback_email = "antonio.miguel+supervisor@xaldigital.com"
+dependency_mail_from      = "antonio.miguel@xaldigital.com"
+
 # Dashboard staff (Cognito e-mails each a temporary password on creation).
 # Every team member gets the three roles: admin on their own address, an agency
 # operator on +<area> (a different agency per person) and a municipal supervisor

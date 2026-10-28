@@ -207,7 +207,7 @@ class ReadModelTest(unittest.TestCase):
         item = {"incident_id": {"S": "abc123"}, "category": {"S": "bacheo"}, "geohash": {"S": demo_data.encode_geohash(20.6, -100.4)}, "status": {"S": "OPEN"}, "created_at": {"S": datetime(2026, 10, 27, tzinfo=timezone.utc).isoformat()}}
         incident = handler.to_incident(item)
         self.assertAlmostEqual(incident["location"]["lat"], 20.6, places=2)
-        self.assertEqual(incident["folio"], "FY-2026-ABC123")
+        self.assertEqual(incident["folio"], "UB-2026-ABC123")
         self.assertEqual(incident["status"], "received")
 
     def test_agency_slug(self):

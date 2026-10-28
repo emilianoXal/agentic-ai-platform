@@ -886,17 +886,18 @@ resource "aws_lambda_function" "agent" {
 
   environment {
     variables = {
-      BEDROCK_MODEL_ID       = var.bedrock_model_id
-      GUARDRAIL_ID           = aws_bedrock_guardrail.this.guardrail_id
-      GUARDRAIL_VERSION      = aws_bedrock_guardrail_version.this.version
-      TOOL_CREATE_REPORT_FN  = aws_lambda_function.create_report.function_name
-      TOOL_JOIN_INCIDENT_FN  = aws_lambda_function.join_incident.function_name
-      TOOL_GET_STATUS_FN     = aws_lambda_function.get_status.function_name
-      TOOL_REGISTER_PLACE_FN = aws_lambda_function.register_place.function_name
-      TOOL_ROUTE_FN          = aws_lambda_function.route.function_name
-      TOOL_ESCALATE_FN       = aws_lambda_function.escalate.function_name
-      AGENTCORE_MEMORY_ID    = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
-      LOG_LEVEL              = var.log_level
+      BEDROCK_MODEL_ID        = var.bedrock_model_id
+      GUARDRAIL_ID            = aws_bedrock_guardrail.this.guardrail_id
+      GUARDRAIL_VERSION       = aws_bedrock_guardrail_version.this.version
+      TOOL_CREATE_REPORT_FN   = aws_lambda_function.create_report.function_name
+      TOOL_JOIN_INCIDENT_FN   = aws_lambda_function.join_incident.function_name
+      TOOL_GET_STATUS_FN      = aws_lambda_function.get_status.function_name
+      TOOL_REGISTER_PLACE_FN  = aws_lambda_function.register_place.function_name
+      TOOL_ROUTE_FN           = aws_lambda_function.route.function_name
+      TOOL_ESCALATE_FN        = aws_lambda_function.escalate.function_name
+      AGENTCORE_MEMORY_ID     = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
+      LOG_LEVEL               = var.log_level
+      SIMULATE_WHATSAPP_REPLY = "1"
     }
   }
 

@@ -135,7 +135,7 @@ resource "aws_cognito_user_group" "this" {
   for_each = {
     agency   = "Agency operators: incidents routed to their custom:agency_id only"
     official = "Municipal supervisors: every agency, escalation"
-    admin    = "FixedYet administrators: configuration and demo data"
+    admin    = "UrbanBot administrators: configuration and demo data"
   }
 
   name         = each.key
@@ -597,8 +597,11 @@ resource "aws_wafv2_web_acl_association" "api" {
 # =============================================================================
 resource "awscc_location_api_key" "maps" {
   key_name    = "${local.name_prefix}-dashboard-maps"
-  description = "FixedYet dashboard: map tiles and reverse geocoding"
+  description = "UrbanBot dashboard: map tiles and reverse geocoding"
   no_expiry   = true
+  # The key is in active use, so Location requires an explicit confirmation for
+  # in-place updates (description or restrictions). The key value is unchanged.
+  force_update = true
 
   restrictions = {
     allow_actions = [
@@ -624,7 +627,7 @@ resource "awscc_location_api_key" "maps" {
 resource "aws_amplify_app" "dashboard" {
   count       = var.enable_hosting ? 1 : 0
   name        = "${local.name_prefix}-dashboard"
-  description = "FixedYet officials' dashboard (Angular)"
+  description = "UrbanBot officials' dashboard (Angular)"
   platform    = "WEB"
 
   # Single-page app: every path without a file extension serves index.html.

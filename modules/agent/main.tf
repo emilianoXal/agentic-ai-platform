@@ -1297,9 +1297,9 @@ resource "awscc_bedrockagentcore_gateway" "this" {
 resource "awscc_bedrockagentcore_memory" "this" {
   count = var.enable_agentcore_memory ? 1 : 0
 
-  name                  = replace("${local.name_prefix}-memory", "-", "_")
+  # The previous name belongs to a failed creation outside Terraform state.
+  name                  = replace("${local.name_prefix}-memory-aws-encrypted", "-", "_")
   event_expiry_duration = 7
-  encryption_key_arn    = var.kms_key_arn
 
   tags = local.tags
 }

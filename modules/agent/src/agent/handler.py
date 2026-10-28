@@ -196,10 +196,19 @@ def _is_deletion_confirmation(text):
     return " ".join(words) == _DELETE_CONFIRMATION_PHRASE
 
 
+_inbound_media = []
+
+
+def _sanitized_media(media):
+    if not isinstance(media, list):
+        return []
+    return [value for value in media if isinstance(value, str) and value.startswith("sanitized/")]
+
+
 # --- Tool wrappers (one per tool Lambda; typed signatures + es-MX docstrings) -
 @tool
 def create_report(user_id: str, category: str, geohash: str, description: str,
-                  media: list = None, lat: float = None, lng: float = None,
+                  lat: float = None, lng: float = None,
                   severity: str = None) -> dict:
     """Registra un nuevo reporte ciudadano de infraestructura urbana.
 
@@ -212,7 +221,6 @@ def create_report(user_id: str, category: str, geohash: str, description: str,
         category: Categoria del reporte (p.ej. bacheo, alumbrado, basura, agua).
         geohash: Celda geohash de precision 7 calculada desde lat/lng.
         description: Descripcion del reporte (obligatoria).
-        media: Lista opcional de referencias a medios (claves S3 o URLs).
         lat: Latitud opcional (se guarda en el reporte).
         lng: Longitud opcional (se guarda en el reporte).
         severity: Severidad opcional (low, medium, high, critical).
@@ -222,7 +230,7 @@ def create_report(user_id: str, category: str, geohash: str, description: str,
         "category": category,
         "geohash": geohash,
         "description": description,
-        "media": media,
+        "media": list(_inbound_media),
         "lat": lat,
         "lng": lng,
         "severity": severity,
@@ -634,6 +642,7 @@ def lambda_handler(event, context):
          rate_limited=rate_limited,
          memory=bool(CONVERSATION_HISTORY_TABLE or AGENTCORE_MEMORY_ID) and not consent_pending)
 
+    _inbound_media[:] = _sanitized_media(event.get("media"))
     try:
         # Build the Bedrock model targeting the inference profile with the
         # guardrail applied declaratively (RNF-13/14): BedrockModel forwards
@@ -702,3 +711,5 @@ def lambda_handler(event, context):
                                      "reason": "unexpected",
                                      "user_hash": _hash_id(user_id)}))
         return {"ok": False, "error": "internal"}
+    finally:
+        _inbound_media.clear()

@@ -27,7 +27,7 @@ class _ModelThrottled(Exception):
 
 
 _exceptions.ModelThrottledException = _ModelThrottled
-sys.modules.setdefault("strands", _strands)
+sys.modules.setdefault("strands", _strands).tool = lambda fn: fn
 sys.modules.setdefault("strands.models.bedrock", mock.MagicMock())
 sys.modules.setdefault("strands.types.exceptions", _exceptions)
 
@@ -199,6 +199,55 @@ class DroppedMediaPromptTests(unittest.TestCase):
         result = self._run("", None)
         self.assertEqual(result.get("error"), "invalid_input")
         self.assertEqual(_CapturingAgent.prompts, [])
+
+
+class _ReportingAgent(_Agent):
+    def __call__(self, prompt):
+        handler.create_report(
+            user_id=SENDER, category="bacheo", geohash="9g3qrbc",
+            description="bache en la calle",
+        )
+        return _Result()
+
+
+class InboundMediaReportTests(unittest.TestCase):
+    def setUp(self):
+        handler.Agent = _ReportingAgent
+        handler.BedrockModel = mock.MagicMock()
+        handler._lambda = mock.MagicMock()
+        handler._lambda.invoke.return_value = {
+            "Payload": mock.MagicMock(read=lambda: b'{"ok": true}'),
+        }
+        handler.TOOL_CREATE_REPORT_FN = "create-report"
+
+    def _report_payloads(self):
+        return [
+            json.loads(call.kwargs["Payload"])
+            for call in handler._lambda.invoke.call_args_list
+            if call.kwargs.get("FunctionName") == "create-report"
+        ]
+
+    def test_opted_in_captioned_image_report_carries_sanitized_key(self):
+        result = handler.lambda_handler({
+            "user_id": SENDER,
+            "text": "bache en la calle",
+            "message_id": WAMID,
+            "type": "image",
+            "media": ["sanitized/abc", "raw/secret.jpeg", {"id": "123"}],
+            "media_dropped": None,
+            "consent_pending": False,
+        }, None)
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(self._report_payloads()[0]["media"], ["sanitized/abc"])
+        self.assertEqual(handler._inbound_media, [])
+
+    def test_media_does_not_leak_into_next_invocation(self):
+        handler.lambda_handler({
+            "user_id": SENDER, "text": "foto", "type": "image",
+            "media": ["sanitized/abc"],
+        }, None)
+        handler.lambda_handler({"user_id": SENDER, "text": "otro bache", "type": "text"}, None)
+        self.assertEqual([p["media"] for p in self._report_payloads()], [["sanitized/abc"], []])
 
 
 if __name__ == "__main__":

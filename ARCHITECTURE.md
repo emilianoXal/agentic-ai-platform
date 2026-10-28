@@ -72,9 +72,12 @@ never downloaded. Otherwise ingest starts the compute module's Step Functions
 workflow and queues only a deterministic `sanitized/` S3 key. When the image is
 not processed, ingest still queues the message with no media reference and a
 PII-free `media_dropped` reason (`consent_pending`, `rate_limited`, or
-`processing_error` when `StartExecution` fails); the agent prompt then asks for
+`processing_error` when media preparation fails, including missing pipeline
+configuration or origination number and AWS `StartExecution` errors); the agent prompt then asks for
 opt-in or explains the reason and asks the citizen to resend the photo, even
-when the photo had no caption. The workflow downloads the WhatsApp
+when the photo had no caption. The agent's `create_report` tool attaches only
+the current inbound message's `sanitized/` keys server-side; the model cannot
+supply or omit media. The workflow downloads the WhatsApp
 asset into the KMS-encrypted media bucket, calls Rekognition `DetectFaces` and
 `DetectText`, and invokes the media Lambda to blur face boxes and plate-shaped
 alphanumeric text lines. Images with no sensitive regions are copied unchanged.

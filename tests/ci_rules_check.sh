@@ -245,6 +245,8 @@ def main(path):
         for rule in smoke_rules
     ):
         fail("smoke:whatsapp must be manual")
+    if smoke_job.get("allow_failure") is not True:
+        fail("smoke:whatsapp must set allow_failure: true so manual MR/branch pipelines are not blocked")
     if not smoke_job.get("id_tokens"):
         fail("smoke:whatsapp must use OIDC id_tokens (same pattern as bedrock:smoke)")
 

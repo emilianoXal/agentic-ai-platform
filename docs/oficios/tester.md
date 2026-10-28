@@ -6,8 +6,11 @@ hablan con AWS. El script de humo **nunca** envía WhatsApp a un número real:
 inyecta un evento SNS con un remitente ficticio (`5215599900001`).
 
 La respuesta saliente aún no se manda por WhatsApp. Con
-`SIMULATE_WHATSAPP_REPLY=1` el agente deja un log estructurado
-`WOULD_SEND_REPLY` (destino enmascarado y texto) que el humo verifica.
+`SIMULATE_WHATSAPP_REPLY=1`, y solo si el remitente es el número de humo
+(`SMOKE_TEST_NUMBER`, default `5215599900001`), el agente deja un log
+estructurado `WOULD_SEND_REPLY` con `message_id`, destino enmascarado,
+`text_len` y `text_hash`; nunca el texto. Un ciudadano real no pasa por ahí.
+El humo lo verifica por `message_id` y `text_len`.
 
 Contraseña del portal: leerla dentro del script o del navegador con
 
@@ -49,5 +52,6 @@ sale distinto de cero al primer fallo. El techo total es 300 s (dentro del
 script).
 
 Orden: ingesta (`enqueued`) → consumidor (`agent_invoked`) → agente
-(DynamoDB + `WOULD_SEND_REPLY`) → portal (incidente en
-`cdshack-urbanbot-dev-incidents` cuando el agente lo crea).
+(`WOULD_SEND_REPLY` con el `message_id` y `text_len` > 0) → portal
+(incidente en `cdshack-urbanbot-dev-incidents` de un reporte del remitente
+ficticio creado en esta corrida, cuando el agente lo crea).

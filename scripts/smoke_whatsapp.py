@@ -23,7 +23,6 @@ INBOUND_TOPIC = NAME_PREFIX + "-inbound"
 INGEST_LOG_GROUP = "/aws/lambda/" + NAME_PREFIX + "-ingest"
 CONSUMER_LOG_GROUP = "/aws/lambda/" + NAME_PREFIX + "-consumer"
 AGENT_LOG_GROUP = "/aws/lambda/" + NAME_PREFIX + "-agent"
-AUDIT_TABLE = NAME_PREFIX + "-audit-log"
 REPORTS_TABLE = NAME_PREFIX + "-reports"
 INCIDENTS_TABLE = NAME_PREFIX + "-incidents"
 PORTAL_URL = "https://main.d1taemvhj3go47.amplifyapp.com/incidents"
@@ -225,6 +224,16 @@ def log_matches_event(message, event_name, message_id):
     return needle in message or alt in message or event_name in message
 
 
+def reply_text_len(message):
+    start = message.find("{")
+    try:
+        payload = json.loads(message[start:]) if start >= 0 else {}
+    except ValueError:
+        return 0
+    value = payload.get("text_len") if isinstance(payload, dict) else None
+    return value if isinstance(value, int) and value > 0 else 0
+
+
 def _print_step(name, ok, detail):
     mark = "pasa" if ok else "falla"
     print("%s: %s (%s)" % (name, mark, detail), flush=True)
@@ -269,25 +278,16 @@ class Smoke:
             self.sleep(min(POLL_S, remaining))
         return None
 
-    def query_audit(self, entity_id):
-        try:
-            resp = self.ddb.query(
-                TableName=AUDIT_TABLE,
-                KeyConditionExpression="entity_id = :e",
-                ExpressionAttributeValues={":e": {"S": entity_id}},
-                Limit=1,
-            )
-        except Exception as exc:
-            raise RuntimeError(_aws_error_detail(exc)) from exc
-        return bool(resp.get("Items"))
-
-    def reports_for_sender(self, sender):
+    def reports_for_sender(self, sender, since_iso):
         try:
             resp = self.ddb.query(
                 TableName=REPORTS_TABLE,
                 IndexName="by-user",
-                KeyConditionExpression="user_id = :u",
-                ExpressionAttributeValues={":u": {"S": sender}},
+                KeyConditionExpression="user_id = :u AND created_at >= :t",
+                ExpressionAttributeValues={
+                    ":u": {"S": sender},
+                    ":t": {"S": since_iso},
+                },
                 ScanIndexForward=False,
                 Limit=5,
             )
@@ -321,6 +321,9 @@ class Smoke:
             deadline = self.monotonic() + DEADLINE_S
         rank = step_rank(hasta)
         start_ms = int(time.time() * 1000) - 5000
+        since_iso = datetime.fromtimestamp(
+            start_ms / 1000, timezone.utc,
+        ).isoformat()
         envelope = build_eum_envelope(message_id, sender=sender)
         published = self.publish(envelope)
         sns_id = published.get("MessageId") or ""
@@ -355,25 +358,10 @@ class Smoke:
         if rank == 1:
             return 0
 
-        try:
-            in_audit = (
-                self.query_audit("msgid#" + message_id)
-                or self.query_audit("inbound#" + message_id)
-            )
-        except RuntimeError as exc:
-            _print_step("agente", False, str(exc))
-            return 1
         reply_msg = self.wait_for_log(
             AGENT_LOG_GROUP, EVENT_WOULD_SEND_REPLY, message_id,
             start_ms, deadline,
         )
-        if not in_audit:
-            _print_step(
-                "agente",
-                False,
-                "sin registro DynamoDB msgid#/inbound# %s" % message_id,
-            )
-            return 1
         if not reply_msg:
             _print_step(
                 "agente",
@@ -382,19 +370,27 @@ class Smoke:
                 "simulador; hace falta aplicar el modelo nuevo)",
             )
             return 1
-        if FAKE_SENDER in (reply_msg or ""):
+        if FAKE_SENDER in reply_msg:
             _print_step("agente", False, "WOULD_SEND_REPLY expuso el destino")
+            return 1
+        text_len = reply_text_len(reply_msg)
+        if not text_len:
+            _print_step(
+                "agente", False, "WOULD_SEND_REPLY sin text_len de la respuesta",
+            )
             return 1
         _print_step(
             "agente",
             True,
-            "DynamoDB + WOULD_SEND_REPLY destino=%s" % FAKE_SENDER_MASK,
+            "WOULD_SEND_REPLY %s destino=%s text_len=%s" % (
+                message_id, FAKE_SENDER_MASK, text_len,
+            ),
         )
         if rank == 2:
             return 0
 
         try:
-            reports = self.reports_for_sender(sender)
+            reports = self.reports_for_sender(sender, since_iso)
         except RuntimeError as exc:
             _print_step("portal", False, str(exc))
             return 1

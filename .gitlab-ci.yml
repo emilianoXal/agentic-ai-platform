@@ -347,6 +347,7 @@ smoke:whatsapp:
     - !reference [.aws_auth, before_script]
   script:
     - python3 scripts/smoke_whatsapp.py --hasta "${SMOKE_HASTA:-ingesta}"
+  allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: manual

@@ -3,6 +3,7 @@
 Run: python3 -m unittest discover -s modules/agent/tests
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -68,26 +69,62 @@ class SimulatedOutboundTests(unittest.TestCase):
         handler.BedrockModel = mock.MagicMock()
         handler._lambda = mock.MagicMock()
 
-    def _event(self):
+    def tearDown(self):
+        os.environ.pop("SMOKE_TEST_NUMBER", None)
+
+    def _event(self, sender=SENDER):
         return {
-            "user_id": SENDER,
+            "user_id": sender,
             "text": "hola",
             "message_id": WAMID,
             "type": "text",
         }
 
-    def test_env_on_logs_would_send_reply_masked_with_text(self):
+    def _would_send(self, output):
+        events = []
+        for line in output:
+            payload = json.loads(line.split(":", 2)[2])
+            if payload.get("event") == "WOULD_SEND_REPLY":
+                events.append(payload)
+        return events
+
+    def test_env_on_smoke_sender_logs_metadata_without_text(self):
         os.environ["SIMULATE_WHATSAPP_REPLY"] = "1"
         with self.assertLogs(handler.logger, level="INFO") as cm:
             result = handler.lambda_handler(self._event(), None)
         self.assertTrue(result.get("ok"))
         self.assertEqual(result.get("reply"), REPLY)
+        events = self._would_send(cm.output)
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual(event["message_id"], WAMID)
+        self.assertEqual(event["recipient"], "****0001")
+        self.assertEqual(event["text_len"], len(REPLY))
+        self.assertEqual(
+            event["text_hash"],
+            hashlib.sha256(REPLY.encode("utf-8")).hexdigest()[:16],
+        )
+        self.assertNotIn("text", event)
         joined = " ".join(cm.output)
-        self.assertIn("WOULD_SEND_REPLY", joined)
-        self.assertIn("****0001", joined)
-        self.assertIn(REPLY, joined)
-        self.assertIn(WAMID, joined)
+        self.assertNotIn(REPLY, joined)
         self.assertNotIn(SENDER, joined)
+
+    def test_env_on_real_sender_skips_would_send_reply(self):
+        os.environ["SIMULATE_WHATSAPP_REPLY"] = "1"
+        with self.assertLogs(handler.logger, level="INFO") as cm:
+            result = handler.lambda_handler(self._event("5215512345678"), None)
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(self._would_send(cm.output), [])
+
+    def test_smoke_number_is_configurable(self):
+        os.environ["SIMULATE_WHATSAPP_REPLY"] = "1"
+        os.environ["SMOKE_TEST_NUMBER"] = "5215512345678"
+        with self.assertLogs(handler.logger, level="INFO") as cm:
+            handler.lambda_handler(self._event("5215512345678"), None)
+            handler.lambda_handler(self._event(), None)
+        events = self._would_send(cm.output)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["recipient"], "****5678")
 
     def test_env_off_skips_would_send_reply(self):
         os.environ["SIMULATE_WHATSAPP_REPLY"] = "0"
@@ -95,9 +132,8 @@ class SimulatedOutboundTests(unittest.TestCase):
             result = handler.lambda_handler(self._event(), None)
         self.assertTrue(result.get("ok"))
         self.assertEqual(result.get("reply"), REPLY)
-        joined = " ".join(cm.output)
-        self.assertNotIn("WOULD_SEND_REPLY", joined)
-        self.assertNotIn(REPLY, joined)
+        self.assertEqual(self._would_send(cm.output), [])
+        self.assertNotIn(REPLY, " ".join(cm.output))
 
     def test_invalid_input_does_not_simulate_send(self):
         os.environ["SIMULATE_WHATSAPP_REPLY"] = "1"

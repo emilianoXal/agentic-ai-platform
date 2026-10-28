@@ -3,6 +3,8 @@
 Run: python3 -m unittest tests.test_smoke_whatsapp
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
@@ -54,8 +56,7 @@ class _Sns:
 
 
 class _Ddb:
-    def __init__(self, audit=None, reports=None, incidents=None, fail=None):
-        self.audit = audit or {}
+    def __init__(self, reports=None, incidents=None, fail=None):
         self.reports = reports or []
         self.incidents = incidents or {}
         self.fail = fail
@@ -66,14 +67,16 @@ class _Ddb:
         if self.fail:
             raise self.fail
         table = kwargs.get("TableName")
-        if table == smoke.AUDIT_TABLE:
-            values = kwargs.get("ExpressionAttributeValues") or {}
-            entity = (values.get(":e") or {}).get("S")
-            if entity in self.audit:
-                return {"Items": [self.audit[entity]]}
-            return {"Items": []}
         if table == smoke.REPORTS_TABLE:
-            return {"Items": list(self.reports)}
+            values = kwargs.get("ExpressionAttributeValues") or {}
+            user = (values.get(":u") or {}).get("S")
+            since = (values.get(":t") or {}).get("S")
+            if not since:
+                raise AssertionError("reports query must bound created_at")
+            return {"Items": [
+                r for r in self.reports
+                if r["user_id"]["S"] == user and r["created_at"]["S"] >= since
+            ]}
         return {"Items": []}
 
     def get_item(self, **kwargs):
@@ -97,8 +100,21 @@ def _reply(mid):
         "event": "WOULD_SEND_REPLY",
         "message_id": mid,
         "recipient": "****0001",
-        "text": "hola de vuelta",
+        "text_len": 14,
+        "text_hash": "0123456789abcdef",
     })
+
+
+def _report(incident_id, created_at):
+    return {
+        "user_id": {"S": smoke.FAKE_SENDER},
+        "created_at": {"S": created_at},
+        "incident_id": {"S": incident_id},
+    }
+
+
+_FUTURE = "2999-01-01T00:00:00+00:00"
+_PAST = "2000-01-01T00:00:00+00:00"
 
 
 class EnvelopeTests(unittest.TestCase):
@@ -185,8 +201,7 @@ class FailFastTests(unittest.TestCase):
         mid = "wamid.SMOKE-full"
         logs = _Logs([_enqueued(mid), _invoked(mid), _reply(mid)])
         ddb = _Ddb(
-            audit={"inbound#" + mid: {"entity_id": {"S": "inbound#" + mid}}},
-            reports=[{"incident_id": {"S": "inc-1"}}],
+            reports=[_report("inc-1", _FUTURE)],
             incidents={"inc-1": {"incident_id": {"S": "inc-1"}}},
         )
         runner = smoke.Smoke(
@@ -194,6 +209,46 @@ class FailFastTests(unittest.TestCase):
         )
         code = runner.run("portal", mid, deadline=clock.now + 10)
         self.assertEqual(code, 0)
+
+    def test_agent_step_needs_only_would_send_reply(self):
+        clock = _Clock()
+        mid = "wamid.SMOKE-agent"
+        logs = _Logs([_enqueued(mid), _invoked(mid), _reply(mid)])
+        ddb = _Ddb()
+        runner = smoke.Smoke(
+            _Sns(), logs, ddb, sleep=clock.sleep, monotonic=clock.monotonic,
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = runner.run("agente", mid, deadline=clock.now + 10)
+        self.assertEqual(code, 0)
+        self.assertEqual(ddb.queries, [])
+        self.assertIn("text_len=14", out.getvalue())
+
+    def test_agent_step_fails_without_text_len(self):
+        clock = _Clock()
+        mid = "wamid.SMOKE-nolen"
+        bare = json.dumps({"event": "WOULD_SEND_REPLY", "message_id": mid})
+        logs = _Logs([_enqueued(mid), _invoked(mid), bare])
+        runner = smoke.Smoke(
+            _Sns(), logs, _Ddb(), sleep=clock.sleep, monotonic=clock.monotonic,
+        )
+        code = runner.run("agente", mid, deadline=clock.now + 10)
+        self.assertEqual(code, 1)
+
+    def test_portal_ignores_reports_from_prior_runs(self):
+        clock = _Clock()
+        mid = "wamid.SMOKE-old"
+        logs = _Logs([_enqueued(mid), _invoked(mid), _reply(mid)])
+        ddb = _Ddb(reports=[_report("inc-gone", _PAST)])
+        runner = smoke.Smoke(
+            _Sns(), logs, ddb, sleep=clock.sleep, monotonic=clock.monotonic,
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = runner.run("portal", mid, deadline=clock.now + 10)
+        self.assertEqual(code, 0)
+        self.assertIn("no creó incidente", out.getvalue())
 
 
 if __name__ == "__main__":

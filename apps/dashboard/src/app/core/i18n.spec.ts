@@ -131,9 +131,7 @@ describe('i18n', () => {
     expect(localizeTimeline(scheduled, i18n)).toBe(
       '"¿Ya quedó?" programado para los vecinos en 5 min',
     );
-    expect(localizeTimeline(day, i18n)).toBe(
-      '"¿Ya quedó?" programado para los vecinos en 24 h',
-    );
+    expect(localizeTimeline(day, i18n)).toBe('"¿Ya quedó?" programado para los vecinos en 24 h');
     i18n.set('en');
     expect(localizeTimeline(scheduled, i18n)).toBe(
       '"Is it fixed?" scheduled for neighbors in 5 min',
@@ -148,7 +146,11 @@ describe('i18n', () => {
       text: '"Is it fixed?" scheduled for neighbors in 5 min',
       source: 'dashboard',
     };
-    const sent: TimelineEntry = { ...scheduled, id: 'f2', text: '"Is it fixed?" sent to 3 neighbors' };
+    const sent: TimelineEntry = {
+      ...scheduled,
+      id: 'f2',
+      text: '"Is it fixed?" sent to 3 neighbors',
+    };
     expect(scheduledFollowUpDelay([scheduled])).toBe('5 min');
     expect(scheduledFollowUpDelay([sent, scheduled])).toBe('5 min');
     const day: TimelineEntry = {

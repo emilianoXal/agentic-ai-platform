@@ -123,9 +123,7 @@ export function localizeTimeline(entry: TimelineEntry, i18n: I18nService): strin
       const sent = /sent to (\d+)/.exec(text);
       if (sent) return i18n.t('timeline.followUpSent', { n: Number(sent[1]) });
       const delay = followUpDelay(text);
-      return delay
-        ? i18n.t('timeline.followUpScheduled', { delay })
-        : text;
+      return delay ? i18n.t('timeline.followUpScheduled', { delay }) : text;
     }
     case 'reply':
       return text.includes('No, sigue igual')

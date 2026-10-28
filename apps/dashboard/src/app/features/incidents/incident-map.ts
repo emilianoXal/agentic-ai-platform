@@ -296,13 +296,15 @@ export class IncidentMap {
       setTimeout(() => ring.remove(), 1200);
     }
     if (event.kind === 'joined' && entry && !reduce) {
-      entry.element.querySelector('.fy-marker-dot')?.animate(
-        [{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }],
-        {
-          duration: 500,
-          easing: 'cubic-bezier(0.3, 0, 0, 1)',
-        },
-      );
+      entry.element
+        .querySelector('.fy-marker-dot')
+        ?.animate(
+          [{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }],
+          {
+            duration: 500,
+            easing: 'cubic-bezier(0.3, 0, 0, 1)',
+          },
+        );
     }
     if (event.kind === 'created') {
       const incident = this.incidents().find((i) => i.id === event.incidentId);

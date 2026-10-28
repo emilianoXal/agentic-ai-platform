@@ -10,8 +10,7 @@ free text is never the title because it can carry personal data. A geohash never
 appears in the title, including rows already stored as "near {geohash}". The
 portal translates category titles (EN/ES). Map markers are HTML dots with MapLibre
 anchor `center`, absolute positioning, and no transform of their own, so the dot
-stays on the coordinate
-at every zoom.
+stays on the coordinate at every zoom.
 
 Personal-data deletion is a dedicated agent tool with two-turn confirmation.
 The agent asks the citizen to reply `CONFIRMO BORRAR MIS DATOS`; the wrapper

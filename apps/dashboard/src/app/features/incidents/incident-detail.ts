@@ -89,7 +89,9 @@ export class IncidentDetail {
 
   protected readonly title = computed(() => localizeTitle(this.incident().title, this.i18n));
 
-  protected readonly followUpDelay = computed(() => scheduledFollowUpDelay(this.incident().timeline));
+  protected readonly followUpDelay = computed(() =>
+    scheduledFollowUpDelay(this.incident().timeline),
+  );
 
   protected entryText(entry: TimelineEntry): string {
     return localizeTimeline(entry, this.i18n);

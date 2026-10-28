@@ -196,11 +196,11 @@ def lambda_handler(event, context):
     if not user_id or not category or not geohash:
         _log(logging.WARNING, "invalid_input", user=_mask_phone(user_id))
         return {"ok": False, "error": "invalid_input",
-                "message": "Faltan datos obligatorios del reporte."}
+                "message": "Missing required report details."}
     if not description or not str(description).strip():
         _log(logging.WARNING, "invalid_input_description", user=_mask_phone(user_id))
         return {"ok": False, "error": "invalid_input",
-                "message": "La descripcion del reporte es obligatoria."}
+                "message": "A report description is required."}
 
     description = str(description)
     if len(description) > MAX_TEXT_LEN:

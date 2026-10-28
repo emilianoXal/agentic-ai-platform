@@ -371,9 +371,13 @@ def _process_item(item):
         )
         return "duplicate"
 
-    consent_granted = _check_consent(user_id)
-    rate_limited = _check_rate_limit(user_id)
     safe_text = _sanitize_text(item.get("text"))
+
+    # Persist consent deterministically on the same turn the citizen opts in, so
+    # a brand-new user's first "I ACCEPT" is already consented and enqueues
+    consent_granted = _check_consent(user_id)
+
+    rate_limited = _check_rate_limit(user_id)
     media_dropped = None
     media = []
     if item.get("type") == "image" and not consent_granted:

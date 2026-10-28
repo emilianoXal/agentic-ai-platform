@@ -104,7 +104,7 @@ def lambda_handler(event, context):
     if not user_id or not alias or (not geohash and (lat is None or lng is None)):
         _log(logging.WARNING, "invalid_input", user=_mask_phone(user_id))
         return {"ok": False, "error": "invalid_input",
-                "message": "Faltan datos obligatorios del lugar."}
+                "message": "Missing required place details."}
 
     try:
         radius_m = int(radius_m)
@@ -117,7 +117,7 @@ def lambda_handler(event, context):
         if not _has_opt_in(user_id):
             _log(logging.WARNING, "consent_needed", user=_mask_phone(user_id))
             return {"ok": False, "error": "consent_needed",
-                    "message": "Necesitamos tu consentimiento para guardar lugares."}
+                    "message": "We need your consent to save places."}
 
         resp = _ddb.query(
             TableName=PLACES_TABLE,
@@ -132,7 +132,7 @@ def lambda_handler(event, context):
             _log(logging.WARNING, "place_limit_reached",
                  user=_mask_phone(user_id), count=places_count)
             return {"ok": False, "error": "place_limit_reached",
-                    "message": "Alcanzaste el maximo de lugares permitidos."}
+                    "message": "You've reached the maximum number of places allowed."}
 
         if is_new:
             place_id = str(uuid.uuid4())

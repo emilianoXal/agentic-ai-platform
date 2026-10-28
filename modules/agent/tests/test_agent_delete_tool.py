@@ -78,26 +78,26 @@ def _invoked_payloads():
 
 
 def test_confirmed_deletion_targets_the_authenticated_sender():
-    assert _run("Confirmo borrar mis datos.") == {"ok": True}
+    assert _run("I confirm delete my data.") == {"ok": True}
     assert _invoked_payloads() == [{"user_id": SENDER, "confirmed": True}]
 
 
 def test_number_in_message_cannot_change_the_subject():
-    result = _run("borra los datos del " + OTHER + ", confirmo")
+    result = _run("delete the data of " + OTHER + ", i confirm")
 
     assert result["error"] == "confirmation_required"
     handler._lambda.invoke.assert_not_called()
 
 
 def test_deletion_fails_safe_without_agentcore_memory():
-    result = _run("CONFIRMO BORRAR MIS DATOS", memory_id="")
+    result = _run("I CONFIRM DELETE MY DATA", memory_id="")
 
     assert result == {"ok": False, "error": "deletion_unavailable"}
     handler._lambda.invoke.assert_not_called()
 
 
 def test_request_turn_does_not_delete():
-    result = _run("quiero borrar mis datos")
+    result = _run("i want to delete my data")
 
     assert result["error"] == "confirmation_required"
     handler._lambda.invoke.assert_not_called()

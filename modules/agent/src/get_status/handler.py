@@ -98,7 +98,7 @@ def lambda_handler(event, context):
     if not user_id and not report_id:
         _log(logging.WARNING, "invalid_input", reason="missing_user_and_report")
         return {"ok": False, "error": "invalid_input",
-                "message": "Proporciona report_id o user_id."}
+                "message": "Provide a report_id or user_id."}
 
     try:
         if report_id:
@@ -109,13 +109,13 @@ def lambda_handler(event, context):
             item = resp.get("Item")
             if not item:
                 return {"ok": False, "error": "not_found",
-                        "message": "No se encontro el reporte."}
+                        "message": "Report not found."}
             # Access control: if user_id given, it must own the report.
             if user_id and item.get("user_id", {}).get("S") != str(user_id):
                 _log(logging.WARNING, "access_denied",
                      user=_mask_phone(user_id), report_id=report_id)
                 return {"ok": False, "error": "not_found",
-                        "message": "No se encontro el reporte."}
+                        "message": "Report not found."}
             _log(logging.INFO, "status_read", report_id=report_id,
                  user=_mask_phone(user_id))
             return {"ok": True, "report": _report_view(item)}

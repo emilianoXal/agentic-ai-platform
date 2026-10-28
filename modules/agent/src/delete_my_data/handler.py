@@ -252,7 +252,7 @@ def lambda_handler(event, context):
         return {
             "ok": False,
             "error": "confirmation_required",
-            "message": "Confirma explicitamente que deseas borrar tus datos.",
+            "message": "Please explicitly confirm that you want to delete your data.",
         }
 
     user_id = str(user_id)
@@ -281,9 +281,9 @@ def lambda_handler(event, context):
                 "error": "memory_erasure_failed",
                 "places_deleted": places_deleted,
                 "reports_anonymized": reports_anonymized,
-                "message": "Se borraron tus datos personales, pero el historial "
-                           "de conversacion no se pudo borrar todavia. Intenta "
-                           "de nuevo mas tarde.",
+                "message": "Your personal data was deleted, but the conversation "
+                           "history could not be deleted yet. Please try again "
+                           "later.",
             }
         _log(
             logging.INFO,

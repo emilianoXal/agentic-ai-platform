@@ -121,7 +121,7 @@ table); the state key is isolated per environment
 | Module    | Status | Summary |
 |-----------|--------|---------|
 | `data`    | done   | CMK, S3 media (SSE-KMS + retention), DynamoDB (reports/incidents/places/users/audit-log) with streams + GSIs, SNS inbound, SQS FIFO + DLQ, EventBridge bus |
-| `compute` | done   | `ingest` (SNS EUM WhatsApp webhook → deterministic guards → SQS FIFO) and `notifier` (EventBridge→WhatsApp stub) Lambdas, least-privilege IAM |
+| `compute` | done   | `ingest` (SNS EUM WhatsApp webhook → deterministic guards → SQS FIFO), `notifier` (EventBridge→WhatsApp stub), and `dependency-mailer` (creation/escalation EventBridge events → SES) Lambdas, least-privilege IAM |
 | `agent`   | done   | `create_report` / `join_incident` / `get_status` / `register_place` / `route` / `escalate` tool Lambdas, SQS `consumer`, ECR, Bedrock Guardrails, AgentCore runtime/gateway/memory (flag-gated, default off) |
 | `media`   | todo   | `GetWhatsAppMessageMedia` → S3 → Step Functions → Rekognition (face/plate blur) + Transcribe + Nova |
 | `portal`  | done   | Dashboard backend and hosting: Cognito staff pool (groups agency / official / admin, users as code), AppSync GraphQL + WAF, `dashboard-api` Lambda (paginated queries, status changes that emit `StatusChanged` to the notifier, admin demo seed), `stream-publisher` Lambda (incidents stream → real-time subscription), Amazon Location API key, Amplify Hosting |
@@ -161,6 +161,16 @@ uploads the build to Amplify Hosting).
 
 Dashboard staff accounts live in `envs/<env>/terraform.tfvars` (`staff_users`);
 Cognito e-mails each new user a temporary password.
+
+### SES sandbox identity verification
+
+The dependency mailer creates an SES identity for its sender, fallback recipient,
+and every address in `dependency_email_map`. Because the account is in the SES
+sandbox, each address must be verified before a message can be delivered. After
+the first `terraform:apply` on `main`, open the verification message sent by AWS
+to every configured address and follow its verification link. Confirm all
+identities show as verified in SES in `us-east-1`, then escalate a demo incident
+from the portal and verify the agency mailbox receives the notice.
 
 ## Local verification (no AWS credentials needed)
 

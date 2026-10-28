@@ -3,6 +3,8 @@
 This file is the project's committed home for project-intrinsic agent knowledge: build, test, release, architecture, and sharp-edge notes that should travel with the code.
 
 - Add durable project-specific notes here as they are discovered through real work.
+- Follow `CONTRIBUTING.md` for repository conventions and local validation.
+- See `ARCHITECTURE.md` for the event flow and outbound channel boundaries.
 
 How to test each kind of hackathon change, including the WhatsApp SNS smoke (`scripts/smoke_whatsapp.py`) and simulated outbound `WOULD_SEND_REPLY`, is in `docs/oficios/tester.md`.
 

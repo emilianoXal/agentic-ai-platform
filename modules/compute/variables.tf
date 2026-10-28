@@ -66,6 +66,41 @@ variable "audit_table_arn" {
   type        = string
 }
 
+variable "incidents_table_name" {
+  description = "Name of the incidents DynamoDB table used to enrich dependency e-mails."
+  type        = string
+}
+
+variable "incidents_table_arn" {
+  description = "ARN of the incidents DynamoDB table."
+  type        = string
+}
+
+variable "dependency_email_map" {
+  description = "Incident category to responsible agency e-mail address."
+  type        = map(string)
+  default     = {}
+}
+
+variable "dependency_fallback_email" {
+  description = "Recipient used when an incident category has no explicit agency address."
+  type        = string
+  default     = "antonio.miguel+supervisor@xaldigital.com"
+}
+
+variable "portal_url" {
+  description = "Dashboard origin linked from dependency e-mails; null keeps the dev Amplify origin."
+  type        = string
+  default     = "https://main.d1taemvhj3go47.amplifyapp.com"
+  nullable    = false
+}
+
+variable "dependency_mail_from" {
+  description = "Verified SES identity used as the dependency notice sender."
+  type        = string
+  default     = "antonio.miguel@xaldigital.com"
+}
+
 # =============================================================================
 # Tunables.
 # =============================================================================

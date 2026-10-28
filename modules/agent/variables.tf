@@ -97,6 +97,16 @@ variable "events_bus_arn" {
   type        = string
 }
 
+variable "outbound_function_name" {
+  description = "Name of the outbound WhatsApp send Lambda the consumer invokes."
+  type        = string
+}
+
+variable "outbound_function_arn" {
+  description = "ARN of the outbound Lambda - scoped target of the consumer lambda:InvokeFunction grant."
+  type        = string
+}
+
 # =============================================================================
 # Config / tunables.
 # =============================================================================

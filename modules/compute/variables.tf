@@ -133,3 +133,15 @@ variable "log_level" {
   type        = string
   default     = "INFO"
 }
+
+variable "meta_api_version" {
+  description = "Meta Graph/Cloud API version EUM forwards WhatsApp sends to."
+  type        = string
+  default     = "v20.0"
+}
+
+variable "outbound_origination_phone_number_id" {
+  description = "AWS phone-number id proactive notifications send FROM; empty keeps the notifier inert."
+  type        = string
+  default     = ""
+}

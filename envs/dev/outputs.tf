@@ -136,6 +136,16 @@ output "notifier_function_arn" {
   value       = module.compute.notifier_function_arn
 }
 
+output "outbound_function_name" {
+  description = "Name of the outbound WhatsApp send Lambda function."
+  value       = module.compute.outbound_function_name
+}
+
+output "outbound_function_arn" {
+  description = "ARN of the outbound WhatsApp send Lambda function."
+  value       = module.compute.outbound_function_arn
+}
+
 output "ingest_role_arn" {
   description = "ARN of the ingest Lambda execution role."
   value       = module.compute.ingest_role_arn

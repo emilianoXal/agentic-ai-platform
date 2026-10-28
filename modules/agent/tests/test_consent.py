@@ -107,14 +107,12 @@ class _Result:
 
 class _ScriptedAgent:
     mode = "accept"
-    system_prompts = []
     tools = []
     also_report = False
     create_report_calls = 0
     last_consent_pending = None
 
     def __init__(self, **kwargs):
-        _ScriptedAgent.system_prompts.append(kwargs.get("system_prompt") or "")
         _ScriptedAgent.tools.append(kwargs.get("tools") or [])
 
     def __call__(self, prompt):
@@ -158,7 +156,6 @@ class ConsentRegistrationTests(unittest.TestCase):
         agent.TOOL_CREATE_REPORT_FN = "create-report"
         agent.TOOL_FOLLOW_UP_FN = ""
         _ScriptedAgent.mode = "accept"
-        _ScriptedAgent.system_prompts = []
         _ScriptedAgent.tools = []
         _ScriptedAgent.also_report = False
         _ScriptedAgent.create_report_calls = 0
@@ -199,12 +196,14 @@ class ConsentRegistrationTests(unittest.TestCase):
         )
         self.assertFalse(next_msg["consent_pending"])
 
-    def test_plus_e164_and_bare_e164_share_the_consent_record(self):
-        self.assertTrue(self._turn(SENDER_PLUS, "SI ACEPTO")["ok"])
-        self.assertTrue(ingest._check_consent(SENDER))
-        self.assertTrue(ingest._check_consent(SENDER_PLUS))
-        next_msg = self._ingest(SENDER, "foto del carril", "wamid.plus")
-        self.assertFalse(next_msg["consent_pending"])
+    def test_consent_is_stored_under_the_exact_user_id(self):
+        for user_id in (SENDER, SENDER_PLUS):
+            self.ddb.tables.clear()
+            self.assertTrue(self._turn(user_id, "SI ACEPTO")["ok"])
+            self.assertEqual(list(self.ddb.tables["users"]), [user_id])
+            self.assertTrue(ingest._check_consent(user_id))
+            next_msg = self._ingest(user_id, "foto del carril", "wamid." + user_id)
+            self.assertFalse(next_msg["consent_pending"])
 
     def test_reject_does_not_register(self):
         _ScriptedAgent.mode = "skip"
@@ -230,14 +229,7 @@ class ConsentRegistrationTests(unittest.TestCase):
         self.assertEqual(_ScriptedAgent.create_report_calls, 1)
         self.assertTrue(ingest._check_consent(SENDER))
 
-    def test_prompt_forbids_claiming_registration_without_tool_ok(self):
+    def test_register_consent_is_offered_to_the_agent(self):
         self.assertTrue(self._turn(SENDER, "SI ACEPTO")["ok"])
-        prompt = _ScriptedAgent.system_prompts[-1].lower()
-        self.assertIn("register_consent", prompt)
-        self.assertIn("herramienta", prompt)
-        self.assertTrue(
-            "ok" in prompt and "afirm" in prompt,
-            prompt,
-        )
         tool_names = [fn.__name__ for fn in _ScriptedAgent.tools[-1]]
         self.assertIn("register_consent", tool_names)

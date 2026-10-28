@@ -248,16 +248,6 @@ def _already_processed(message_id):
         raise
 
 
-def _user_id_keys(user_id):
-    """E.164 lookup keys with and without a leading plus (same as ingest from)."""
-    raw = str(user_id)
-    keys = [raw]
-    alt = raw[1:] if raw.startswith("+") else "+" + raw
-    if alt and alt not in keys:
-        keys.append(alt)
-    return keys
-
-
 def _check_consent(user_id):
     """Consent / opt-in (RF-38). Returns True if consent is granted.
 
@@ -266,18 +256,18 @@ def _check_consent(user_id):
     """
     if not user_id:
         return False
-    for key in _user_id_keys(user_id):
-        try:
-            resp = _ddb.get_item(
-                TableName=USERS_TABLE,
-                Key={"user_id": {"S": key}},
-            )
-        except ClientError:
-            continue
-        item = resp.get("Item")
-        if item and item.get("consent", {}).get("BOOL") is True:
-            return True
-    return False
+    try:
+        resp = _ddb.get_item(
+            TableName=USERS_TABLE,
+            Key={"user_id": {"S": str(user_id)}},
+        )
+    except ClientError:
+        return False
+    item = resp.get("Item")
+    if not item:
+        return False
+    consent = item.get("consent", {})
+    return consent.get("BOOL") is True
 
 
 def _check_rate_limit(user_id):

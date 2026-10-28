@@ -38,17 +38,10 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _storage_user_id(user_id):
-    raw = str(user_id).strip()
-    if raw.startswith("+"):
-        return raw[1:]
-    return raw
-
-
 def lambda_handler(event, context):
     event = event if isinstance(event, dict) else {}
     user_id = event.get("user_id")
-    stored = _storage_user_id(user_id) if user_id else ""
+    stored = str(user_id) if user_id else ""
     if not stored:
         _log(logging.WARNING, "invalid_input")
         return {"ok": False, "error": "invalid_input"}

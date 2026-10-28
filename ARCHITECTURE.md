@@ -18,7 +18,8 @@ intact. It also erases the citizen's AgentCore Memory: every event of the same
 HMAC-derived actor/session and any memory record whose namespace carries that
 key. The confirmation turn itself runs with `PersistenceMode.NONE`, so it reads
 history but writes nothing after the purge. If memory erasure cannot complete,
-the tool returns `memory_erasure_failed` and logs only the hashed subject and an
+including when less than 5 s of Lambda time remain (a retry resumes it
+idempotently), the tool returns `memory_erasure_failed` and logs only the hashed subject and an
 error code, never claiming full deletion. The audit table receives only a hashed
 subject identifier, deletion totals, and whether memory was erased. Its IAM role
 can access only the users, places, reports, audit tables, reports `by-user`

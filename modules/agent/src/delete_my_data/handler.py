@@ -132,13 +132,24 @@ def _anonymize_reports(user_id):
     return len(reports)
 
 
+_ERASURE_MARGIN_MS = 5000
+
+
 class _MemoryErasureIncomplete(Exception):
     pass
 
 
-def _paginate(method, items_key, **kwargs):
+def _ensure_time(context):
+    if context is not None and (
+        context.get_remaining_time_in_millis() < _ERASURE_MARGIN_MS
+    ):
+        raise _MemoryErasureIncomplete()
+
+
+def _paginate(context, method, items_key, **kwargs):
     items = []
     while True:
+        _ensure_time(context)
         response = method(**kwargs)
         items.extend(response.get(items_key, []))
         token = response.get("nextToken")
@@ -147,7 +158,7 @@ def _paginate(method, items_key, **kwargs):
         kwargs["nextToken"] = token
 
 
-def _erase_memory(user_id):
+def _erase_memory(user_id, context):
     """Delete the citizen's AgentCore Memory events and memory records.
 
     Uses the same HMAC-derived actor/session ids as the agent Lambda.
@@ -163,11 +174,12 @@ def _erase_memory(user_id):
     session_id = f"conversation-{key}"
 
     events = _paginate(
-        _agentcore.list_events, "events",
+        context, _agentcore.list_events, "events",
         memoryId=AGENTCORE_MEMORY_ID, actorId=actor_id, sessionId=session_id,
         includePayloads=False,
     )
     for event in events:
+        _ensure_time(context)
         _agentcore.delete_event(
             memoryId=AGENTCORE_MEMORY_ID, actorId=actor_id,
             sessionId=session_id, eventId=event["eventId"],
@@ -175,12 +187,13 @@ def _erase_memory(user_id):
 
     records = [
         record for record in _paginate(
-            _agentcore.list_memory_records, "memoryRecordSummaries",
+            context, _agentcore.list_memory_records, "memoryRecordSummaries",
             memoryId=AGENTCORE_MEMORY_ID, namespace="/",
         )
         if any(key in namespace for namespace in record.get("namespaces", []))
     ]
     for start in range(0, len(records), 100):
+        _ensure_time(context)
         result = _agentcore.batch_delete_memory_records(
             memoryId=AGENTCORE_MEMORY_ID,
             records=[{"memoryRecordId": record["memoryRecordId"]}
@@ -230,7 +243,7 @@ def lambda_handler(event, context):
             Key={"user_id": {"S": user_id}},
         )
         try:
-            memory_events, memory_records = _erase_memory(user_id)
+            memory_events, memory_records = _erase_memory(user_id, context)
             memory_erased = True
         except (ClientError, BotoCoreError, KeyError, _MemoryErasureIncomplete) as exc:
             memory_erased = False

@@ -197,14 +197,14 @@ def _key(citizen):
 class FakeAgentCore:
     """Paginated AgentCore data plane keyed by (actorId, sessionId)."""
 
-    def __init__(self, fail_records=False):
+    def __init__(self, fail_records=False, events_per_citizen=3):
         self.fail_records = fail_records
         self.events = {}
         self.records = {}
         for citizen in (CITIZEN, OTHER_CITIZEN):
             key = _key(citizen)
             self.events[(f"citizen-{key}", f"conversation-{key}")] = [
-                f"{citizen}-event-{n}" for n in range(3)
+                f"{citizen}-event-{n}" for n in range(events_per_citizen)
             ]
             self.records[f"{citizen}-record"] = [f"/strategies/s1/actors/citizen-{key}"]
 
@@ -297,3 +297,42 @@ def test_delete_reports_memory_api_error_as_incomplete():
 
     assert result["ok"] is False
     assert result["error"] == "memory_erasure_failed"
+
+
+class FakeLambdaContext:
+    """Remaining time drops 1 s per check, starting from start_ms."""
+
+    def __init__(self, start_ms):
+        self.remaining_ms = start_ms
+
+    def get_remaining_time_in_millis(self):
+        self.remaining_ms -= 1000
+        return self.remaining_ms
+
+
+def test_delete_stops_memory_erasure_before_timeout_and_retry_finishes(caplog):
+    database = FakeDynamoDB()
+    handler._ddb = database
+    agentcore = FakeAgentCore(events_per_citizen=40)
+    key = _key(CITIZEN)
+    session = (f"citizen-{key}", f"conversation-{key}")
+    event = {"user_id": CITIZEN, "confirmed": True}
+
+    with _with_memory(agentcore), caplog.at_level(logging.INFO):
+        first = handler.lambda_handler(event, FakeLambdaContext(start_ms=30000))
+
+    assert first["ok"] is False
+    assert first["error"] == "memory_erasure_failed"
+    assert 0 < len(agentcore.events[session]) < 40
+    assert database.audit[-1]["memory_erased"] == {"BOOL": False}
+    logged = [json.loads(r.getMessage()) for r in caplog.records]
+    assert logged[-1]["event"] == "agentcore_memory_erasure_failed"
+    assert CITIZEN not in caplog.text and key not in caplog.text
+
+    with _with_memory(agentcore):
+        retried = handler.lambda_handler(event, FakeLambdaContext(start_ms=900000))
+
+    assert retried["ok"] is True
+    assert agentcore.events[session] == []
+    assert list(agentcore.records) == [f"{OTHER_CITIZEN}-record"]
+    assert database.audit[-1]["memory_erased"] == {"BOOL": True}

@@ -25,8 +25,10 @@ Citizen opt-in is a dedicated `register_consent` tool. Ingest reads `users[user_
 The compute module has two outbound event consumers. `notifier` handles citizen
 WhatsApp notices in English with the portal short folio (`UB-YYYY-XXXXXX`) and
 the concrete status (for example `Your report UB-2026-A20FF7 is now In progress`).
-It claims one notice per incident+status+citizen in the audit table so EventBridge
-retries and duplicate `StatusChanged` events do not repeat the same change.
+It claims each notice in the audit table so EventBridge retries do not repeat
+it: the agent's route event (`urbanbot.agent`) is claimed once per
+incident+status+citizen, while portal `StatusChanged` events add the EventBridge
+event `id`, so a later `in_progress` or `reopened` after a reopen cycle still notifies.
 Resolved status is owned by the follow-up Lambda (`Is it fixed?`), not the
 notifier. `dependency-mailer` handles an
 incident's initial route (`StatusChanged` from `urbanbot.agent`), portal

@@ -189,3 +189,13 @@ variable "conversation_history_table_arn" {
   default  = ""
   nullable = false
 }
+
+variable "follow_up_function_name" {
+  type    = string
+  default = ""
+}
+
+variable "follow_up_function_arn" {
+  type    = string
+  default = ""
+}

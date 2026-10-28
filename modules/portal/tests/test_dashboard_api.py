@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import unittest
+from unittest.mock import Mock
 from datetime import datetime, timezone
 
 os.environ.update({
@@ -101,6 +102,9 @@ class DashboardApiTest(unittest.TestCase):
         self.events = FakeEvents()
         handler._ddb = self.ddb
         handler._events = self.events
+        handler._scheduler = Mock()
+        handler.FOLLOW_UP_FUNCTION_ARN = "arn:aws:lambda:us-east-1:123456789012:function:follow-up"
+        handler.FOLLOW_UP_ROLE_ARN = "arn:aws:iam::123456789012:role/cdshack-scheduler"
         incidents, reports, audit, users = demo_data.build(20.5931, -100.3921, lambda lat, lng: {"address": "Calle Madero 10", "neighborhood": "Centro"})
         for table, items in (("incidents", incidents), ("reports", reports), ("audit", audit), ("users", users)):
             for item in items:
@@ -172,6 +176,7 @@ class DashboardApiTest(unittest.TestCase):
         handler.lambda_handler(event("updateIncidentStatus", id=self.leak, status="in_progress"), None)
         result = handler.lambda_handler(event("updateIncidentStatus", id=self.leak, status="resolved"), None)
         self.assertTrue(result["incident"]["followUpPending"])
+        handler._scheduler.create_schedule.assert_called_once()
 
     def test_only_supervisors_escalate(self):
         with self.assertRaises(Exception):

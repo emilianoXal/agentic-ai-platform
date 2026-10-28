@@ -64,10 +64,28 @@ module "compute" {
   outbound_origination_phone_number_id = var.outbound_origination_phone_number_id
 }
 
+module "follow_up" {
+  source                               = "../../modules/follow_up"
+  environment                          = var.environment
+  kms_key_arn                          = module.data.kms_key_arn
+  incidents_table_name                 = module.data.incidents_table_name
+  incidents_table_arn                  = module.data.incidents_table_arn
+  reports_table_name                   = module.data.reports_table_name
+  reports_table_arn                    = module.data.reports_table_arn
+  users_table_name                     = module.data.users_table_name
+  users_table_arn                      = module.data.users_table_arn
+  outbound_function_name               = module.compute.outbound_function_name
+  outbound_function_arn                = module.compute.outbound_function_arn
+  outbound_origination_phone_number_id = var.outbound_origination_phone_number_id
+  log_retention_days                   = var.log_retention_days
+}
+
 module "agent" {
   source                          = "../../modules/agent"
   conversation_history_table_name = module.data.conversation_history_table_name
   conversation_history_table_arn  = module.data.conversation_history_table_arn
+  follow_up_function_name         = module.follow_up.follow_up_function_name
+  follow_up_function_arn          = module.follow_up.follow_up_function_arn
 
   environment = var.environment
 
@@ -109,7 +127,10 @@ module "agent" {
 }
 
 module "portal" {
-  source = "../../modules/portal"
+  follow_up_function_arn       = module.follow_up.follow_up_function_arn
+  follow_up_scheduler_role_arn = module.follow_up.follow_up_scheduler_role_arn
+  follow_up_delay_minutes      = var.follow_up_delay_minutes
+  source                       = "../../modules/portal"
 
   environment = var.environment
 

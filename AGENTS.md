@@ -8,6 +8,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 How to test each kind of hackathon change, including the WhatsApp SNS smoke (`scripts/smoke_whatsapp.py`) and simulated outbound `WOULD_SEND_REPLY`, is in `docs/oficios/tester.md`.
 The live Sonnet conversation matrix runs through the manual GitLab `agent:conversations` job implemented by `scripts/conversation_matrix.py`.
+Run the Python module suites in separate processes because legacy tests share the `handler` import name; follow-up tests and the post-apply citizen-response corpus are documented in `docs/oficios/tester.md`.
 
 ## Maintaining this file
 

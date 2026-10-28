@@ -17,6 +17,7 @@ Full phone numbers never leave this Lambda: neighbors are returned masked.
 """
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -35,7 +36,10 @@ REPORTS_TABLE = os.environ["REPORTS_TABLE_NAME"]
 AUDIT_TABLE = os.environ["AUDIT_TABLE_NAME"]
 EVENT_BUS_NAME = os.environ["EVENT_BUS_NAME"]
 ROUTING_RULES_JSON = os.environ.get("ROUTING_RULES_JSON", "{}")
-FOLLOW_UP_HOURS = int(os.environ.get("FOLLOW_UP_HOURS", "24"))
+FOLLOW_UP_DELAY_MINUTES = int(os.environ.get("FOLLOW_UP_DELAY_MINUTES", "1440"))
+FOLLOW_UP_FUNCTION_ARN = os.environ.get("FOLLOW_UP_FUNCTION_ARN", "")
+FOLLOW_UP_ROLE_ARN = os.environ.get("FOLLOW_UP_ROLE_ARN", "")
+SCHEDULE_NAME_PREFIX = os.environ.get("SCHEDULE_NAME_PREFIX", "cdshack-urbanbot-dev-fu-")
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 100
@@ -48,6 +52,7 @@ USERS_TABLE = os.environ["USERS_TABLE_NAME"]
 
 _ddb = boto3.client("dynamodb")
 _events = boto3.client("events")
+_scheduler = boto3.client("scheduler")
 _places = None
 
 STATUS_CODES = ("received", "sent_to_agency", "in_progress", "resolved", "not_applicable", "reopened")
@@ -227,7 +232,12 @@ def to_incident(item, neighbors=None, timeline=None):
         "neighbors": neighbors or [],
         "createdAt": created_at,
         "updatedAt": _s(item, "updated_at", created_at),
-        "followUpPending": status == "resolved" and bool(_s(item, "follow_up_due_at")),
+        "followUpPending": status == "resolved" and bool(_s(item, "follow_up_due_at")) and (
+            not item.get("follow_up_deliveries", {}).get("M") or any(
+                value.get("S") in ("pending", "sending", "failed")
+                for value in item.get("follow_up_deliveries", {}).get("M", {}).values()
+            )
+        ),
         "timeline": timeline or [],
     }
 
@@ -396,11 +406,28 @@ def update_status(event, caller):
 
     now = _now()
     names = {"#s": "status"}
-    values = {":s": {"S": target}, ":u": {"S": now.isoformat()}, ":by": {"S": caller["name"]}}
+    values = {":s": {"S": target}, ":u": {"S": now.isoformat()}, ":by": {"S": caller["name"]},
+              ":previous": item["status"]}
     expression = "SET #s = :s, updated_at = :u, last_status_by = :by"
     if target == "resolved":
-        expression += ", follow_up_due_at = :f"
-        values[":f"] = {"S": (now + timedelta(hours=FOLLOW_UP_HOURS)).isoformat()}
+        due = now + timedelta(minutes=FOLLOW_UP_DELAY_MINUTES)
+        due_at = due.isoformat()
+        schedule_name = SCHEDULE_NAME_PREFIX + hashlib.sha256(
+            (incident_id + due_at).encode()
+        ).hexdigest()[:32]
+        _scheduler.create_schedule(
+            Name=schedule_name, GroupName="default",
+            ScheduleExpression="at({})".format(due.strftime("%Y-%m-%dT%H:%M:%S")),
+            ScheduleExpressionTimezone="UTC", FlexibleTimeWindow={"Mode": "OFF"},
+            ActionAfterCompletion="DELETE",
+            Target={"Arn": FOLLOW_UP_FUNCTION_ARN, "RoleArn": FOLLOW_UP_ROLE_ARN,
+                    "Input": json.dumps({"action": "send", "incident_id": incident_id,
+                                         "due_at": due_at}),
+                    "RetryPolicy": {"MaximumEventAgeInSeconds": 3600, "MaximumRetryAttempts": 2}},
+        )
+        expression += ", follow_up_due_at = :f, follow_up_deliveries = :empty"
+        values[":f"] = {"S": due_at}
+        values[":empty"] = {"M": {}}
     else:
         expression += " REMOVE follow_up_due_at"
     if target == "not_applicable":
@@ -412,6 +439,7 @@ def update_status(event, caller):
         UpdateExpression=expression,
         ExpressionAttributeNames=names,
         ExpressionAttributeValues=values,
+        ConditionExpression="#s = :previous",
     )
 
     # Keep each report row in step so the bot's get_status reads the same status.
@@ -434,7 +462,7 @@ def update_status(event, caller):
     if comment:
         _audit(incident_id, "comment", comment, caller["name"])
     if target == "resolved":
-        _audit(incident_id, "follow_up", '"Is it fixed?" scheduled for neighbors in {} h'.format(FOLLOW_UP_HOURS), "UrbanBot")
+        _audit(incident_id, "follow_up", '"Is it fixed?" scheduled for neighbors in {} min'.format(FOLLOW_UP_DELAY_MINUTES), "UrbanBot")
 
     recipients = _recipients(item)
     _emit("StatusChanged", {

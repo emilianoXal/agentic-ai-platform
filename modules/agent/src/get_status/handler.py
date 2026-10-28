@@ -79,12 +79,13 @@ def _incident_status(incident_id):
 def _report_view(item):
     """Compact status view of a report row + parent incident status."""
     incident_id = item.get("incident_id", {}).get("S")
+    incident_status = _incident_status(incident_id)
     return {
         "report_id": item.get("report_id", {}).get("S"),
         "category": item.get("category", {}).get("S"),
-        "status": item.get("status", {}).get("S"),
+        "status": incident_status or item.get("status", {}).get("S"),
         "incident_id": incident_id,
-        "incident_status": _incident_status(incident_id),
+        "incident_status": incident_status,
         "updated_at": item.get("updated_at", {}).get("S"),
     }
 

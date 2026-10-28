@@ -118,8 +118,14 @@ def _nearby_notice_text(folio):
     return "An incident was reported near a place you care about."
 
 
-def _claim_status_notice(incident_id, status, user_id):
+def _status_notice_key(event, incident_id, status, user_id):
     key = "status-notice#{}#{}#{}".format(incident_id, status, user_id)
+    if event.get("source") == "urbanbot.agent":
+        return key
+    return "{}#{}".format(key, event.get("id") or "")
+
+
+def _claim_status_notice(key):
     try:
         _ddb.put_item(
             TableName=AUDIT_TABLE,
@@ -137,11 +143,11 @@ def _claim_status_notice(incident_id, status, user_id):
         raise
 
 
-def _release_status_notice(incident_id, status, user_id):
+def _release_status_notice(key):
     _ddb.delete_item(
         TableName=AUDIT_TABLE,
         Key={
-            "entity_id": {"S": "status-notice#{}#{}#{}".format(incident_id, status, user_id)},
+            "entity_id": {"S": key},
             "ts": {"S": "dedup"},
         },
     )
@@ -376,7 +382,8 @@ def lambda_handler(event, context):
         claimed = False
         try:
             if detail_type == "StatusChanged" and incident_id and status:
-                if not _claim_status_notice(incident_id, status, user_id):
+                notice_key = _status_notice_key(event, incident_id, status, user_id)
+                if not _claim_status_notice(notice_key):
                     _log(
                         logging.INFO,
                         "skipped_duplicate_status",
@@ -390,10 +397,10 @@ def lambda_handler(event, context):
             outcome = _notify_user(user_id, detail_type, template_id, now, text)
             results[outcome] = results.get(outcome, 0) + 1
             if claimed and outcome == "skipped":
-                _release_status_notice(incident_id, status, user_id)
+                _release_status_notice(notice_key)
         except Exception:  # noqa: BLE001 - log and continue
             if claimed:
-                _release_status_notice(incident_id, status, user_id)
+                _release_status_notice(notice_key)
             results["error"] += 1
             logger.exception(json.dumps({"event": "notify_failed"}))
 

@@ -81,7 +81,7 @@ def app(monkeypatch):
         yield handler
 
 
-def _event(status="in_progress", source="urbanbot.dashboard", extra=None):
+def _event(status="in_progress", source="urbanbot.dashboard", extra=None, event_id=None):
     detail = {
         "incident_id": INCIDENT_ID,
         "status": status,
@@ -90,7 +90,12 @@ def _event(status="in_progress", source="urbanbot.dashboard", extra=None):
     }
     if extra:
         detail.update(extra)
-    return {"source": source, "detail-type": "StatusChanged", "detail": detail}
+    return {
+        "id": event_id or "evt-{}".format(status),
+        "source": source,
+        "detail-type": "StatusChanged",
+        "detail": detail,
+    }
 
 
 def _payloads(app):
@@ -129,6 +134,33 @@ def test_later_status_still_notifies(app):
         "Your report UB-2026-A20FF7 is now Sent to the agency.",
         "Your report UB-2026-A20FF7 is now In progress.",
     ]
+
+
+def test_status_repeated_after_reopen_cycle_still_notifies(app):
+    app.lambda_handler(_event("in_progress", event_id="evt-1"), None)
+    app.lambda_handler(_event("reopened", event_id="evt-2"), None)
+    result = app.lambda_handler(_event("in_progress", event_id="evt-3"), None)
+    assert result["sent"] == 1
+    assert _payloads(app) == [
+        "Your report UB-2026-A20FF7 is now In progress.",
+        "Your report UB-2026-A20FF7 is now Reopened.",
+        "Your report UB-2026-A20FF7 is now In progress.",
+    ]
+
+
+def test_agent_route_event_sends_once_across_distinct_events(app):
+    def route(event_id):
+        return {
+            "id": event_id,
+            "source": "urbanbot.agent",
+            "detail-type": "StatusChanged",
+            "detail": {"incident_id": INCIDENT_ID, "user_ids": [SENDER]},
+        }
+
+    app.lambda_handler(route("evt-a"), None)
+    second = app.lambda_handler(route("evt-b"), None)
+    assert second["sent"] == 0
+    assert app._lambda.invoke.call_count == 1
 
 
 def test_resolved_is_left_to_follow_up(app):

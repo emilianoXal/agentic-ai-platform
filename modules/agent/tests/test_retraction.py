@@ -2,7 +2,8 @@
 
 The scripted model retracts unless its system prompt says not to retract, and
 questions the pin unless the prompt accepts any location. Given a location note
-after a description it creates the report from both turns.
+after a description it creates the report from both turns. When get_status
+contradicts the history it offers to create or reopen only if the prompt says so.
 The real model runs separately through scripts/retraction_eval.py.
 """
 import importlib.util
@@ -46,13 +47,21 @@ class ScriptedModel:
         last = messages[-1]["content"][0]
         if "toolResult" in last:
             result = last["toolResult"]["content"][0]["json"]
-            if result.get("reports") == []:
-                return _message({"text": "get_status shows no report under your number, so %s is not in "
-                                         "the system. Do you want me to create the report now?" % ev.FOLIO})
             if "reports" not in result:
                 return _message({"text": "Your report %s is registered." % result["folio"]})
-            folio = result["reports"][0]["folio"]
-            return _message({"text": "Your report %s is reopened. Anything else?" % folio})
+            if not result["reports"]:
+                if "offer to create" not in system:
+                    return _message({"text": "Your report %s is registered." % ev.FOLIO})
+                return _message({"text": "get_status shows no report under your number, so %s is not in "
+                                         "the system. Do you want me to create the report now?" % ev.FOLIO})
+            report = result["reports"][0]
+            if report["status"] != "reopened":
+                if "offer to reopen" not in system:
+                    return _message({"text": "get_status shows %s as %s. Do you want me to create a new "
+                                             "report?" % (report["folio"], report["status"])})
+                return _message({"text": "get_status shows %s as %s. Do you want me to reopen the existing "
+                                         "incident?" % (report["folio"], report["status"])})
+            return _message({"text": "Your report %s is reopened. Anything else?" % report["folio"]})
         note = re.match(r"\[The citizen shared this location .*: (\S+), (\S+)\]$", last["text"])
         if note:
             return _message({"toolUse": {"toolUseId": "tu-create", "name": "create_report", "input": {
@@ -118,7 +127,19 @@ def test_status_contradicting_a_confirmation_is_reported_with_an_offer_to_create
     assert called == ["get_status"]
     assert "get_status shows no report" in reply
     assert "create the report" in reply
-    assert "reopened" not in reply
+    assert "is registered" not in reply
+
+
+def test_status_contradicting_a_reopening_offers_to_reopen_not_create():
+    system, tools = ev.load_agent(str(HANDLER))
+    model = ScriptedModel(check_status_first=True)
+    resolved = {"ok": True, "reports": [{**ev.STATUS_RESULT["reports"][0], "status": "resolved"}]}
+    reply, called = ev.run_agent(model, "m", system, ev.history("text"), tools,
+                                 results={"get_status": resolved})
+    assert called == ["get_status"]
+    assert "%s as resolved" % ev.FOLIO in reply
+    assert "reopen the existing incident" in reply
+    assert "new report" not in reply
 
 
 def test_verdict_rejects_retraction_and_accepts_confirmation():

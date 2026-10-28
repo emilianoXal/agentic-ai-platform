@@ -29,7 +29,7 @@ modules/compute/   # [done] ingest + notifier Lambdas (ingestion glue)
 modules/agent/     # [done] 6 tool Lambdas, SQS consumer, ECR, Guardrails, AgentCore (awscc)
 modules/media/     # [todo] Rekognition blur + Transcribe + Nova multimodal
 modules/portal/    # [done] Cognito + AppSync + dashboard Lambdas + Location key + WAF + Amplify Hosting
-apps/dashboard/    # [done] Angular officials' dashboard (FixedYet): live AppSync data + real map
+apps/dashboard/    # [done] Angular officials' dashboard (UrbanBot): live AppSync data + real map
 .kiro/steering/    # IA context (product, structure, tech, terraform conventions)
 ```
 

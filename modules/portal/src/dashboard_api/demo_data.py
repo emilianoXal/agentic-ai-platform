@@ -143,7 +143,7 @@ def build(lat, lng, place_for, now=None):
         where = place.get("address") or place.get("neighborhood")
         item = {
             "incident_id": {"S": incident_id},
-            "folio": {"S": "FY-{}-{:06d}".format(now.year, 214 + idx * 17)},
+            "folio": {"S": "UB-{}-{:06d}".format(now.year, 214 + idx * 17)},
             "category": {"S": category},
             "title": {"S": "{} at {}".format(label, where) if where else "{} near the demo point".format(label)},
             "geohash": {"S": geohash},

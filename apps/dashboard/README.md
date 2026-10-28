@@ -1,6 +1,6 @@
-# FixedYet dashboard
+# UrbanBot dashboard
 
-Angular web dashboard for **FixedYet**, the urbanbot WhatsApp citizen bot. Agency
+Angular web dashboard for **UrbanBot**, the UrbanBot WhatsApp citizen bot. Agency
 operators and municipal supervisors work the incident queue, see incidents on a
 real map, and change status; every change reaches the neighbors who joined the
 incident on WhatsApp through the existing notifier.
@@ -92,7 +92,7 @@ src/app/
 
 ## Design and motion
 
-Tokens in `src/styles.css` mirror the FixedYet design system. Motion appears only
+Tokens in `src/styles.css` mirror the UrbanBot design system. Motion appears only
 when the city changes: status pill morph, notification ripple on the marker, FLIP
 reorder when a neighbor joins, violet sweep on reopen, geohash cell outline and
 marker drop for a new report, drawer slide and map fly-to, and the sign-in mark

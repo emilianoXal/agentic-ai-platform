@@ -8,7 +8,7 @@ describe('i18n', () => {
   let i18n: I18nService;
 
   beforeEach(() => {
-    localStorage.removeItem('fixedyet.lang');
+    localStorage.removeItem('urbanbot.lang');
     TestBed.configureTestingModule({});
     i18n = TestBed.inject(I18nService);
   });
@@ -30,7 +30,7 @@ describe('i18n', () => {
     TestBed.tick();
     expect(i18n.t('shell.incidents')).toBe('Incidentes');
     expect(i18n.locale()).toBe('es-MX');
-    expect(localStorage.getItem('fixedyet.lang')).toBe('es');
+    expect(localStorage.getItem('urbanbot.lang')).toBe('es');
   });
 
   it('interpolates parameters', () => {

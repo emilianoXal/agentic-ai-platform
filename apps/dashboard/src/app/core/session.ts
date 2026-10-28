@@ -4,7 +4,7 @@ import { confirmSignIn, fetchAuthSession, signIn, signOut } from 'aws-amplify/au
 import { APP_CONFIG } from './app-config';
 import { Role, Session } from './models';
 
-const DEMO_STORAGE_KEY = 'fixedyet.session';
+const DEMO_STORAGE_KEY = 'urbanbot.session';
 
 export type SignInResult = 'signed_in' | 'new_password_required' | 'unsupported_step';
 

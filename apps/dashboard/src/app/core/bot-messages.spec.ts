@@ -8,7 +8,7 @@ describe('bot messages', () => {
   it('starts every status message with the status emoji and the case ID', () => {
     const copy = statusMessage(leak, 'in_progress', 'Water utility', '2026-10-27T15:42:00Z');
     expect(copy.es.startsWith('🛠️')).toBe(true);
-    expect(copy.es).toContain('FY-2026-000214');
+    expect(copy.es).toContain('UB-2026-000214');
     expect(copy.es).toContain('09:42');
   });
 

@@ -650,6 +650,22 @@ data "aws_iam_policy_document" "agent" {
   }
 
   statement {
+    sid    = "BedrockInvokeInProfileRegions"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+    ]
+    resources = ["arn:aws:bedrock:*::foundation-model/${var.bedrock_model_id}"]
+
+    condition {
+      test     = "ArnEquals"
+      variable = "bedrock:InferenceProfileArn"
+      values   = [local.inference_profile_arn]
+    }
+  }
+
+  statement {
     sid       = "GuardrailApply"
     effect    = "Allow"
     actions   = ["bedrock:ApplyGuardrail"]
@@ -1000,6 +1016,22 @@ data "aws_iam_policy_document" "agentcore_exec" {
       local.model_arn,
       local.inference_profile_arn,
     ]
+  }
+
+  statement {
+    sid    = "BedrockInvokeInProfileRegions"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+    ]
+    resources = ["arn:aws:bedrock:*::foundation-model/${var.bedrock_model_id}"]
+
+    condition {
+      test     = "ArnEquals"
+      variable = "bedrock:InferenceProfileArn"
+      values   = [local.inference_profile_arn]
+    }
   }
 
   statement {

@@ -142,8 +142,7 @@ the `.agents/` directory (all gitignored).
    the real CDS `SendWhatsAppMessage` (socialmessaging) — required by RB-01.
 4. AgentCore Gateway `CUSTOM_JWT` needs an `authorizer_configuration` with a
    real OIDC discovery URL once the IdP is chosen.
-5. The CMK uses the default key policy (acceptable same-account for now).
-6. Build the `media` and `portal` modules.
+5. Build the `media` and `portal` modules.
 
 ## Spanish/English
 

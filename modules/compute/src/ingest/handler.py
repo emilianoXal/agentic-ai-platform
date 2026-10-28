@@ -87,30 +87,18 @@ def _sns_envelope(record):
     return msg, sns
 
 
-def _origination_phone_number_id(envelope, value=None):
-    """AWS phone-number resource id used as SendWhatsAppMessage origination.
+def _origination_phone_number_id(envelope):
+    """AWS phone-number resource ARN used as SendWhatsAppMessage origination.
 
     EUM SNS has no top-level originationPhoneNumberId; it lives on
-    context.MetaPhoneNumberIds[].arn (suffix after phone-number-id/).
+    context.MetaPhoneNumberIds[].arn.
     """
-    context = envelope.get("context") if isinstance(envelope, dict) else None
-    phones = (context or {}).get("MetaPhoneNumberIds") or []
+    context = envelope.get("context")
+    phones = context.get("MetaPhoneNumberIds") if isinstance(context, dict) else None
     if isinstance(phones, list) and phones and isinstance(phones[0], dict):
-        arn = phones[0].get("arn") or ""
-        marker = ":phone-number-id/"
-        if marker in arn:
-            return arn.rsplit("/", 1)[-1]
-        if phones[0].get("metaPhoneNumberId"):
-            return phones[0]["metaPhoneNumberId"]
-    if isinstance(value, dict):
-        meta = value.get("metadata") or {}
-        if isinstance(meta, dict) and meta.get("phone_number_id"):
-            return meta["phone_number_id"]
-    if isinstance(envelope, dict):
-        return (
-            envelope.get("origination_phone_number_id")
-            or envelope.get("originationPhoneNumberId")
-        )
+        arn = phones[0].get("arn")
+        if isinstance(arn, str) and ":phone-number-id/" in arn:
+            return arn
     return None
 
 
@@ -147,32 +135,16 @@ def _media_from_wa(message):
 def _decode_webhook_entry(envelope):
     """Parse whatsAppWebhookEntry (JSON string of one Meta webhook entry)."""
     raw = envelope.get("whatsAppWebhookEntry")
-    if raw is None:
-        if "changes" in envelope:
-            return envelope
-        return None
-    if isinstance(raw, dict):
-        parsed = raw
-    elif isinstance(raw, str):
-        parsed = json.loads(raw)
-    else:
+    if not isinstance(raw, str):
         raise ValueError("whatsAppWebhookEntry is not JSON")
+    parsed = json.loads(raw)
     if not isinstance(parsed, dict):
         raise ValueError("whatsAppWebhookEntry is not an object")
     return parsed
 
 
-def _is_eum_envelope(envelope):
-    if not isinstance(envelope, dict):
-        return False
-    if "whatsAppWebhookEntry" in envelope:
-        return True
-    if "changes" in envelope and "from" not in envelope and "user_id" not in envelope:
-        return True
-    return False
-
-
 def _iter_eum_items(envelope, entry, fallback_id):
+    origin = _origination_phone_number_id(envelope)
     changes = entry.get("changes") or []
     if not isinstance(changes, list):
         return
@@ -182,7 +154,6 @@ def _iter_eum_items(envelope, entry, fallback_id):
         value = change.get("value") or {}
         if not isinstance(value, dict):
             continue
-        origin = _origination_phone_number_id(envelope, value)
         messages = value.get("messages") or []
         if isinstance(messages, list):
             for message in messages:
@@ -223,7 +194,7 @@ def _parse_message(record):
     envelope, sns = _sns_envelope(record)
     fallback_id = sns.get("MessageId")
 
-    if _is_eum_envelope(envelope):
+    if "whatsAppWebhookEntry" in envelope:
         try:
             entry = _decode_webhook_entry(envelope)
         except (ValueError, TypeError):
@@ -318,10 +289,6 @@ def _sanitize_text(text):
     """Input guard (RNF-07): truncate to MAX_TEXT_LEN and strip control chars."""
     if text is None:
         return None
-    if isinstance(text, dict):
-        text = text.get("body")
-        if text is None:
-            return None
     s = str(text)
     if len(s) > MAX_TEXT_LEN:
         s = s[:MAX_TEXT_LEN]

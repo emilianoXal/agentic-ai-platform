@@ -136,7 +136,10 @@ class IngestEumTests(unittest.TestCase):
         self.assertEqual(bodies[0]["text"], TEXT_HOLA)
         self.assertEqual(bodies[0]["message_id"], WAMID_1)
         self.assertEqual(bodies[0]["type"], "text")
-        self.assertEqual(bodies[0]["origination_phone_number_id"], AWS_PHONE_ID)
+        self.assertEqual(
+            bodies[0]["origination_phone_number_id"],
+            "arn:aws:social-messaging:us-east-1:000000000000:phone-number-id/" + AWS_PHONE_ID,
+        )
 
     def test_eum_status_is_not_enqueued(self):
         event = {"Records": [_sns_record(_eum_envelope(_entry(_status_value()), "sns-2"), "sns-2")]}

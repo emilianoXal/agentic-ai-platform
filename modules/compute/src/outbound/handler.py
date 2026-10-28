@@ -87,6 +87,27 @@ def _phone_number_id(value):
     return str(value)
 
 
+def _normalize_mx_number(to):
+    """Normalize Mexican WhatsApp numbers from 521 + 10 digits to 52 + 10.
+
+    WhatsApp historically prefixes Mexican mobiles with an extra '1' after the
+    52 country code (521 + 10 digits = 13 digits). The WhatsApp Cloud API wants
+    the E.164 form (52 + 10 digits = 12 digits), so drop that leading '1' right
+    after the country code. Only touches numbers that are exactly `521` + 10
+    digits; any other number (other countries, already-normalized 52 numbers,
+    non-numeric ids) is returned unchanged. An optional leading '+' is handled.
+    """
+    if not isinstance(to, str):
+        return to
+    stripped = to.strip()
+    plus = stripped.startswith("+")
+    digits = stripped[1:] if plus else stripped
+    if digits.isdigit() and len(digits) == 13 and digits.startswith("521"):
+        digits = "52" + digits[3:]
+        return ("+" + digits) if plus else digits
+    return stripped
+
+
 def lambda_handler(event, context):
     event = event if isinstance(event, dict) else {}
     to = event.get("to")
@@ -109,7 +130,7 @@ def lambda_handler(event, context):
         )
         return {"ok": False, "error": "invalid_input"}
 
-    to = to.strip()
+    to = _normalize_mx_number(to.strip())
     text = text.strip()
 
     wa_obj = {

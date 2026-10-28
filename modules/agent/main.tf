@@ -1,6 +1,14 @@
 locals {
   name_prefix = "cdshack-urbanbot-${var.environment}"
 
+  # One SQS delivery must drive exactly one agent turn at a time: the consumer
+  # waits past the agent timeout, the whole batch fits in the consumer timeout,
+  # and the message stays invisible for six consumer timeouts.
+  agent_timeout_seconds             = 90
+  agent_invoke_read_timeout_seconds = 110
+  consumer_timeout_seconds          = 120
+  consumer_batch_size               = 1
+
   # awscc does NOT honour provider default_tags, so AgentCore resources that
   # accept tags set these six inline (same keys/values as the env default_tags).
   tags = {
@@ -1043,15 +1051,16 @@ resource "aws_lambda_function" "consumer" {
   handler          = "handler.lambda_handler"
   filename         = data.archive_file.consumer.output_path
   source_code_hash = data.archive_file.consumer.output_base64sha256
-  timeout          = 120
+  timeout          = local.consumer_timeout_seconds
   memory_size      = 256
 
   environment {
     variables = {
-      AUDIT_TABLE            = var.audit_log_table_name
-      AGENT_FUNCTION_NAME    = aws_lambda_function.agent.function_name
-      OUTBOUND_FUNCTION_NAME = var.outbound_function_name
-      LOG_LEVEL              = var.log_level
+      AUDIT_TABLE               = var.audit_log_table_name
+      AGENT_FUNCTION_NAME       = aws_lambda_function.agent.function_name
+      AGENT_INVOKE_READ_TIMEOUT = local.agent_invoke_read_timeout_seconds
+      OUTBOUND_FUNCTION_NAME    = var.outbound_function_name
+      LOG_LEVEL                 = var.log_level
     }
   }
 
@@ -1068,7 +1077,7 @@ resource "aws_lambda_function" "agent" {
   handler          = "handler.lambda_handler"
   filename         = data.archive_file.agent.output_path
   source_code_hash = data.archive_file.agent.output_base64sha256
-  timeout          = 90
+  timeout          = local.agent_timeout_seconds
   memory_size      = 1024
   layers           = [aws_lambda_layer_version.strands.arn]
 
@@ -1105,9 +1114,24 @@ resource "aws_lambda_function" "agent" {
 resource "aws_lambda_event_source_mapping" "consumer" {
   event_source_arn        = var.ingest_queue_arn
   function_name           = aws_lambda_function.consumer.function_name
-  batch_size              = 5
+  batch_size              = local.consumer_batch_size
   enabled                 = true
   function_response_types = ["ReportBatchItemFailures"]
+
+  lifecycle {
+    precondition {
+      condition     = local.agent_invoke_read_timeout_seconds > local.agent_timeout_seconds
+      error_message = "The consumer must wait longer for the agent than the agent timeout."
+    }
+    precondition {
+      condition     = local.consumer_batch_size * local.agent_invoke_read_timeout_seconds < local.consumer_timeout_seconds
+      error_message = "A full batch of serial agent invocations must finish within the consumer timeout."
+    }
+    precondition {
+      condition     = var.ingest_queue_visibility_timeout_seconds >= 6 * local.consumer_timeout_seconds
+      error_message = "The ingest queue visibility timeout must be at least six consumer timeouts."
+    }
+  }
 }
 
 # =============================================================================

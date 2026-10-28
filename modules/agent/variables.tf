@@ -82,6 +82,11 @@ variable "ingest_queue_arn" {
   type        = string
 }
 
+variable "ingest_queue_visibility_timeout_seconds" {
+  description = "Visibility timeout (seconds) of the FIFO ingest queue; must cover six consumer timeouts."
+  type        = number
+}
+
 variable "ingest_queue_url" {
   description = "URL of the FIFO ingest queue."
   type        = string

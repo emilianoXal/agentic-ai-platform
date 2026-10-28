@@ -29,6 +29,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
 AGENT_FUNCTION_NAME = os.environ.get("AGENT_FUNCTION_NAME", "")
 OUTBOUND_FUNCTION_NAME = os.environ.get("OUTBOUND_FUNCTION_NAME", "")
+AGENT_INVOKE_READ_TIMEOUT = int(os.environ.get("AGENT_INVOKE_READ_TIMEOUT", "110"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 # Agent error codes worth a redrive; everything else (incl. invalid_input,
@@ -38,12 +39,14 @@ RETRIABLE_AGENT_ERRORS = {"bedrock_throttled", "internal"}
 # --- Clients created at module load (reused across warm invocations) ---------
 _ddb = boto3.client("dynamodb")
 _lambda = boto3.client("lambda")
-# One SQS delivery must produce exactly one agent turn: the read timeout outlasts
-# the agent's 90 s function timeout and botocore never re-sends the Invoke, so a
-# slow turn cannot overlap a retry that writes to the same memory session.
+# One SQS delivery must produce exactly one agent turn: the read timeout
+# (AGENT_INVOKE_READ_TIMEOUT, set by Terraform) outlasts the agent's function
+# timeout and botocore never re-sends the Invoke, so a slow turn cannot overlap
+# a retry that writes to the same memory session.
 _agent_lambda = boto3.client(
     "lambda",
-    config=Config(read_timeout=110, retries={"total_max_attempts": 1}),
+    config=Config(read_timeout=AGENT_INVOKE_READ_TIMEOUT,
+                  retries={"total_max_attempts": 1}),
 )
 
 # --- Structured JSON-line logger (PII-masking; mirrors compute/ingest) -------

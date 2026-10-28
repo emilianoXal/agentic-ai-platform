@@ -58,7 +58,11 @@ decodes them with the session manager's converter, and deletes by `eventId`
 every message event newer than the last final assistant reply, so a retried
 failure or timeout cannot leave an unanswered user/tool turn that breaks role
 alternation. The consumer invokes the agent with a client whose read timeout
-outlasts the agent's 90 s timeout and that never re-sends `Invoke`, so one SQS
-delivery cannot produce two overlapping turns on the same session. QA and
+outlasts the agent's 90 s timeout and that never re-sends `Invoke`, the event-source
+batch size is 1 so a serial agent call always fits in the consumer's 120 s
+timeout, and the ingest queue's 720 s visibility timeout (six consumer timeouts)
+keeps SQS from redelivering a message while its turn is still running. Terraform
+preconditions on the consumer event-source mapping enforce these relationships,
+so one SQS delivery cannot produce two overlapping turns on the same session. QA and
 production keep the
 integration disabled unless their environment flag is set.

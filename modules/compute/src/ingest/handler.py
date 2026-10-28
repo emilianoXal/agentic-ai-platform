@@ -1,9 +1,11 @@
 """urbanbot ingest Lambda.
 
-SNS inbound (fan-out of inbound WhatsApp events) -> normalized message -> SQS
-FIFO ingest queue. Real-but-minimal glue: idempotency dedup, consent check,
-rate limit, input guard, then enqueue. Messages are NEVER dropped for consent
-or rate-limit reasons -- they are annotated with flags and still enqueued.
+SNS inbound (AWS End User Messaging Social WhatsApp events, plus the flat
+simulator JSON) -> normalized message -> SQS FIFO ingest queue.
+Real-but-minimal glue: idempotency dedup, consent check, rate limit, input
+guard, then enqueue. Messages are NEVER dropped for consent or rate-limit
+reasons -- they are annotated with flags and still enqueued. Status receipts
+are logged and not enqueued.
 
 Uses only the stdlib + boto3 (bundled in the python3.12 Lambda runtime).
 """
@@ -66,25 +68,181 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _parse_message(record):
-    """Extract the inner message JSON from an SNS record, tolerating gaps."""
+# Media objects in Meta's messages webhook carry the asset id under the type key
+# (image.id, audio.id, …). Documented for EUM inbound media at:
+# https://docs.aws.amazon.com/social-messaging/latest/userguide/managing-event-destination-dlrs.html
+_MEDIA_TYPES = ("image", "audio", "video", "document", "sticker")
+
+
+def _sns_envelope(record):
+    """Return (parsed SNS Message, SNS attributes) for one Lambda SNS record."""
     sns = record.get("Sns", {}) or {}
     raw = sns.get("Message", "")
     try:
         msg = json.loads(raw) if raw else {}
     except (ValueError, TypeError):
-        # Non-JSON payload: treat the raw string as the text body.
         msg = {"text": raw}
     if not isinstance(msg, dict):
         msg = {"text": str(msg)}
+    return msg, sns
 
-    user_id = msg.get("from") or msg.get("user_id")
-    return {
-        "user_id": user_id,
-        "message_id": msg.get("message_id") or sns.get("MessageId"),
-        "type": msg.get("type", "text"),
-        "text": msg.get("text"),
-        "media": msg.get("media"),
+
+def _origination_phone_number_id(envelope, value=None):
+    """AWS phone-number resource id used as SendWhatsAppMessage origination.
+
+    EUM SNS has no top-level originationPhoneNumberId; it lives on
+    context.MetaPhoneNumberIds[].arn (suffix after phone-number-id/).
+    """
+    context = envelope.get("context") if isinstance(envelope, dict) else None
+    phones = (context or {}).get("MetaPhoneNumberIds") or []
+    if isinstance(phones, list) and phones and isinstance(phones[0], dict):
+        arn = phones[0].get("arn") or ""
+        marker = ":phone-number-id/"
+        if marker in arn:
+            return arn.rsplit("/", 1)[-1]
+        if phones[0].get("metaPhoneNumberId"):
+            return phones[0]["metaPhoneNumberId"]
+    if isinstance(value, dict):
+        meta = value.get("metadata") or {}
+        if isinstance(meta, dict) and meta.get("phone_number_id"):
+            return meta["phone_number_id"]
+    if isinstance(envelope, dict):
+        return (
+            envelope.get("origination_phone_number_id")
+            or envelope.get("originationPhoneNumberId")
+        )
+    return None
+
+
+def _text_from_wa(message):
+    if not isinstance(message, dict):
+        return None
+    text = message.get("text")
+    if isinstance(text, dict):
+        return text.get("body")
+    if isinstance(text, str):
+        return text
+    mtype = message.get("type")
+    blob = message.get(mtype) if mtype in _MEDIA_TYPES else None
+    if isinstance(blob, dict):
+        return blob.get("caption")
+    return None
+
+
+def _media_from_wa(message):
+    if not isinstance(message, dict):
+        return None
+    if message.get("media") is not None:
+        return message.get("media")
+    mtype = message.get("type")
+    blob = message.get(mtype) if mtype in _MEDIA_TYPES else None
+    if isinstance(blob, dict) and blob.get("id"):
+        out = {"id": blob["id"]}
+        if blob.get("mime_type"):
+            out["mime_type"] = blob["mime_type"]
+        return out
+    return None
+
+
+def _decode_webhook_entry(envelope):
+    """Parse whatsAppWebhookEntry (JSON string of one Meta webhook entry)."""
+    raw = envelope.get("whatsAppWebhookEntry")
+    if raw is None:
+        if "changes" in envelope:
+            return envelope
+        return None
+    if isinstance(raw, dict):
+        parsed = raw
+    elif isinstance(raw, str):
+        parsed = json.loads(raw)
+    else:
+        raise ValueError("whatsAppWebhookEntry is not JSON")
+    if not isinstance(parsed, dict):
+        raise ValueError("whatsAppWebhookEntry is not an object")
+    return parsed
+
+
+def _is_eum_envelope(envelope):
+    if not isinstance(envelope, dict):
+        return False
+    if "whatsAppWebhookEntry" in envelope:
+        return True
+    if "changes" in envelope and "from" not in envelope and "user_id" not in envelope:
+        return True
+    return False
+
+
+def _iter_eum_items(envelope, entry, fallback_id):
+    changes = entry.get("changes") or []
+    if not isinstance(changes, list):
+        return
+    for change in changes:
+        if not isinstance(change, dict):
+            continue
+        value = change.get("value") or {}
+        if not isinstance(value, dict):
+            continue
+        origin = _origination_phone_number_id(envelope, value)
+        messages = value.get("messages") or []
+        if isinstance(messages, list):
+            for message in messages:
+                if not isinstance(message, dict):
+                    continue
+                yield {
+                    "kind": "message",
+                    "user_id": message.get("from"),
+                    "message_id": message.get("id") or fallback_id,
+                    "type": message.get("type") or "text",
+                    "text": _text_from_wa(message),
+                    "media": _media_from_wa(message),
+                    "origination_phone_number_id": origin,
+                }
+        statuses = value.get("statuses") or []
+        if isinstance(statuses, list):
+            for status in statuses:
+                if not isinstance(status, dict):
+                    continue
+                yield {
+                    "kind": "status",
+                    "user_id": status.get("recipient_id"),
+                    "message_id": status.get("id") or fallback_id,
+                    "status": status.get("status"),
+                    "origination_phone_number_id": origin,
+                }
+
+
+def _parse_message(record):
+    """Yield normalized items from one SNS record.
+
+    Flat simulator JSON (`from` / `text`) stays one inbound message.
+    AWS End User Messaging Social publishes context + whatsAppWebhookEntry
+    (JSON string of a Meta webhook entry with changes[].value.messages[]
+    and changes[].value.statuses[]):
+    https://docs.aws.amazon.com/social-messaging/latest/userguide/managing-event-destination-dlrs.html
+    """
+    envelope, sns = _sns_envelope(record)
+    fallback_id = sns.get("MessageId")
+
+    if _is_eum_envelope(envelope):
+        try:
+            entry = _decode_webhook_entry(envelope)
+        except (ValueError, TypeError):
+            _log(logging.WARNING, "webhook_parse_failed")
+            return
+        if not entry:
+            _log(logging.WARNING, "webhook_parse_failed")
+            return
+        yield from _iter_eum_items(envelope, entry, fallback_id)
+        return
+
+    yield {
+        "kind": "message",
+        "user_id": envelope.get("from") or envelope.get("user_id"),
+        "message_id": envelope.get("message_id") or fallback_id,
+        "type": envelope.get("type", "text"),
+        "text": _text_from_wa(envelope),
+        "media": envelope.get("media"),
+        "origination_phone_number_id": _origination_phone_number_id(envelope),
     }
 
 
@@ -160,16 +318,30 @@ def _sanitize_text(text):
     """Input guard (RNF-07): truncate to MAX_TEXT_LEN and strip control chars."""
     if text is None:
         return None
+    if isinstance(text, dict):
+        text = text.get("body")
+        if text is None:
+            return None
     s = str(text)
     if len(s) > MAX_TEXT_LEN:
         s = s[:MAX_TEXT_LEN]
     return _CONTROL_CHARS.sub("", s)
 
 
-def _process_record(record):
-    msg = _parse_message(record)
-    user_id = msg["user_id"]
-    message_id = msg["message_id"]
+def _process_item(item):
+    if item.get("kind") == "status":
+        _log(
+            logging.INFO,
+            "whatsapp_status",
+            message_id=item.get("message_id"),
+            status=item.get("status"),
+            user=_mask_phone(item.get("user_id")),
+            user_hash=_hash_id(item.get("user_id")),
+        )
+        return "status"
+
+    user_id = item.get("user_id")
+    message_id = item.get("message_id")
 
     if _already_processed(message_id):
         _log(
@@ -182,14 +354,15 @@ def _process_record(record):
 
     consent_granted = _check_consent(user_id)
     rate_limited = _check_rate_limit(user_id)
-    safe_text = _sanitize_text(msg["text"])
+    safe_text = _sanitize_text(item.get("text"))
 
     normalized = {
         "user_id": user_id,
         "message_id": message_id,
-        "type": msg["type"],
+        "type": item.get("type") or "text",
         "text": safe_text,
-        "media": msg["media"],
+        "media": item.get("media"),
+        "origination_phone_number_id": item.get("origination_phone_number_id"),
         "received_at": _now_iso(),
         "consent_pending": not consent_granted,
         "rate_limited": rate_limited,
@@ -212,7 +385,7 @@ def _process_record(record):
         message_id=message_id,
         user=_mask_phone(user_id),
         user_hash=_hash_id(user_id),
-        type=msg["type"],
+        type=normalized["type"],
         text_len=len(safe_text) if safe_text else 0,
         consent_pending=normalized["consent_pending"],
         rate_limited=rate_limited,
@@ -227,14 +400,21 @@ def _process_record(record):
     return "enqueued"
 
 
+def _process_record(record):
+    outcomes = []
+    for item in _parse_message(record):
+        outcomes.append(_process_item(item))
+    return outcomes
+
+
 def lambda_handler(event, context):
     records = event.get("Records", []) if isinstance(event, dict) else []
-    results = {"enqueued": 0, "duplicate": 0, "error": 0}
+    results = {"enqueued": 0, "duplicate": 0, "error": 0, "status": 0}
 
     for record in records:
         try:
-            outcome = _process_record(record)
-            results[outcome] = results.get(outcome, 0) + 1
+            for outcome in _process_record(record):
+                results[outcome] = results.get(outcome, 0) + 1
         except Exception:  # noqa: BLE001 - log and continue; do not drop batch
             results["error"] += 1
             logger.exception(json.dumps({"event": "record_failed"}))

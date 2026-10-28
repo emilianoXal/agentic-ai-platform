@@ -82,6 +82,7 @@ def _process_record(record):
     message_id = msg.get("message_id") or record.get("messageId")
     msg_type = msg.get("type", "text")
     text = msg.get("text")
+    origination_phone_number_id = msg.get("origination_phone_number_id")
 
     # Lightweight inbound audit record (same-key overwrite keeps retries
     # idempotent). Never store or log raw text — length only.
@@ -106,6 +107,7 @@ def _process_record(record):
         text_len=len(text) if text else 0,
         consent_pending=msg.get("consent_pending"),
         rate_limited=msg.get("rate_limited"),
+        origination_phone_number_id=origination_phone_number_id,
     )
 
     # Synchronously invoke the agent with the FULL parsed msg (Decision 2 shape:

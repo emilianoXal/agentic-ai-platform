@@ -126,6 +126,8 @@ cd envs/dev && terraform init -backend=false && terraform validate
 # repeat init -backend=false + validate in envs/qa and envs/prod
 # compile handlers:
 python3 -c "import py_compile,glob; [py_compile.compile(f, doraise=True) for f in glob.glob('modules/**/src/**/handler.py', recursive=True)]"
+# ingest payload tests (EUM Social + flat simulator JSON):
+python3 -m unittest discover -s modules/compute/tests
 ```
 
 Then clean up `.terraform/` dirs, generated `build/*.zip`, and `__pycache__`

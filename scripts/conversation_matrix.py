@@ -633,8 +633,8 @@ def verdicts(case, run, log_error):
         incident = run["ddb_after"].get("linked_incident") or {}
         persisted = incident.get("follow_up_deliveries", {}).get(subject)
         statements = re.sub(r"¿[^?]*\?", "", lower)
-        statements = re.sub(r"\b(dijeron|dijo|informó|informaron|reportó|reportaron|indicó|indicaron|avisó|avisaron"
-                            r"|marcó|marcaron)\b[^.;!?]*?(resuelt|reabiert)\w*", "", statements)
+        statements = re.sub(r"\b(dijeron|dijo|informó|informaron|indicó|indicaron|avisó|avisaron)\s+que\s+(ya\s+)?"
+                            r"(quedó|fue|estaba|está)\s+resuelt\w*", "", statements)
         claims = {
             "reopen_action": has_any(statements, [r"\breabr(í|imos)\b", r"marqué.*reabiert"]),
             "confirm_action": has_any(statements, [r"\bconfirm(é|amos)\b", r"marqué.*(confirmad|resuelt)",

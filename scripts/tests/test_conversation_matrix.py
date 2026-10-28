@@ -127,6 +127,9 @@ def run_with_reply(user, snapshot, reply):
     ("confirm", "Gracias, lo reabrí para revisarlo."),
     ("reopen", "Perfecto, quedó resuelto tu reporte."),
     (None, "Registré tu confirmación, gracias."),
+    (None, "Como usted reportó que sigue la fuga, su reporte quedó reabierto."),
+    (None, "Usted indicó que sigue, así que lo marqué como reabierto."),
+    (None, "La dependencia informó que quedó reabierto."),
 ])
 def test_false_decision_claim_fails_veracity_even_when_state_is_right(database, decision, reply):
     ddb, tool = database

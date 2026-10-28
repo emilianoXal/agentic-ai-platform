@@ -8,6 +8,8 @@ neighbor, the same contract the compute notifier already consumes (RF-19).
 
 Legacy statuses written by the tool Lambdas (OPEN / ESCALATED / Spanish labels)
 are normalized on read to the six standard codes plus an escalated flag.
+OPEN and ESCALATED become sent_to_agency only after the mailer stored
+dependency_mail_sent_at; routed_to alone keeps them received.
 
 Authorization (server side, from Cognito claims):
   - group "agency": only incidents routed to its custom:agency_id.
@@ -185,14 +187,14 @@ def _n(item, key, default=0):
         return default
 
 
-def normalize_status(raw, routed):
+def normalize_status(raw, routed, mail_sent=False):
     """Map any stored status to one of the six codes plus an escalated flag."""
     value = str(raw or "").strip()
     if value in STATUS_CODES:
         return value, False
     upper = value.upper()
     if upper in ("OPEN", "ESCALATED"):
-        return ("sent_to_agency" if routed else "received"), upper == "ESCALATED"
+        return ("sent_to_agency" if mail_sent else "received"), upper == "ESCALATED"
     plain = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
     return _LEGACY_STATUS.get(plain, "received"), False
 
@@ -200,7 +202,10 @@ def normalize_status(raw, routed):
 def to_incident(item, neighbors=None, timeline=None):
     incident_id = _s(item, "incident_id")
     routed_to = _s(item, "routed_to")
-    status, legacy_escalated = normalize_status(_s(item, "status"), bool(routed_to))
+    mail_sent = bool(_s(item, "dependency_mail_sent_at"))
+    status, legacy_escalated = normalize_status(
+        _s(item, "status"), bool(routed_to), mail_sent
+    )
     escalated = item.get("escalated", {}).get("BOOL", False) or legacy_escalated
     category = _s(item, "category", "otro")
     geohash = _s(item, "geohash", "")
@@ -249,7 +254,8 @@ def _timeline_entry(item):
     mapping = {
         "create_report": ("status", "First report received from WhatsApp", "whatsapp", "received"),
         "join_incident": ("joined", "A neighbor joined from WhatsApp", "whatsapp", None),
-        "route": ("routed", "Sent to {} by routing rule".format(_s(item, "dependency") or _s(item, "authority") or "the agency"), "routing", "sent_to_agency"),
+        "route": ("routed", "Assigned to {} by panel; agency email pending".format(_s(item, "dependency") or _s(item, "authority") or "the agency"), "routing", None),
+        "dependency_mail_sent": ("status", "Agency email sent to {}".format(_s(item, "dependency") or _s(item, "authority") or "the agency"), "email", "sent_to_agency"),
         "escalate": ("escalated", "Escalated: over the report or age threshold", "bot", None),
         "citizen_confirmed": ("follow_up", "A neighbor confirmed it is fixed from WhatsApp", "whatsapp", None),
         "citizen_reopened": ("status", "A neighbor reopened it from WhatsApp", "whatsapp", "reopened"),

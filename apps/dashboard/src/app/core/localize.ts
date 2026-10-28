@@ -57,6 +57,8 @@ export function localizeTimeline(entry: TimelineEntry, i18n: I18nService): strin
   switch (entry.kind) {
     case 'status': {
       if (text.startsWith('First report')) return i18n.t('timeline.firstReport');
+      const mailed = /Agency email sent to (.+)$/.exec(text)?.[1];
+      if (mailed) return i18n.t('timeline.agencyEmailSent', { agency: mailed });
       if (!entry.status) return text;
       const status = statusWord(entry.status, i18n);
       if (!entry.actor) return i18n.t('timeline.statusNoActor', { status });
@@ -70,7 +72,9 @@ export function localizeTimeline(entry: TimelineEntry, i18n: I18nService): strin
       return n && n > 1 ? i18n.t('timeline.joinedMany', { n }) : i18n.t('timeline.joined');
     }
     case 'routed': {
-      const agency = /Sent to (.+?) by routing rule/.exec(text)?.[1];
+      const agency =
+        /Assigned to (.+?) by panel/.exec(text)?.[1] ??
+        /Sent to (.+?) by routing rule/.exec(text)?.[1];
       return agency ? i18n.t('timeline.routed', { agency }) : text;
     }
     case 'escalated':

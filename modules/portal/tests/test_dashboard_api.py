@@ -197,8 +197,16 @@ class DashboardApiTest(unittest.TestCase):
 class ReadModelTest(unittest.TestCase):
     def test_legacy_statuses_are_normalized(self):
         self.assertEqual(handler.normalize_status("OPEN", routed=False), ("received", False))
-        self.assertEqual(handler.normalize_status("OPEN", routed=True), ("sent_to_agency", False))
-        self.assertEqual(handler.normalize_status("ESCALATED", routed=True), ("sent_to_agency", True))
+        self.assertEqual(handler.normalize_status("OPEN", routed=True), ("received", False))
+        self.assertEqual(
+            handler.normalize_status("OPEN", routed=True, mail_sent=True),
+            ("sent_to_agency", False),
+        )
+        self.assertEqual(handler.normalize_status("ESCALATED", routed=True), ("received", True))
+        self.assertEqual(
+            handler.normalize_status("ESCALATED", routed=True, mail_sent=True),
+            ("sent_to_agency", True),
+        )
         self.assertEqual(handler.normalize_status("En atención", routed=True), ("in_progress", False))
         self.assertEqual(handler.normalize_status("resolved", routed=True), ("resolved", False))
 

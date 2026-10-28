@@ -19,7 +19,7 @@ export type CategoryCode =
 export type Role = 'agency' | 'official' | 'admin';
 
 /** Where a change came from; simulated changes are always labeled (RB-08). */
-export type ChangeSource = 'whatsapp' | 'dashboard' | 'routing' | 'bot' | 'simulated';
+export type ChangeSource = 'whatsapp' | 'dashboard' | 'routing' | 'email' | 'bot' | 'simulated';
 
 export interface Agency {
   readonly id: string;

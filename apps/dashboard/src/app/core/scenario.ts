@@ -84,9 +84,16 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
       updatedAt: isoMinutesAgo(78, now),
       followUpPending: false,
       timeline: [
-        entry(78, 'routed', 'Sent to Organismo de Agua by routing rule', 'routing', now, {
+        entry(78, 'status', 'Agency email sent to Organismo de Agua', 'email', now, {
           status: 'sent_to_agency',
         }),
+        entry(
+          79,
+          'routed',
+          'Assigned to Organismo de Agua by panel; agency email pending',
+          'routing',
+          now,
+        ),
         entry(80, 'joined', '11 neighbors joined between 8:40 and 9:10', 'whatsapp', now),
         entry(130, 'status', 'First report received with 3 photos and a pin', 'whatsapp', now, {
           status: 'received',
@@ -129,9 +136,16 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
           status: 'in_progress',
           actor: 'Obras Publicas',
         }),
-        entry(60 * 29, 'routed', 'Sent to Obras Publicas by routing rule', 'routing', now, {
+        entry(60 * 29, 'status', 'Agency email sent to Obras Publicas', 'email', now, {
           status: 'sent_to_agency',
         }),
+        entry(
+          60 * 29 + 1,
+          'routed',
+          'Assigned to Obras Publicas by panel; agency email pending',
+          'routing',
+          now,
+        ),
         entry(60 * 30, 'status', 'First report received', 'whatsapp', now, { status: 'received' }),
       ],
     },
@@ -167,11 +181,18 @@ export function buildScenario(center: LatLng, now: number = Date.now()): Inciden
         }),
         entry(
           60 * 24 * 4 - 30,
-          'routed',
-          'Sent to Servicios Publicos by routing rule',
-          'routing',
+          'status',
+          'Agency email sent to Servicios Publicos',
+          'email',
           now,
           { status: 'sent_to_agency' },
+        ),
+        entry(
+          60 * 24 * 4 - 29,
+          'routed',
+          'Assigned to Servicios Publicos by panel; agency email pending',
+          'routing',
+          now,
         ),
         entry(60 * 24 * 4, 'status', 'First report received', 'whatsapp', now, {
           status: 'received',

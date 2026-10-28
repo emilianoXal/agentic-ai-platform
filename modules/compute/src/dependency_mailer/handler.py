@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import ClientError
@@ -43,6 +44,45 @@ def _log(level, event, **fields):
 
 def _hash_id(value):
     return hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:16]
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+_OPEN_STATUSES = ("", "OPEN", "received", "Recibido")
+
+
+def _mark_agency_notified(incident_id, item, message_id):
+    now = _now_iso()
+    current = _text(item, "status")
+    names = {}
+    values = {":t": {"S": now}}
+    updates = ["updated_at = :t", "dependency_mail_sent_at = :t"]
+    if current in _OPEN_STATUSES:
+        names["#s"] = "status"
+        values[":s"] = {"S": "sent_to_agency"}
+        updates.append("#s = :s")
+    kwargs = {
+        "TableName": INCIDENTS_TABLE,
+        "Key": {"incident_id": {"S": incident_id}},
+        "UpdateExpression": "SET " + ", ".join(updates),
+        "ExpressionAttributeValues": values,
+    }
+    if names:
+        kwargs["ExpressionAttributeNames"] = names
+    _ddb.update_item(**kwargs)
+    audit = {
+        "entity_id": {"S": "incident#" + incident_id},
+        "ts": {"S": now},
+        "kind": {"S": "dependency_mail_sent"},
+    }
+    dependency = _text(item, "routed_to") or _text(item, "dependency")
+    if dependency:
+        audit["dependency"] = {"S": dependency}
+    if message_id:
+        audit["message_id"] = {"S": str(message_id)}
+    _ddb.put_item(TableName=AUDIT_TABLE, Item=audit)
 
 
 def _is_creation(event, detail_type, detail):
@@ -198,6 +238,7 @@ def lambda_handler(event, context):
         _release(event_id)
         raise
 
+    _mark_agency_notified(incident_id, item, response.get("MessageId"))
     _log(
         logging.INFO,
         "dependency_mail_sent",

@@ -14,6 +14,7 @@ HANDLER = Path(__file__).parents[1] / "src" / "dependency_mailer" / "handler.py"
 class FakeDynamoDB:
     def __init__(self):
         self.claims = set()
+        self.audit = []
         self.incident = {
             "incident_id": {"S": "INC-42"},
             "category": {"S": "agua"},
@@ -22,14 +23,32 @@ class FakeDynamoDB:
             "report_count": {"N": "7"},
         }
 
-    def put_item(self, TableName, Item, ConditionExpression):
-        key = (Item["entity_id"]["S"], Item["ts"]["S"])
-        if key in self.claims:
-            raise ClientError(
-                {"Error": {"Code": "ConditionalCheckFailedException"}},
-                "PutItem",
-            )
-        self.claims.add(key)
+    def put_item(self, TableName, Item, ConditionExpression=None):
+        if ConditionExpression:
+            key = (Item["entity_id"]["S"], Item["ts"]["S"])
+            if key in self.claims:
+                raise ClientError(
+                    {"Error": {"Code": "ConditionalCheckFailedException"}},
+                    "PutItem",
+                )
+            self.claims.add(key)
+            return {}
+        self.audit.append(Item)
+        return {}
+
+    def update_item(
+        self,
+        TableName,
+        Key,
+        UpdateExpression,
+        ExpressionAttributeValues,
+        ExpressionAttributeNames=None,
+    ):
+        names = ExpressionAttributeNames or {}
+        set_part = UpdateExpression.split(" REMOVE ")[0].replace("SET ", "")
+        for assignment in set_part.split(", "):
+            attr, value = [p.strip() for p in assignment.split("=")]
+            self.incident[names.get(attr, attr)] = ExpressionAttributeValues[value]
         return {}
 
     def delete_item(self, TableName, Key):
@@ -113,6 +132,9 @@ class DependencyMailerTest(unittest.TestCase):
             self.ses.sent[0]["Destination"]["ToAddresses"],
         )
         self.assert_safe_message(self.ses.sent[0])
+        self.assertEqual(self.ddb.incident["status"]["S"], "sent_to_agency")
+        self.assertTrue(self.ddb.incident["dependency_mail_sent_at"]["S"])
+        self.assertEqual(self.ddb.audit[-1]["kind"]["S"], "dependency_mail_sent")
 
     def test_escalation_sends_safe_incident_email(self):
         result = self.handler.lambda_handler(self.event("IncidentEscalated", "evt-escalate"), None)

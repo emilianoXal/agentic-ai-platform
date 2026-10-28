@@ -169,6 +169,13 @@ data "aws_iam_policy_document" "ingest" {
   }
 
   statement {
+    sid       = "RememberPendingMedia"
+    effect    = "Allow"
+    actions   = ["dynamodb:UpdateItem"]
+    resources = [var.pending_media_table_arn]
+  }
+
+  statement {
     sid       = "StartMediaSanitization"
     effect    = "Allow"
     actions   = ["states:StartExecution"]
@@ -529,6 +536,7 @@ resource "aws_lambda_function" "ingest" {
       MAX_TEXT_LEN            = tostring(var.max_text_len)
       MEDIA_BUCKET            = var.media_bucket_name
       MEDIA_STATE_MACHINE_ARN = aws_sfn_state_machine.media.arn
+      PENDING_MEDIA_TABLE     = var.pending_media_table_name
       LOG_LEVEL               = var.log_level
     }
   }

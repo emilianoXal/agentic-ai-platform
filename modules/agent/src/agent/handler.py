@@ -415,6 +415,10 @@ _MEDIA_DROPPED_NOTES = {
         "que reenvie la foto.]"
     ),
 }
+_PHOTO_WITHOUT_CAPTION_NOTE = (
+    "[El usuario envio una foto sin descripcion: pide la descripcion del "
+    "problema y la ubicacion.]"
+)
 _TRY_AGAIN = (
     "Tuve un problema al procesar tu solicitud. Por favor intenta de nuevo en "
     "un momento."
@@ -612,21 +616,24 @@ def lambda_handler(event, context):
     event = event if isinstance(event, dict) else {}
     user_id = event.get("user_id")
     text = event.get("text")
+    media = _sanitized_media(event.get("media"))
+    has_text = isinstance(text, str) and bool(text.strip())
     media_note = _MEDIA_DROPPED_NOTES.get(event.get("media_dropped"))
+    if not media_note and media and not has_text:
+        media_note = _PHOTO_WITHOUT_CAPTION_NOTE
 
     # Defensive validation (invalid_input is terminal; consumer does not redrive).
     if not user_id:
         _log(logging.WARNING, "invalid_input", reason="missing_user_id")
         return {"ok": False, "error": "invalid_input", "reply": _ASK_FOR_TEXT}
-    if not media_note and (not isinstance(text, str) or not text.strip()):
+    if not media_note and not has_text:
         _log(logging.WARNING, "invalid_input", reason="missing_text",
              user=_mask_phone(user_id))
         return {"ok": False, "error": "invalid_input", "reply": _ASK_FOR_TEXT}
 
     text = text.strip() if isinstance(text, str) else ""
     _turn.clear()
-    _turn.update(user_id=str(user_id), text=text,
-                 media=_sanitized_media(event.get("media")))
+    _turn.update(user_id=str(user_id), text=text, media=media)
     consent_pending = bool(event.get("consent_pending"))
     rate_limited = bool(event.get("rate_limited"))
 

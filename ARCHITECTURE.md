@@ -77,7 +77,13 @@ configuration or origination number and AWS `StartExecution` errors); the agent 
 opt-in or explains the reason and asks the citizen to resend the photo, even
 when the photo had no caption. The agent's `create_report` tool attaches only
 the current inbound message's `sanitized/` keys server-side; the model cannot
-supply or omit media. Likewise, the sender's `user_id` comes from the inbound
+supply or omit media. Ingest also records each started `sanitized/` key in the
+pending-media table, keyed only by a SHA-256 of the sender's `user_id`, with a
+one-hour per-key expiry plus DynamoDB TTL cleanup. `create_report` atomically
+consumes (`DeleteItem` with `ALL_OLD`) the unexpired pending keys, so a photo
+sent alone or before the location still lands on the citizen's next report. A
+photo without a caption is valid input: the agent asks for the description and
+location. Likewise, the sender's `user_id` comes from the inbound
 event and is injected server-side into `create_report`, `join_incident`,
 `get_status`, and `register_place`; it is not a model-facing tool parameter. The workflow downloads the WhatsApp
 asset into the KMS-encrypted media bucket, calls Rekognition `DetectFaces` and

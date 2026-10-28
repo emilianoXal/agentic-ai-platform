@@ -195,6 +195,13 @@ data "aws_iam_policy_document" "create_report" {
   }
 
   statement {
+    sid       = "ConsumePendingMedia"
+    effect    = "Allow"
+    actions   = ["dynamodb:DeleteItem"]
+    resources = [var.pending_media_table_arn]
+  }
+
+  statement {
     sid    = "IncidentsReadWrite"
     effect = "Allow"
     actions = [
@@ -890,6 +897,7 @@ resource "aws_lambda_function" "create_report" {
       INCIDENTS_TABLE         = var.incidents_table_name
       INCIDENTS_GEOHASH_INDEX = "by-geohash"
       AUDIT_TABLE             = var.audit_log_table_name
+      PENDING_MEDIA_TABLE     = var.pending_media_table_name
       RECENT_WINDOW_HOURS     = tostring(var.recent_window_hours)
       LOG_LEVEL               = var.log_level
     }

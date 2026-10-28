@@ -67,6 +67,16 @@ variable "users_table_arn" {
   type        = string
 }
 
+variable "pending_media_table_name" {
+  description = "Name of the pending sanitized-media DynamoDB table."
+  type        = string
+}
+
+variable "pending_media_table_arn" {
+  description = "ARN of the pending sanitized-media DynamoDB table."
+  type        = string
+}
+
 variable "audit_log_table_name" {
   description = "Name of the audit-log DynamoDB table."
   type        = string

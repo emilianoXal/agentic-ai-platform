@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -25,6 +26,7 @@ REPORTS_TABLE = os.environ.get("REPORTS_TABLE", "")
 INCIDENTS_TABLE = os.environ.get("INCIDENTS_TABLE", "")
 INCIDENTS_GEOHASH_INDEX = os.environ.get("INCIDENTS_GEOHASH_INDEX", "by-geohash")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
+PENDING_MEDIA_TABLE = os.environ.get("PENDING_MEDIA_TABLE", "")
 RECENT_WINDOW_HOURS = int(os.environ.get("RECENT_WINDOW_HOURS", "72"))
 MAX_TEXT_LEN = int(os.environ.get("MAX_TEXT_LEN", "4096"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -68,6 +70,28 @@ def _sanitized_media(media):
     if not isinstance(media, list):
         return []
     return [value for value in media if isinstance(value, str) and value.startswith("sanitized/")]
+
+
+def _consume_pending_media(user_id):
+    """Atomically take the citizen's unexpired pending sanitized keys."""
+    if not PENDING_MEDIA_TABLE:
+        return []
+    try:
+        resp = _ddb.delete_item(
+            TableName=PENDING_MEDIA_TABLE,
+            Key={"user_hash": {"S": hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()}},
+            ReturnValues="ALL_OLD",
+        )
+    except ClientError:
+        _log(logging.WARNING, "pending_media_consume_failed", user_hash=_hash_id(user_id))
+        return []
+    now = int(time.time())
+    pending = [
+        (int(value["N"]), key)
+        for key, value in resp.get("Attributes", {}).items()
+        if key.startswith("sanitized/") and "N" in value and int(value["N"]) > now
+    ]
+    return [key for _, key in sorted(pending)]
 
 
 def _audit(entity_id, kind, **extra):
@@ -184,7 +208,9 @@ def lambda_handler(event, context):
 
     report_id = str(uuid.uuid4())
     now = _now_iso()
-    media = _sanitized_media(event.get("media"))
+    media = list(dict.fromkeys(
+        _sanitized_media(event.get("media")) + _consume_pending_media(user_id)
+    ))
     lat = event.get("lat")
     lng = event.get("lng")
     severity = event.get("severity")

@@ -46,6 +46,16 @@ variable "event_bus_arn" {
   type        = string
 }
 
+variable "pending_media_table_name" {
+  description = "Name of the pending sanitized-media DynamoDB table."
+  type        = string
+}
+
+variable "pending_media_table_arn" {
+  description = "ARN of the pending sanitized-media DynamoDB table."
+  type        = string
+}
+
 variable "users_table_name" {
   description = "Name of the users DynamoDB table."
   type        = string

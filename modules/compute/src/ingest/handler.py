@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 
 import boto3
@@ -26,6 +27,8 @@ USERS_TABLE = os.environ.get("USERS_TABLE", "")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
 MEDIA_BUCKET = os.environ.get("MEDIA_BUCKET", "")
 MEDIA_STATE_MACHINE_ARN = os.environ.get("MEDIA_STATE_MACHINE_ARN", "")
+PENDING_MEDIA_TABLE = os.environ.get("PENDING_MEDIA_TABLE", "")
+PENDING_MEDIA_TTL_SECONDS = 3600
 RATE_LIMIT_PER_HOUR = int(os.environ.get("RATE_LIMIT_PER_HOUR", "60"))
 MAX_TEXT_LEN = int(os.environ.get("MAX_TEXT_LEN", "4096"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -298,6 +301,27 @@ def _sanitize_text(text):
     return _CONTROL_CHARS.sub("", s)
 
 
+def _remember_pending_media(user_id, key):
+    """Keep a sanitized key claimable by the citizen's next report for one hour.
+
+    The item key is a full SHA-256 of user_id; each media key carries its own
+    expiry so stale keys are never revived by a later photo.
+    """
+    if not PENDING_MEDIA_TABLE or not user_id:
+        return
+    expires_at = str(int(time.time()) + PENDING_MEDIA_TTL_SECONDS)
+    try:
+        _ddb.update_item(
+            TableName=PENDING_MEDIA_TABLE,
+            Key={"user_hash": {"S": hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()}},
+            UpdateExpression="SET #key = :exp, expires_at = :exp",
+            ExpressionAttributeNames={"#key": key},
+            ExpressionAttributeValues={":exp": {"N": expires_at}},
+        )
+    except (BotoCoreError, ClientError) as exc:
+        _log(logging.WARNING, "pending_media_store_failed", error=type(exc).__name__)
+
+
 def _prepare_media(item):
     media = item.get("media")
     if item.get("type") != "image" or not isinstance(media, dict) or not media.get("id"):
@@ -319,6 +343,7 @@ def _prepare_media(item):
         name=object_id,
         input=json.dumps(payload),
     )
+    _remember_pending_media(item.get("user_id"), sanitized_key)
     return [sanitized_key]
 
 

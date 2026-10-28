@@ -77,6 +77,16 @@ output "users_table_arn" {
   value       = aws_dynamodb_table.users.arn
 }
 
+output "pending_media_table_name" {
+  description = "Name of the pending sanitized-media DynamoDB table."
+  value       = aws_dynamodb_table.pending_media.name
+}
+
+output "pending_media_table_arn" {
+  description = "ARN of the pending sanitized-media DynamoDB table."
+  value       = aws_dynamodb_table.pending_media.arn
+}
+
 output "audit_log_table_name" {
   description = "Name of the audit-log DynamoDB table."
   value       = aws_dynamodb_table.audit_log.name

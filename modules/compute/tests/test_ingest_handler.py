@@ -233,6 +233,18 @@ class IngestEumTests(unittest.TestCase):
         self.assertEqual(bodies[0]["media_dropped"], "processing_error")
         self.assertEqual(bodies[0]["type"], "image")
 
+    def test_unconfigured_media_pipeline_keeps_message_and_caption_without_media(self):
+        with mock.patch.object(handler, "MEDIA_STATE_MACHINE_ARN", ""):
+            result = handler.lambda_handler(self._image_event(), None)
+        handler._sfn.start_execution.assert_not_called()
+        bodies = _queued_bodies()
+        self.assertEqual(result["enqueued"], 1)
+        self.assertEqual(result["error"], 0)
+        self.assertEqual(len(bodies), 1)
+        self.assertEqual(bodies[0]["media"], [])
+        self.assertEqual(bodies[0]["media_dropped"], "processing_error")
+        self.assertEqual(bodies[0]["text"], "bache en la calle")
+
     def test_eum_image_starts_sanitization_and_only_enqueues_clean_key(self):
         value = _meta(
             contacts=[{"profile": {"name": "Prueba"}, "wa_id": SENDER}],

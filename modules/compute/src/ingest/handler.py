@@ -358,7 +358,7 @@ def _process_item(item):
     else:
         try:
             media = _prepare_media(item)
-        except (BotoCoreError, ClientError):
+        except (BotoCoreError, ClientError, ValueError):
             media_dropped = "processing_error"
     if media_dropped:
         _log(

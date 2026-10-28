@@ -154,3 +154,17 @@ en 7271 y 8553. Resolver desde el portal, comprobar el schedule `cdshack-*` en
 default y esperar el aviso. Responder confirmación y después repetir el ciclo
 con un problema que persista; verificar `resolved` y `reopened` respectivamente.
 No ejecutar apply ni pruebas de envío real desde una rama.
+
+## Retractación del historial
+
+El historial que recarga el agente es solo texto, sin resultados de herramientas;
+el prompt debe bastar para que ante «Hi!» el bot no desmienta ni vuelva a pedir
+lo ya confirmado y acepte cualquier ubicación. Las pruebas deterministas usan un
+cliente Bedrock falso: `python3 -m pytest -q modules/agent/tests/test_retraction.py`.
+
+La corrida con el modelo real (escenarios `tools`, `text` y `poisoned`, tres
+corridas cada uno, debe dar `FAILURES 0`) usa solo `bedrock-runtime:Converse`
+y no manda WhatsApp: job manual `agent:retraction` con el rol de despliegue, o
+`python3 scripts/retraction_eval.py --handler modules/agent/src/agent/handler.py --runs 3`
+con un rol que pueda invocar Bedrock. Línea base: la misma orden con el
+`handler.py` de `origin/main`, donde se espera al menos un fallo en `text` o `poisoned`.

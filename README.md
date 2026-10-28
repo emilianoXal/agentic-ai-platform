@@ -71,7 +71,8 @@ Optional overrides: `TF_ENV` (dev|qa|prod), `TF_TARGET`, `TF_DESTROY`,
 
 Pushing a branch runs validate + plan unless that branch already has an open
 merge request, in which case only the MR pipeline runs (the dashboard build
-still runs when `apps/dashboard/` changes). Plan and apply share the
+still runs when `apps/dashboard/` changes). Manual pipelines (web/api) still
+run on such branches, so `TF_TARGET` / `TF_UNTAINT_TARGET` runs keep working. Plan and apply share the
 `terraform-dev` resource group so concurrent pipelines queue instead of
 colliding on the S3 state lock. **Deployments run only on `main`:**
 `terraform:apply` and `dashboard:deploy` are manual jobs that exist only in

@@ -15,12 +15,13 @@
 #   TF_TARGET    Lista separada por comas de recursos a targetear en plan.
 #   TF_DESTROY   "true" habilita el job manual de destroy.
 # =============================================================================
-# Rama con MR abierto: solo el pipeline del MR. Evita dos terraform plan
-# contra el mismo state lock (rama + MR). main y tags siguen corriendo.
+# Push a rama con MR abierto: solo el pipeline del MR. Evita dos terraform plan
+# contra el mismo state lock (rama + MR). main, tags y pipelines manuales
+# (web/api, p. ej. con TF_TARGET o TF_UNTAINT_TARGET) siguen corriendo.
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
       when: never
     - if: '$CI_COMMIT_BRANCH'
     - if: '$CI_COMMIT_TAG'

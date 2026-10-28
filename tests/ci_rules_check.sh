@@ -118,6 +118,41 @@ def workflow_switch(rules):
     return allow_mr, skip_when_open, allow_branch, allow_tag
 
 
+def eval_term(term, env):
+    term = term.strip()
+    for op in ("==", "!="):
+        if op in term:
+            left, right = (part.strip() for part in term.split(op, 1))
+            if not left.startswith("$") or len(right) < 2 or right[0] != right[-1] or right[0] not in "\"'":
+                fail(f"unsupported workflow:rules term: {term!r}")
+            equal = env.get(left[1:], "") == right[1:-1]
+            return equal if op == "==" else not equal
+    if term.startswith("$") and term[1:].isidentifier():
+        return bool(env.get(term[1:]))
+    fail(f"unsupported workflow:rules term: {term!r}")
+
+
+def pipeline_created(rules, env):
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        cond = rule.get("if")
+        if cond is None or all(eval_term(t, env) for t in str(cond).split("&&")):
+            return rule.get("when", "always") != "never"
+    return False
+
+
+WORKFLOW_SCENARIOS = (
+    ("push to branch with open MR", {"CI_PIPELINE_SOURCE": "push", "CI_COMMIT_BRANCH": "feat/x", "CI_OPEN_MERGE_REQUESTS": "g/p!1"}, False),
+    ("web run on branch with open MR", {"CI_PIPELINE_SOURCE": "web", "CI_COMMIT_BRANCH": "feat/x", "CI_OPEN_MERGE_REQUESTS": "g/p!1"}, True),
+    ("api run on branch with open MR", {"CI_PIPELINE_SOURCE": "api", "CI_COMMIT_BRANCH": "feat/x", "CI_OPEN_MERGE_REQUESTS": "g/p!1"}, True),
+    ("merge request pipeline", {"CI_PIPELINE_SOURCE": "merge_request_event", "CI_OPEN_MERGE_REQUESTS": "g/p!1"}, True),
+    ("push to main without MR", {"CI_PIPELINE_SOURCE": "push", "CI_COMMIT_BRANCH": "main"}, True),
+    ("push to branch without MR", {"CI_PIPELINE_SOURCE": "push", "CI_COMMIT_BRANCH": "feat/x"}, True),
+    ("tag pipeline", {"CI_PIPELINE_SOURCE": "push", "CI_COMMIT_TAG": "v1.0.0"}, True),
+)
+
+
 def main(path):
     data = load_ci(path)
 
@@ -134,6 +169,10 @@ def main(path):
         fail("workflow:rules must still allow branch pipelines (main)")
     if not allow_tag:
         fail("workflow:rules must still allow tag pipelines")
+    for label, env, expected in WORKFLOW_SCENARIOS:
+        if pipeline_created(rules, env) != expected:
+            verb = "create" if expected else "skip"
+            fail(f"workflow:rules must {verb} the pipeline for: {label}")
 
     groups = {}
     for name in REQUIRED_JOBS:

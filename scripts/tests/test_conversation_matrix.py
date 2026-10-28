@@ -25,6 +25,7 @@ def database(monkeypatch):
             (matrix.INCIDENTS_TABLE, "incident_id", None),
             (matrix.REPORTS_TABLE, "report_id", None),
             (matrix.PLACES_TABLE, "user_id", "place_id"),
+            (matrix.USERS_TABLE, "user_id", None),
             (matrix.AUDIT_TABLE, "entity_id", "ts"),
         ):
             attrs = [{"AttributeName": key, "AttributeType": "S"}]

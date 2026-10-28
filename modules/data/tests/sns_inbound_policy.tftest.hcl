@@ -49,8 +49,22 @@ run "inbound_topic_policy_allows_social_messaging_publish" {
         contains(flatten([try(s.Principal.Service, [])]), "social-messaging.amazonaws.com")
         && contains(flatten([s.Action]), "sns:Publish")
         && contains(flatten([try(s.Condition.StringEquals["aws:SourceAccount"], [])]), "123456789012")
+        && contains(flatten([try(s.Condition.ArnLike["aws:SourceArn"], [])]), "arn:aws:social-messaging:us-east-1:123456789012:*")
       )
     ])
-    error_message = "inbound SNS topic policy must allow sns:Publish to social-messaging.amazonaws.com with aws:SourceAccount equal to the current account"
+    error_message = "inbound SNS topic policy must allow sns:Publish to social-messaging.amazonaws.com scoped to the current account and region"
+  }
+
+  assert {
+    condition = anytrue([
+      for s in jsondecode(aws_kms_key_policy.this.policy).Statement : (
+        contains(flatten([try(s.Principal.Service, [])]), "social-messaging.amazonaws.com")
+        && contains(flatten([s.Action]), "kms:GenerateDataKey*")
+        && contains(flatten([s.Action]), "kms:Decrypt")
+        && contains(flatten([try(s.Condition.StringEquals["aws:SourceAccount"], [])]), "123456789012")
+        && contains(flatten([try(s.Condition.ArnLike["aws:SourceArn"], [])]), "arn:aws:social-messaging:us-east-1:123456789012:*")
+      )
+    ])
+    error_message = "data CMK policy must let social-messaging.amazonaws.com use the key to publish to the encrypted inbound topic"
   }
 }

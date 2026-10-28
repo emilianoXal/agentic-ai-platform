@@ -8,7 +8,6 @@ locals {
   region      = data.aws_region.current.name
   partition   = data.aws_partition.current.partition
 
-  social_messaging_waba_arn   = "arn:${local.partition}:social-messaging:${local.region}:${local.account_id}:waba/*"
   social_messaging_source_arn = "arn:${local.partition}:social-messaging:${local.region}:${local.account_id}:*"
 }
 
@@ -329,7 +328,7 @@ resource "aws_sns_topic_policy" "inbound" {
             "aws:SourceAccount" = local.account_id
           }
           ArnLike = {
-            "aws:SourceArn" = local.social_messaging_waba_arn
+            "aws:SourceArn" = local.social_messaging_source_arn
           }
         }
       },

@@ -233,8 +233,8 @@ def to_incident(item, neighbors=None, timeline=None):
         "createdAt": created_at,
         "updatedAt": _s(item, "updated_at", created_at),
         "followUpPending": status == "resolved" and bool(_s(item, "follow_up_due_at")) and (
-            not item.get("follow_up_deliveries", {}).get("M") or any(
-                value.get("S") in ("pending", "sending", "failed")
+            _s(item, "follow_up_ran") != _s(item, "follow_up_due_at") or any(
+                value.get("S") == "pending"
                 for value in item.get("follow_up_deliveries", {}).get("M", {}).values()
             )
         ),
@@ -251,6 +251,8 @@ def _timeline_entry(item):
         "join_incident": ("joined", "A neighbor joined from WhatsApp", "whatsapp", None),
         "route": ("routed", "Sent to {} by routing rule".format(_s(item, "dependency") or _s(item, "authority") or "the agency"), "routing", "sent_to_agency"),
         "escalate": ("escalated", "Escalated: over the report or age threshold", "bot", None),
+        "citizen_confirmed": ("follow_up", "A neighbor confirmed it is fixed from WhatsApp", "whatsapp", None),
+        "citizen_reopened": ("status", "A neighbor reopened it from WhatsApp", "whatsapp", "reopened"),
     }
     if kind in mapping:
         tl_kind, text, source, status = mapping[kind]

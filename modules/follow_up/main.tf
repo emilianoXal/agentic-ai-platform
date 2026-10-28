@@ -37,8 +37,16 @@ data "aws_iam_policy_document" "follow_up" {
     resources = [var.incidents_table_arn]
   }
   statement {
+    actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
+    resources = [var.reports_table_arn]
+  }
+  statement {
     actions   = ["dynamodb:GetItem"]
-    resources = [var.reports_table_arn, var.users_table_arn]
+    resources = [var.users_table_arn]
+  }
+  statement {
+    actions   = ["dynamodb:PutItem"]
+    resources = [var.audit_log_table_arn]
   }
   statement {
     actions   = ["dynamodb:Query"]
@@ -82,6 +90,7 @@ resource "aws_lambda_function" "follow_up" {
       INCIDENTS_TABLE                      = var.incidents_table_name
       REPORTS_TABLE                        = var.reports_table_name
       USERS_TABLE                          = var.users_table_name
+      AUDIT_TABLE                          = var.audit_log_table_name
       OUTBOUND_FUNCTION_NAME               = var.outbound_function_name
       OUTBOUND_ORIGINATION_PHONE_NUMBER_ID = var.outbound_origination_phone_number_id
     }

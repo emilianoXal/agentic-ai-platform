@@ -74,6 +74,8 @@ module "follow_up" {
   reports_table_arn                    = module.data.reports_table_arn
   users_table_name                     = module.data.users_table_name
   users_table_arn                      = module.data.users_table_arn
+  audit_log_table_name                 = module.data.audit_log_table_name
+  audit_log_table_arn                  = module.data.audit_log_table_arn
   outbound_function_name               = module.compute.outbound_function_name
   outbound_function_arn                = module.compute.outbound_function_arn
   outbound_origination_phone_number_id = var.outbound_origination_phone_number_id

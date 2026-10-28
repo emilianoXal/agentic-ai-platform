@@ -29,6 +29,8 @@ variables {
   reports_table_arn                    = "arn:aws:dynamodb:us-east-1:123456789012:table/reports"
   users_table_name                     = "users"
   users_table_arn                      = "arn:aws:dynamodb:us-east-1:123456789012:table/users"
+  audit_log_table_name                 = "audit"
+  audit_log_table_arn                  = "arn:aws:dynamodb:us-east-1:123456789012:table/audit"
   kms_key_arn                          = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000000"
   outbound_function_name               = "outbound"
   outbound_function_arn                = "arn:aws:lambda:us-east-1:123456789012:function:outbound"

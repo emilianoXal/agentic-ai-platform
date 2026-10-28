@@ -156,5 +156,5 @@ variable "staff_users" {
 variable "follow_up_delay_minutes" {
   description = "Minutes after an agency resolution before asking the citizen whether it is fixed."
   type        = number
-  default     = 1440
+  default     = 60
 }

@@ -112,9 +112,10 @@ checks current consent and pause preferences, and synchronously invokes the
 existing outbound Lambda. It adds no WhatsApp client or channel permission.
 Conditional per-citizen reservations on the incident prevent duplicate sends;
 an uncertain channel outcome remains reserved rather than risking another
-message. Only an acknowledged send becomes a pending question. The reservation
-keys are hashes and contain no new phone attributes; recipient identity remains
-in the existing reports/users records. Delayed free-text WhatsApp messages still
+message. Only an acknowledged send becomes a pending question; a failure the
+outbound Lambda reports releases the reservation for the Scheduler retry. The
+reservation keys are hashes and contain no new phone attributes; recipient
+identity remains in the existing reports/users records. Delayed free-text WhatsApp messages still
 require an open WhatsApp service conversation window; the demo delay stays short.
 
 Before a consenting agent turn, the agent queries that sender's pending follow-ups
@@ -124,8 +125,10 @@ answers request clarification; unrelated messages and injected instructions do
 not authorize changes. The wrapper binds the sender and resolution generation
 outside model arguments, and the Lambda rechecks report ownership and pending
 state before a conditional update. Confirmation retains `resolved`; reopening
-uses `OPEN`, the same stored state as a new incident. The incident stream updates
-the existing portal, while `get_status` returns the parent incident's current
-state even when a report row still holds its previous status. No new UI is needed.
+stores the portal's existing `reopened` status and relabels the report rows.
+Both answers append a `citizen_confirmed` or `citizen_reopened` audit entry to
+the incident timeline. The portal shows a follow-up as pending until the
+schedule has run and afterwards only while an acknowledged question awaits an
+answer. No new UI is needed.
 See `docs/oficios/tester.md` for local tests and the deferred post-apply model
 matrix, which runs against the deployed agent with team test numbers only.

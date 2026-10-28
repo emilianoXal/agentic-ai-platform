@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 INCIDENTS = os.environ["INCIDENTS_TABLE"]
 REPORTS = os.environ["REPORTS_TABLE"]
 USERS = os.environ["USERS_TABLE"]
+AUDIT = os.environ["AUDIT_TABLE"]
 OUTBOUND = os.environ["OUTBOUND_FUNCTION_NAME"]
 ORIGINATION = os.environ.get("OUTBOUND_ORIGINATION_PHONE_NUMBER_ID", "")
 _ddb = boto3.client("dynamodb")
@@ -71,6 +72,18 @@ def _send(event):
         return {"ok": True, "skipped": "stale"}
     if not ORIGINATION:
         raise RuntimeError("follow_up_origination_missing")
+    try:
+        _ddb.update_item(
+            TableName=INCIDENTS, Key={"incident_id": {"S": incident_id}},
+            UpdateExpression="SET follow_up_ran = :due",
+            ConditionExpression="#s = :resolved AND follow_up_due_at = :due",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":resolved": {"S": "resolved"}, ":due": {"S": due_at}},
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return {"ok": True, "skipped": "stale"}
+        raise
     recipients = {_s(report, "user_id") for report in _reports(item)} - {""}
     sent = 0
     for user_id in recipients:
@@ -107,14 +120,13 @@ def _send(event):
         )
         result = json.loads(response["Payload"].read())
         if response.get("FunctionError") or not result.get("ok"):
-            if result.get("error") == "invalid_input":
-                _ddb.update_item(
-                    TableName=INCIDENTS, Key={"incident_id": {"S": incident_id}},
-                    UpdateExpression="SET follow_up_deliveries.#k = :failed",
-                    ConditionExpression="follow_up_due_at = :due",
-                    ExpressionAttributeNames={"#k": key},
-                    ExpressionAttributeValues={":due": {"S": due_at}, ":failed": {"S": "failed"}},
-                )
+            _ddb.update_item(
+                TableName=INCIDENTS, Key={"incident_id": {"S": incident_id}},
+                UpdateExpression="SET follow_up_deliveries.#k = :failed",
+                ConditionExpression="follow_up_due_at = :due",
+                ExpressionAttributeNames={"#k": key},
+                ExpressionAttributeValues={":due": {"S": due_at}, ":failed": {"S": "failed"}},
+            )
             raise RuntimeError("follow_up_send_failed")
         _ddb.update_item(
             TableName=INCIDENTS, Key={"incident_id": {"S": incident_id}},
@@ -134,27 +146,46 @@ def _respond(event):
         return {"ok": False, "error": "invalid_decision"}
     if incident_id not in {entry["incident_id"] for entry in _pending(user_id)}:
         return {"ok": False, "error": "no_pending_follow_up"}
+    now = datetime.now(timezone.utc).isoformat()
     names = {"#s": "status", "#k": _subject(user_id)}
     values = {":resolved": {"S": "resolved"}, ":pending": {"S": "pending"},
-              ":decision": {"S": decision}, ":now": {"S": datetime.now(timezone.utc).isoformat()},
+              ":decision": {"S": decision}, ":now": {"S": now},
               ":due": {"S": event["due_at"]}}
     expression = "SET follow_up_deliveries.#k = :decision, updated_at = :now"
     if decision == "reopen":
-        expression += ", #s = :open REMOVE follow_up_due_at"
-        values[":open"] = {"S": "OPEN"}
+        expression += ", #s = :reopened REMOVE follow_up_due_at"
+        values[":reopened"] = {"S": "reopened"}
     try:
-        _ddb.update_item(
+        item = _ddb.update_item(
             TableName=INCIDENTS, Key={"incident_id": {"S": incident_id}},
             UpdateExpression=expression,
             ConditionExpression="#s = :resolved AND follow_up_due_at = :due AND follow_up_deliveries.#k = :pending",
             ExpressionAttributeNames=names, ExpressionAttributeValues=values,
-        )
+            ReturnValues="ALL_NEW",
+        )["Attributes"]
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return {"ok": False, "error": "stale_follow_up"}
         raise
+    if decision == "reopen":
+        for report_id in item.get("report_ids", {}).get("L", []):
+            try:
+                _ddb.update_item(
+                    TableName=REPORTS, Key={"report_id": report_id},
+                    UpdateExpression="SET #s = :s, updated_at = :now",
+                    ConditionExpression="attribute_exists(report_id)",
+                    ExpressionAttributeNames={"#s": "status"},
+                    ExpressionAttributeValues={":s": {"S": "Reabierto"}, ":now": {"S": now}},
+                )
+            except ClientError as exc:
+                if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                    raise
+    _ddb.put_item(TableName=AUDIT, Item={
+        "entity_id": {"S": "incident#" + incident_id}, "ts": {"S": now},
+        "kind": {"S": "citizen_reopened" if decision == "reopen" else "citizen_confirmed"},
+    })
     return {"ok": True, "incident_id": incident_id,
-            "status": "OPEN" if decision == "reopen" else "resolved"}
+            "status": "reopened" if decision == "reopen" else "resolved"}
 
 
 def lambda_handler(event, context):

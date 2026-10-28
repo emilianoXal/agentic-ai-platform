@@ -102,7 +102,8 @@ Las suites antiguas importan un módulo llamado `handler`; correr agent,
 compute y portal en procesos separados evita que pytest mezcle esos imports.
 Las pruebas nuevas usan DynamoDB de moto y verifican condiciones reales:
 dos disparos envían una sola vez, una generación anterior no envía ni reabre,
-un ciudadano ajeno no puede responder y una reapertura guarda `OPEN`.
+un ciudadano ajeno no puede responder, una reapertura guarda `reopened` y
+ambas respuestas quedan en la auditoría.
 Un resultado incierto del canal queda reservado para no duplicar el envío;
 no se presenta como pregunta pendiente al modelo hasta tener acuse exitoso.
 
@@ -132,11 +133,11 @@ de prueba resuelto y esperar el aviso al número de prueba; después comprobar l
 decisión persistida en DynamoDB y el estado del portal. No reutilizar una
 pregunta ya respondida para otra celda. No se han ejecutado estas celdas.
 
-Dev programa el aviso dos minutos después de resolver; QA/prod usan 1440
+Dev programa el aviso dos minutos después de resolver; QA/prod usan 60
 minutos, configurables con `follow_up_delay_minutes`. WhatsApp requiere una
 ventana de conversación abierta para enviar este texto libre. Tras fusión y
 apply autorizado, usar únicamente los números de prueba del equipo terminados
 en 7271 y 8553. Resolver desde el portal, comprobar el schedule `cdshack-*` en
 default y esperar el aviso. Responder confirmación y después repetir el ciclo
-con un problema que persista; verificar `resolved` y `OPEN` respectivamente.
+con un problema que persista; verificar `resolved` y `reopened` respectivamente.
 No ejecutar apply ni pruebas de envío real desde una rama.

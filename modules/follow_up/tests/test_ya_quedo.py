@@ -31,7 +31,7 @@ def load(name, path):
 def app(monkeypatch):
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
     for key, value in {"INCIDENTS_TABLE": "incidents", "REPORTS_TABLE": "reports",
-                       "USERS_TABLE": "users", "OUTBOUND_FUNCTION_NAME": "outbound",
+                       "USERS_TABLE": "users", "AUDIT_TABLE": "audit", "OUTBOUND_FUNCTION_NAME": "outbound",
                        "OUTBOUND_ORIGINATION_PHONE_NUMBER_ID": "phone-number-id-test"}.items():
         monkeypatch.setenv(key, value)
     with mock_aws():
@@ -43,6 +43,9 @@ def app(monkeypatch):
                 spec["AttributeDefinitions"].append({"AttributeName": "user_id", "AttributeType": "S"})
                 spec["GlobalSecondaryIndexes"] = [{"IndexName": "by-user", "KeySchema": [{"AttributeName": "user_id", "KeyType": "HASH"}], "Projection": {"ProjectionType": "ALL"}}]
             ddb.create_table(**spec)
+        ddb.create_table(TableName="audit", BillingMode="PAY_PER_REQUEST",
+                         KeySchema=[{"AttributeName": "entity_id", "KeyType": "HASH"}, {"AttributeName": "ts", "KeyType": "RANGE"}],
+                         AttributeDefinitions=[{"AttributeName": "entity_id", "AttributeType": "S"}, {"AttributeName": "ts", "AttributeType": "S"}])
         ddb.put_item(TableName="incidents", Item={
             "incident_id": {"S": "i1"}, "status": {"S": "resolved"},
             "category": {"S": "agua"}, "follow_up_due_at": {"S": DUE},
@@ -94,6 +97,16 @@ def test_missing_or_paused_citizen_never_gets_a_message(app):
     app._lambda.invoke.assert_not_called()
 
 
+def test_reported_send_failure_releases_reservation_for_retry(app):
+    app._lambda.invoke.side_effect = lambda **kw: {"Payload": io.BytesIO(b'{"ok":false,"error":"send_failed"}')}
+    with pytest.raises(RuntimeError):
+        send(app)
+    app._lambda.invoke.side_effect = lambda **kw: {"Payload": io.BytesIO(b'{"ok":true}')}
+    assert send(app)["sent"] == 1
+    assert app._lambda.invoke.call_count == 2
+    assert [p["incident_id"] for p in app.lambda_handler({"action": "pending", "user_id": SENDER}, None)["pending"]] == ["i1"]
+
+
 def test_uncertain_send_is_not_repeated(app):
     app._lambda.invoke.side_effect = TimeoutError("uncertain channel outcome")
     with pytest.raises(TimeoutError):
@@ -103,8 +116,9 @@ def test_uncertain_send_is_not_repeated(app):
     assert app.lambda_handler({"action": "pending", "user_id": SENDER}, None)["pending"] == []
 
 
-@pytest.mark.parametrize("decision,expected", [("confirm", "resolved"), ("reopen", "OPEN")])
-def test_citizen_decision_changes_actual_incident_once(app, decision, expected):
+@pytest.mark.parametrize("decision,expected,kind", [("confirm", "resolved", "citizen_confirmed"),
+                                                    ("reopen", "reopened", "citizen_reopened")])
+def test_citizen_decision_changes_actual_incident_once(app, decision, expected, kind):
     send(app)
     pending = app.lambda_handler({"action": "pending", "user_id": SENDER}, None)
     assert pending["pending"] == [{"incident_id": "i1", "category": "agua", "due_at": DUE}]
@@ -113,11 +127,16 @@ def test_citizen_decision_changes_actual_incident_once(app, decision, expected):
     assert app._incident("i1")["status"]["S"] == expected
     assert app.lambda_handler(event, None)["ok"] is False
     assert app.lambda_handler({"action": "pending", "user_id": SENDER}, None)["pending"] == []
+    audit = app._ddb.query(TableName="audit", KeyConditionExpression="entity_id = :e",
+                           ExpressionAttributeValues={":e": {"S": "incident#i1"}})["Items"]
+    assert [item["kind"]["S"] for item in audit] == [kind]
+    rows = {app._ddb.get_item(TableName="reports", Key={"report_id": {"S": rid}})["Item"]["status"]["S"] for rid in ("r1", "r2")}
+    assert rows == {"Reabierto" if decision == "reopen" else "Resuelto"}
     if decision == "reopen":
         assert "follow_up_due_at" not in app._incident("i1")
         status = load("status_follow_up_tests", "modules/agent/src/get_status/handler.py")
         status._ddb = app._ddb
-        assert status.lambda_handler({"user_id": SENDER}, None)["reports"][0]["status"] == "OPEN"
+        assert status.lambda_handler({"user_id": SENDER}, None)["reports"][0]["status"] == "reopened"
 
 
 def test_foreign_citizen_and_old_generation_cannot_reopen(app):
@@ -172,10 +191,38 @@ def test_scheduler_failure_does_not_mark_resolved(portal):
     portal._ddb.update_item.assert_not_called()
 
 
-def test_reopened_incident_is_rendered_as_open_by_portal(portal):
-    view = portal.to_incident({"incident_id": {"S": "i1"}, "status": {"S": "OPEN"}})
-    assert view["status"] == "received"
+def test_citizen_reopened_incident_is_rendered_as_reopened_with_timeline(portal):
+    view = portal.to_incident({"incident_id": {"S": "i1"}, "status": {"S": "reopened"}})
+    assert view["status"] == "reopened"
     assert view["followUpPending"] is False
+    entry = portal._timeline_entry({"entity_id": {"S": "incident#i1"}, "ts": {"S": DUE}, "kind": {"S": "citizen_reopened"}})
+    assert (entry["kind"], entry["source"], entry["status"]) == ("status", "whatsapp", "reopened")
+    entry = portal._timeline_entry({"entity_id": {"S": "incident#i1"}, "ts": {"S": DUE}, "kind": {"S": "citizen_confirmed"}})
+    assert (entry["kind"], entry["source"], entry["status"]) == ("follow_up", "whatsapp", None)
+
+
+@pytest.mark.parametrize("setup,expected", [
+    ("unscheduled", True),
+    ("no_eligible", False),
+    ("uncertain", False),
+    ("failed", False),
+    ("sent", True),
+])
+def test_portal_follow_up_pending_tracks_schedule_outcome(app, portal, setup, expected):
+    if setup == "no_eligible":
+        app._ddb.put_item(TableName="users", Item={"user_id": {"S": SENDER}, "consent": {"BOOL": False}})
+        send(app)
+    elif setup == "uncertain":
+        app._lambda.invoke.side_effect = TimeoutError("uncertain channel outcome")
+        with pytest.raises(TimeoutError):
+            send(app)
+    elif setup == "failed":
+        app._lambda.invoke.side_effect = lambda **kw: {"Payload": io.BytesIO(b'{"ok":false,"error":"send_failed"}')}
+        with pytest.raises(RuntimeError):
+            send(app)
+    elif setup == "sent":
+        send(app)
+    assert portal.to_incident(app._incident("i1"))["followUpPending"] is expected
 
 
 def test_agent_tool_binds_subject_and_generation_to_current_turn(monkeypatch):

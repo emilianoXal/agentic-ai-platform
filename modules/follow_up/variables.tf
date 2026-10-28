@@ -19,6 +19,12 @@ variable "users_table_name" {
 variable "users_table_arn" {
   type = string
 }
+variable "audit_log_table_name" {
+  type = string
+}
+variable "audit_log_table_arn" {
+  type = string
+}
 variable "kms_key_arn" {
   type = string
 }

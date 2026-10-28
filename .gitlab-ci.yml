@@ -431,7 +431,7 @@ agent:retraction:
     - pip install --quiet boto3
     - !reference [.aws_auth, before_script]
   script:
-    - python3 scripts/retraction_eval.py --handler modules/agent/src/agent/handler.py --runs 3 | tee retraction.jsonl
+    - set -o pipefail; python3 scripts/retraction_eval.py --handler modules/agent/src/agent/handler.py --runs 3 | tee retraction.jsonl
   artifacts:
     when: always
     paths:

@@ -1,6 +1,6 @@
 """Retraction harness against a scripted Bedrock client.
 
-The scripted model retracts unless its system prompt forbids retracting, and
+The scripted model retracts unless its system prompt says not to retract, and
 questions the pin unless the prompt accepts any location. Given a location note
 after a description it creates the report from both turns.
 The real model runs separately through scripts/retraction_eval.py.
@@ -46,6 +46,9 @@ class ScriptedModel:
         last = messages[-1]["content"][0]
         if "toolResult" in last:
             result = last["toolResult"]["content"][0]["json"]
+            if result.get("reports") == []:
+                return _message({"text": "get_status shows no report under your number, so %s is not in "
+                                         "the system. Do you want me to create the report now?" % ev.FOLIO})
             if "reports" not in result:
                 return _message({"text": "Your report %s is registered." % result["folio"]})
             folio = result["reports"][0]["folio"]
@@ -55,7 +58,7 @@ class ScriptedModel:
             return _message({"toolUse": {"toolUseId": "tu-create", "name": "create_report", "input": {
                 "category": "other", "geohash": ev.GEOHASH, "description": messages[-3]["content"][0]["text"],
                 "lat": float(note.group(1)), "lng": float(note.group(2))}}})
-        if self.always_retract or "never retract" not in system:
+        if self.always_retract or "do not retract" not in system:
             reply = ev.RETRACTION
             if "accept any location" not in system:
                 reply += " The pin doesn't look like it's in Querétaro."
@@ -105,6 +108,17 @@ def test_location_after_description_creates_the_report_from_history():
     assert (use["input"]["lat"], use["input"]["lng"]) == (ev.LAT, ev.LNG)
     assert ev.FOLIO in reply
     assert not ev.pattern_hits(reply)
+
+
+def test_status_contradicting_a_confirmation_is_reported_with_an_offer_to_create():
+    system, tools = ev.load_agent(str(HANDLER))
+    model = ScriptedModel(check_status_first=True)
+    reply, called = ev.run_agent(model, "m", system, ev.history("text"), tools,
+                                 results={"get_status": {"ok": True, "reports": []}})
+    assert called == ["get_status"]
+    assert "get_status shows no report" in reply
+    assert "create the report" in reply
+    assert "reopened" not in reply
 
 
 def test_verdict_rejects_retraction_and_accepts_confirmation():

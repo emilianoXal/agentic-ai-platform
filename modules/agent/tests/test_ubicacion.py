@@ -169,6 +169,7 @@ class _Result:
 
 class _ScriptedAgent:
     calls_report = False
+    report_extra = {}
     prompts = []
     locations = []
     report_kwargs = []
@@ -180,13 +181,13 @@ class _ScriptedAgent:
         _ScriptedAgent.prompts.append(prompt)
         _ScriptedAgent.locations.append(dict(agent._turn.get("location") or {}))
         if _ScriptedAgent.calls_report:
-            _ScriptedAgent.report_kwargs.append({
+            _ScriptedAgent.report_kwargs.append(dict({
                 "category": "bacheo",
                 "geohash": "wrongcell",
                 "description": (
                     "Patrulla estacionada bloquea el carril en la esquina"
                 ),
-            })
+            }, **_ScriptedAgent.report_extra))
             agent.create_report(**_ScriptedAgent.report_kwargs[-1])
         return _Result()
 
@@ -219,6 +220,7 @@ class UbicacionWhatsAppTests(unittest.TestCase):
         _ScriptedAgent.locations = []
         _ScriptedAgent.report_kwargs = []
         _ScriptedAgent.calls_report = False
+        _ScriptedAgent.report_extra = {}
 
     def _ingest(self, event):
         ingest._sqs.send_message.reset_mock()
@@ -285,7 +287,7 @@ class UbicacionWhatsAppTests(unittest.TestCase):
         self.assertEqual(queued["location"]["address"], ADDRESS)
         self.assertIn("%.5f" % LAT, queued["text"])
         self.assertIn("%.5f" % LNG, queued["text"])
-        self.assertIn("Ubicación compartida", queued["text"])
+        self.assertIn("Shared location", queued["text"])
 
         _ScriptedAgent.calls_report = False
         result = agent.lambda_handler(queued, None)
@@ -326,8 +328,68 @@ class UbicacionWhatsAppTests(unittest.TestCase):
         )
         self.assertEqual(_ScriptedAgent.locations[-1]["lat"], LAT)
         self.assertEqual(_ScriptedAgent.locations[-1]["lng"], LNG)
-        history = list(self.ddb.tables.get("history", {}).values())
-        self.assertTrue(any(item.get("location") for item in history))
+        history = sorted(
+            self.ddb.tables.get("history", {}).values(),
+            key=lambda item: item["ts"]["S"],
+        )
+        self.assertEqual([bool(item.get("location")) for item in history], [True, False])
+        self.assertTrue(history[-1]["report_created"]["BOOL"])
+
+    def test_explicit_coordinates_override_pending_location(self):
+        loc_body = self._ingest(self._location_event())[0]
+        self.assertTrue(agent.lambda_handler(loc_body, None)["ok"])
+        self.assertIn("shared this location 0 minutes ago", _ScriptedAgent.prompts[0])
+
+        new_lat, new_lng = 20.61, -100.41
+        _ScriptedAgent.calls_report = True
+        _ScriptedAgent.report_extra = {
+            "lat": new_lat, "lng": new_lng,
+            "geohash": agent._encode_geohash(new_lat, new_lng),
+        }
+        body = self._ingest(self._text_event("otro reporte: bache en 20.61,-100.41"))[0]
+        self.assertTrue(agent.lambda_handler(body, None)["ok"])
+
+        reports = self._reports()
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(float(reports[0]["lat"]["S"]), new_lat)
+        self.assertEqual(float(reports[0]["lng"]["S"]), new_lng)
+        self.assertEqual(reports[0]["geohash"]["S"], agent._encode_geohash(new_lat, new_lng))
+
+    def test_second_report_does_not_reuse_consumed_location(self):
+        loc_body = self._ingest(self._location_event())[0]
+        self.assertTrue(agent.lambda_handler(loc_body, None)["ok"])
+        _ScriptedAgent.calls_report = True
+        photo_body = self._ingest(self._image_event("Crea un reporte de bache"))[0]
+        self.assertTrue(agent.lambda_handler(photo_body, None)["ok"])
+
+        body = self._ingest(self._text_event("otro reporte: luminaria apagada"))[0]
+        self.assertTrue(agent.lambda_handler(body, None)["ok"])
+
+        self.assertEqual(_ScriptedAgent.locations[-1], {})
+        self.assertNotIn("shared this location", _ScriptedAgent.prompts[-1])
+        reports = sorted(self._reports(), key=lambda item: "lat" in item)
+        self.assertEqual(len(reports), 2)
+        self.assertNotIn("lat", reports[0])
+        self.assertEqual(reports[0]["geohash"]["S"], "wrongcell")
+        self.assertEqual(float(reports[1]["lat"]["S"]), LAT)
+
+    def test_pending_location_expires_after_thirty_minutes(self):
+        loc_body = self._ingest(self._location_event())[0]
+        self.assertTrue(agent.lambda_handler(loc_body, None)["ok"])
+        stale = agent.datetime.fromtimestamp(
+            agent.time.time() - 31 * 60, agent.timezone.utc,
+        ).isoformat()
+        for item in self.ddb.tables["history"].values():
+            item["ts"]["S"] = stale + "#" + item["ts"]["S"].split("#")[1]
+
+        _ScriptedAgent.calls_report = True
+        body = self._ingest(self._text_event("reporte: bache"))[0]
+        self.assertTrue(agent.lambda_handler(body, None)["ok"])
+
+        self.assertEqual(_ScriptedAgent.locations[-1], {})
+        reports = self._reports()
+        self.assertEqual(len(reports), 1)
+        self.assertNotIn("lat", reports[0])
 
     def test_text_without_location_stays_plain_text(self):
         bodies = self._ingest(self._text_event("hola"))
@@ -341,7 +403,7 @@ class UbicacionWhatsAppTests(unittest.TestCase):
         result = agent.lambda_handler(queued, None)
         self.assertTrue(result["ok"])
         self.assertEqual(_ScriptedAgent.locations[0], {})
-        self.assertNotIn("compartio su ubicacion", _ScriptedAgent.prompts[0])
+        self.assertNotIn("shared this location", _ScriptedAgent.prompts[0])
         reports = self._reports()
         self.assertEqual(len(reports), 1)
         self.assertNotIn("lat", reports[0])

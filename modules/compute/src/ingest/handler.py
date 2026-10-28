@@ -136,7 +136,7 @@ def _location_text(location):
         parts.append(location["name"])
     if location.get("address") and location.get("address") != location.get("name"):
         parts.append(location["address"])
-    return "[Ubicación compartida: " + ", ".join(parts) + "]"
+    return "[Shared location: " + ", ".join(parts) + "]"
 
 
 def _text_from_wa(message):

@@ -56,6 +56,7 @@ TOOL_REGISTER_CONSENT_FN = os.environ.get("TOOL_REGISTER_CONSENT_FN", "")
 CONVERSATION_HISTORY_TABLE = os.environ.get("CONVERSATION_HISTORY_TABLE", "")
 _HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 _HISTORY_TURNS = 10
+_PENDING_LOCATION_SECONDS = 30 * 60
 
 AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
 AGENTCORE_IDENTITY_SECRET_ARN = os.environ.get("AGENTCORE_IDENTITY_SECRET_ARN", "")
@@ -224,12 +225,12 @@ def create_report(category: str, geohash: str, description: str,
         lng: Optional longitude (stored on the report).
         severity: Optional severity (low, medium, high, critical).
     """
-    loc = _turn.get("location") if isinstance(_turn.get("location"), dict) else {}
-    if loc.get("lat") is not None and loc.get("lng") is not None:
+    loc = _turn.get("location")
+    if (lat is None or lng is None) and loc:
         lat = loc["lat"]
         lng = loc["lng"]
         geohash = _encode_geohash(lat, lng)
-    return _invoke_tool(TOOL_CREATE_REPORT_FN, {
+    result = _invoke_tool(TOOL_CREATE_REPORT_FN, {
         "user_id": _turn.get("user_id"),
         "category": category,
         "geohash": geohash,
@@ -239,6 +240,10 @@ def create_report(category: str, geohash: str, description: str,
         "lng": lng,
         "severity": severity,
     })
+    if result.get("ok"):
+        _turn.pop("location", None)
+        _turn["report_created"] = True
+    return result
 
 
 @tool
@@ -512,11 +517,10 @@ def _location_note(location):
         parts.append(location["name"])
     if location.get("address") and location.get("address") != location.get("name"):
         parts.append(location["address"])
+    minutes = max(0, int((time.time() - location["shared_at"]) // 60))
     return (
-        "[El ciudadano compartio su ubicacion: "
-        + ", ".join(parts)
-        + ". Usa estas coordenadas (lat/lng) y el geohash de precision 7 "
-        "para create_report; no pidas la ubicacion de nuevo.]"
+        "[The citizen shared this location " + str(minutes) + " minutes ago: "
+        + ", ".join(parts) + "]"
     )
 _TRY_AGAIN = (
     "I had a problem processing your request. Please try again in a moment."
@@ -635,20 +639,27 @@ def _load_history(citizen_key):
         ScanIndexForward=False, Limit=_HISTORY_TURNS, ConsistentRead=True,
     )
     messages = []
-    last_location = None
+    pending_location = None
     for item in reversed(response.get("Items", [])):
         if int(item["expires_at"]["N"]) <= time.time():
             continue
         stored = _coerce_location(item.get("location", {}).get("S"))
         if stored:
-            last_location = stored
+            stored["shared_at"] = datetime.fromisoformat(
+                item["ts"]["S"].split("#")[0]).timestamp()
+            pending_location = stored
+        if item.get("report_created", {}).get("BOOL"):
+            pending_location = None
         for role in ("user", "assistant"):
             messages.append({"role": role, "content": [{"text": item[role]["S"]}]})
     _log(logging.INFO, "history_loaded", citizen_key=citizen_key, turns=len(messages) // 2)
-    return messages, last_location
+    if (pending_location
+            and time.time() - pending_location["shared_at"] > _PENDING_LOCATION_SECONDS):
+        pending_location = None
+    return messages, pending_location
 
 
-def _save_history(user_id, text, reply):
+def _save_history(user_id, text, reply, location=None):
     try:
         item = {
             "citizen_id": {"S": _citizen_key(user_id)},
@@ -657,13 +668,10 @@ def _save_history(user_id, text, reply):
             "assistant": {"S": reply},
             "expires_at": {"N": str(int(time.time()) + _HISTORY_TTL_SECONDS)},
         }
-        loc = _turn.get("location")
-        if isinstance(loc, dict) and loc.get("lat") is not None and loc.get("lng") is not None:
-            item["location"] = {"S": json.dumps({
-                "lat": loc["lat"],
-                "lng": loc["lng"],
-                **{k: loc[k] for k in ("name", "address") if loc.get(k)},
-            })}
+        if location:
+            item["location"] = {"S": json.dumps(location)}
+        if _turn.get("report_created"):
+            item["report_created"] = {"BOOL": True}
         _ddb.put_item(TableName=CONVERSATION_HISTORY_TABLE, Item=item)
     except Exception:
         _log(logging.WARNING, "history_unavailable", operation="write")
@@ -681,16 +689,7 @@ def _agent_for_citizen(model, user_id, consent_pending, history_messages=None):
         "callback_handler": None,
     }
     if CONVERSATION_HISTORY_TABLE and not consent_pending:
-        if history_messages is not None:
-            agent_kwargs["messages"] = history_messages
-        else:
-            try:
-                loaded, hist_loc = _load_history(_citizen_key(user_id))
-                agent_kwargs["messages"] = loaded
-                if hist_loc and not _turn.get("location"):
-                    _turn["location"] = hist_loc
-            except Exception:
-                _log(logging.WARNING, "history_unavailable", operation="read")
+        agent_kwargs["messages"] = history_messages or []
         yield Agent(**agent_kwargs)
         return
     if not AGENTCORE_MEMORY_ID or consent_pending:
@@ -752,19 +751,18 @@ def lambda_handler(event, context):
     _turn.clear()
     _turn.update(user_id=str(user_id), text=text, media=media)
     if location:
-        _turn["location"] = location
+        _turn["location"] = dict(location, shared_at=time.time())
     consent_pending = bool(event.get("consent_pending"))
     _turn["consent_pending"] = consent_pending
     rate_limited = bool(event.get("rate_limited"))
-    history_messages = None
+    history_messages = []
     if CONVERSATION_HISTORY_TABLE and not consent_pending:
         try:
-            history_messages, hist_loc = _load_history(_citizen_key(user_id))
-            if hist_loc and not _turn.get("location"):
-                _turn["location"] = hist_loc
+            history_messages, pending_location = _load_history(_citizen_key(user_id))
+            if pending_location and not location:
+                _turn["location"] = pending_location
         except Exception:
             _log(logging.WARNING, "history_unavailable", operation="read")
-            history_messages = None
 
     _log(logging.INFO, "agent_start", user=_mask_phone(user_id),
          user_hash=_hash_id(user_id),
@@ -820,7 +818,7 @@ def lambda_handler(event, context):
 
         if (CONVERSATION_HISTORY_TABLE and not consent_pending
                 and not _is_deletion_confirmation(text)):
-            _save_history(user_id, prompt, reply)
+            _save_history(user_id, prompt, reply, location)
 
         _log(logging.INFO, "agent_done", user_hash=_hash_id(user_id),
              reply_len=len(reply))

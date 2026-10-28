@@ -96,10 +96,11 @@ sent alone or before the location still lands on the citizen's next report. A
 photo without a caption is valid input: the agent asks for the description and
 location. WhatsApp `location` messages (including forwarded ones) enqueue a
 structured `location` object with `lat`, `lng`, and optional `name`/`address`,
-plus a readable `[Ubicación compartida: …]` text. The agent injects those
-coordinates into the current turn and stores them on the conversation-history
-item so a later captioned photo can call `create_report` with the real `lat`/`lng`
-and the existing precision-7 geohash encoder. Likewise, the sender's `user_id` comes from the inbound
+plus a readable `[Shared location: …]` text. The agent stores that location
+only on the conversation-history item of the turn that shared it, as pending
+data: it expires after 30 minutes or when a report is created, whichever comes
+first. While pending, the prompt says how many minutes ago it was shared and
+`create_report` uses it only when the model sends no `lat`/`lng`. Likewise, the sender's `user_id` comes from the inbound
 event and is injected server-side into `create_report`, `join_incident`,
 `get_status`, `register_consent`, and `register_place`; it is not a model-facing tool parameter. The workflow downloads the WhatsApp
 asset into the KMS-encrypted media bucket, calls Rekognition `DetectFaces` and

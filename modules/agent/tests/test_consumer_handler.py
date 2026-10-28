@@ -28,6 +28,10 @@ ORIGIN = "976c72a700aac43eaf573ae050example"
 class ConsumerIngestBodyTests(unittest.TestCase):
     def setUp(self):
         handler._ddb = mock.MagicMock()
+        handler._lambda = mock.MagicMock()
+        payload = mock.MagicMock()
+        payload.read.return_value = b'{"ok": true}'
+        handler._lambda.invoke.return_value = {"Payload": payload}
 
     def test_origination_phone_number_id_is_logged_without_pii(self):
         body = {

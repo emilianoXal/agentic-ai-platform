@@ -52,7 +52,7 @@ class _AgentCallingDelete:
 
 
 @contextmanager
-def _agent_without_session(model, user_id, consent_pending):
+def _agent_without_session(model, user_id, consent_pending, history_messages=None):
     yield _AgentCallingDelete()
 
 

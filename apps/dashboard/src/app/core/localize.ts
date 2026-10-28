@@ -68,6 +68,20 @@ function statusWord(status: StatusCode | null | undefined, i18n: I18nService): s
   return status ? i18n.t(`status.${status}`).toLowerCase() : '';
 }
 
+/** Delay written by the portal (`in 5 min`) or the demo (`in 24 h`), never a fixed 24 h. */
+function followUpDelay(text: string): string | null {
+  const minutes = /in (\d+) min\b/.exec(text);
+  if (minutes) return formatFollowUpDelay(Number(minutes[1]));
+  const hours = /in (\d+) h\b/.exec(text);
+  if (hours) return formatFollowUpDelay(Number(hours[1]) * 60);
+  return null;
+}
+
+function formatFollowUpDelay(minutes: number): string {
+  if (minutes > 0 && minutes % 60 === 0) return `${minutes / 60} h`;
+  return `${minutes} min`;
+}
+
 function firstNumber(text: string): number | null {
   const found = /(\d+)/.exec(text);
   return found ? Number(found[1]) : null;
@@ -114,9 +128,11 @@ export function localizeTimeline(entry: TimelineEntry, i18n: I18nService): strin
     }
     case 'follow_up': {
       const sent = /sent to (\d+)/.exec(text);
-      return sent
-        ? i18n.t('timeline.followUpSent', { n: Number(sent[1]) })
-        : i18n.t('timeline.followUpScheduled');
+      if (sent) return i18n.t('timeline.followUpSent', { n: Number(sent[1]) });
+      const delay = followUpDelay(text);
+      return delay
+        ? i18n.t('timeline.followUpScheduled', { delay })
+        : text;
     }
     case 'reply':
       return text.includes('No, sigue igual')

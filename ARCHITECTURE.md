@@ -94,7 +94,12 @@ one-hour per-key expiry plus DynamoDB TTL cleanup. `create_report`, and
 current message's `sanitized/` keys and atomically consume (`DeleteItem` with `ALL_OLD`) the unexpired pending keys, so a photo
 sent alone or before the location still lands on the citizen's next report. A
 photo without a caption is valid input: the agent asks for the description and
-location. Likewise, the sender's `user_id` comes from the inbound
+location. WhatsApp `location` messages (including forwarded ones) enqueue a
+structured `location` object with `lat`, `lng`, and optional `name`/`address`,
+plus a readable `[Ubicación compartida: …]` text. The agent injects those
+coordinates into the current turn and stores them on the conversation-history
+item so a later captioned photo can call `create_report` with the real `lat`/`lng`
+and the existing precision-7 geohash encoder. Likewise, the sender's `user_id` comes from the inbound
 event and is injected server-side into `create_report`, `join_incident`,
 `get_status`, `register_consent`, and `register_place`; it is not a model-facing tool parameter. The workflow downloads the WhatsApp
 asset into the KMS-encrypted media bucket, calls Rekognition `DetectFaces` and

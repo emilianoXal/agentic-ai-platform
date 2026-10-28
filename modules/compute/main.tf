@@ -218,7 +218,7 @@ data "aws_iam_policy_document" "notifier" {
   }
 
   statement {
-    sid    = "DynamoUsersPlacesAudit"
+    sid    = "DynamoUsersPlaces"
     effect = "Allow"
     actions = [
       "dynamodb:GetItem",
@@ -228,7 +228,32 @@ data "aws_iam_policy_document" "notifier" {
     resources = [
       var.users_table_arn,
       var.places_table_arn,
+    ]
+  }
+
+  statement {
+    sid    = "DynamoAuditNotices"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:Query",
+      "dynamodb:DeleteItem",
+    ]
+    resources = [
       var.audit_table_arn,
+    ]
+  }
+
+  statement {
+    sid    = "DynamoIncidentsRead"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+    ]
+    resources = [
+      var.incidents_table_arn,
     ]
   }
 
@@ -577,6 +602,7 @@ resource "aws_lambda_function" "notifier" {
       USERS_TABLE       = var.users_table_name
       PLACES_TABLE      = var.places_table_name
       AUDIT_TABLE       = var.audit_table_name
+      INCIDENTS_TABLE   = var.incidents_table_name
       DAILY_CAP_DEFAULT = tostring(var.daily_cap_default)
       LOG_LEVEL         = var.log_level
 

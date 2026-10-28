@@ -48,7 +48,8 @@ def app(monkeypatch):
                          AttributeDefinitions=[{"AttributeName": "entity_id", "AttributeType": "S"}, {"AttributeName": "ts", "AttributeType": "S"}])
         ddb.put_item(TableName="incidents", Item={
             "incident_id": {"S": "i1"}, "status": {"S": "resolved"},
-            "category": {"S": "agua"}, "follow_up_due_at": {"S": DUE},
+            "category": {"S": "agua"}, "created_at": {"S": "2026-10-28T11:00:00+00:00"},
+            "follow_up_due_at": {"S": DUE},
             "follow_up_deliveries": {"M": {}}, "report_ids": {"L": [{"S": "r1"}, {"S": "r2"}]},
         })
         for rid in ("r1", "r2"):
@@ -74,7 +75,7 @@ def test_one_send_for_repeated_schedule_and_duplicate_reports(app):
     assert call["InvocationType"] == "RequestResponse"
     payload = json.loads(call["Payload"])
     assert payload["to"] == SENDER
-    assert "¿Ya quedó?" in payload["text"]
+    assert "Is it fixed?" in payload["text"]
     assert payload["origination_phone_number_id"] == "phone-number-id-test"
 
 

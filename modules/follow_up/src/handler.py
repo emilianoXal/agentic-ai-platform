@@ -22,6 +22,22 @@ def _s(item, key):
     return item.get(key, {}).get("S", "")
 
 
+def _portal_folio(incident_id, created_at=""):
+    year = created_at[:4] if len(created_at) >= 4 and created_at[:4].isdigit() else str(
+        datetime.now(timezone.utc).year)
+    token = (incident_id or "??????")[:6].upper()
+    return "UB-{}-{}".format(year, token)
+
+
+def _follow_up_text(incident):
+    incident_id = _s(incident, "incident_id")
+    folio = _portal_folio(incident_id, _s(incident, "created_at"))
+    return (
+        "Your report {} was marked resolved by the agency. "
+        "Is it fixed? Tell me in your own words."
+    ).format(folio)
+
+
 def _subject(user_id):
     return hashlib.sha256(user_id.encode()).hexdigest()
 
@@ -114,7 +130,7 @@ def _send(event):
             FunctionName=OUTBOUND, InvocationType="RequestResponse",
             Payload=json.dumps({
                 "to": _s(user, "phone") or user_id,
-                "text": f"La dependencia marcó resuelto tu reporte {incident_id}. ¿Ya quedó? Cuéntame si se solucionó o si el problema continúa.",
+                "text": _follow_up_text(item),
                 "origination_phone_number_id": ORIGINATION,
             }).encode(),
         )

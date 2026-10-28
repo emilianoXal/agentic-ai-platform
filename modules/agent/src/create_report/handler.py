@@ -66,6 +66,13 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _portal_folio(incident_id, created_at=""):
+    year = created_at[:4] if len(created_at) >= 4 and created_at[:4].isdigit() else str(
+        datetime.now(timezone.utc).year)
+    token = (incident_id or "??????")[:6].upper()
+    return "UB-{}-{}".format(year, token)
+
+
 def _sanitized_media(media):
     if not isinstance(media, list):
         return []
@@ -239,10 +246,12 @@ def lambda_handler(event, context):
         existing = _find_open_incident(geohash, category)
         if existing:
             incident_id = existing["incident_id"]["S"]
+            created_at = existing.get("created_at", {}).get("S") or now
             report_count = _attach_report(incident_id, report_id)
             attached = True
         else:
             incident_id = _create_incident(geohash, category, report_id)
+            created_at = now
             report_count = 1
             attached = False
 
@@ -275,6 +284,7 @@ def lambda_handler(event, context):
         )
         return {
             "ok": True,
+            "folio": _portal_folio(incident_id, created_at),
             "report_id": report_id,
             "incident_id": incident_id,
             "attached": attached,

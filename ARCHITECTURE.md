@@ -36,3 +36,9 @@ the consumer's normalized event contract. It records three runs per Sonnet
 conversation case, correlates tool Lambda logs and DynamoDB observations, and
 publishes JSON and Markdown transcripts as CI artifacts; it never sends a real
 WhatsApp message.
+
+In dev, the agent Lambda persists each citizen's conversation through the
+Strands AgentCore Memory session manager. Both the actor and session identifiers
+are stable SHA-256-derived values, so later messages restore conversation
+history without storing the citizen's phone number as an identifier. QA and
+production keep the integration disabled unless their environment flag is set.

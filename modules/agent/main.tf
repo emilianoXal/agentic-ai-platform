@@ -759,6 +759,22 @@ data "aws_iam_policy_document" "agent" {
     resources = [aws_bedrock_guardrail.this.guardrail_arn]
   }
 
+  dynamic "statement" {
+    for_each = var.enable_agentcore_memory ? [1] : []
+
+    content {
+      sid    = "AgentCoreMemorySession"
+      effect = "Allow"
+      actions = [
+        "bedrock-agentcore:CreateEvent",
+        "bedrock-agentcore:DeleteEvent",
+        "bedrock-agentcore:GetEvent",
+        "bedrock-agentcore:ListEvents",
+      ]
+      resources = [one(awscc_bedrockagentcore_memory.this[*].memory_arn)]
+    }
+  }
+
   statement {
     sid     = "InvokeTools"
     effect  = "Allow"

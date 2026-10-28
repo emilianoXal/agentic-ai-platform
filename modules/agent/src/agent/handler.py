@@ -27,6 +27,7 @@ import logging
 import os
 import re
 import unicodedata
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import boto3
@@ -444,6 +445,38 @@ def _record_simulated_reply(user_id, reply, message_id=None):
     )
 
 
+@contextmanager
+def _agent_for_citizen(model, user_id):
+    agent_kwargs = {
+        "model": model,
+        "tools": _TOOLS,
+        "system_prompt": _SYSTEM_PROMPT,
+        "callback_handler": None,
+    }
+    if not AGENTCORE_MEMORY_ID:
+        yield Agent(**agent_kwargs)
+        return
+
+    from bedrock_agentcore.memory.integrations.strands.config import (
+        AgentCoreMemoryConfig,
+    )
+    from bedrock_agentcore.memory.integrations.strands.session_manager import (
+        AgentCoreMemorySessionManager,
+    )
+
+    citizen_hash = hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()
+    memory_config = AgentCoreMemoryConfig(
+        memory_id=AGENTCORE_MEMORY_ID,
+        actor_id=f"citizen-{citizen_hash}",
+        session_id=f"conversation-{citizen_hash}",
+    )
+    with AgentCoreMemorySessionManager(
+        agentcore_memory_config=memory_config,
+        region_name=AWS_REGION,
+    ) as session_manager:
+        yield Agent(session_manager=session_manager, **agent_kwargs)
+
+
 def lambda_handler(event, context):
     """Run the Strands agent on one inbound message and return {ok, reply, error?}.
 
@@ -498,14 +531,8 @@ def lambda_handler(event, context):
                 "de ejecutar acciones.]\n" + prompt
             )
 
-        agent = Agent(
-            model=model,
-            tools=_TOOLS,
-            system_prompt=_SYSTEM_PROMPT,
-            callback_handler=None,
-        )
-
-        result = agent(prompt)
+        with _agent_for_citizen(model, user_id) as agent:
+            result = agent(prompt)
         reply = _extract_reply(result)
 
         if not reply:

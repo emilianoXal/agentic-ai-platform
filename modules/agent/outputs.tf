@@ -41,6 +41,16 @@ output "register_place_function_arn" {
   value       = aws_lambda_function.register_place.arn
 }
 
+output "register_consent_function_name" {
+  description = "Name of the register_consent tool Lambda."
+  value       = aws_lambda_function.register_consent.function_name
+}
+
+output "register_consent_function_arn" {
+  description = "ARN of the register_consent tool Lambda."
+  value       = aws_lambda_function.register_consent.arn
+}
+
 output "delete_my_data_function_name" {
   description = "Name of the delete_my_data tool Lambda."
   value       = aws_lambda_function.delete_my_data.function_name

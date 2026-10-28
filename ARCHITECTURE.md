@@ -20,6 +20,8 @@ new pair after the purge. Optional AgentCore events and memory records are also
 erased when that backend is enabled. Audit records contain only subject hashes,
 counts and erasure status.
 
+Citizen opt-in is a dedicated `register_consent` tool. Ingest reads `users[user_id].consent` as a DynamoDB BOOL and, when it is missing or false, still enqueues the turn with `consent_pending` (it never drops the message). The model decides from free text whether the citizen accepted; it has no phrase list. On accept it calls `register_consent`, which `UpdateItem`s the users table under the same E.164 `user_id` ingest uses (with or without a leading `+`) setting `consent` true and `consent_at`. The wrapper clears `consent_pending` for the rest of that turn after a successful write, so a report request in the same message can proceed. The model must not claim the consent was stored until the tool returns `ok`. The tool role may `dynamodb:UpdateItem` only on the users table, plus the shared data CMK. Rejection or ambiguity must not call the tool. The live wording matrix is the manual GitLab `agent:conversations` job (`scripts/conversation_matrix.py` cases C14–C16).
+
 The compute module has two outbound event consumers. `notifier` handles citizen
 notification events for the WhatsApp channel. `dependency-mailer` handles an
 incident's initial route (`StatusChanged` from `urbanbot.agent`), portal
@@ -94,7 +96,7 @@ sent alone or before the location still lands on the citizen's next report. A
 photo without a caption is valid input: the agent asks for the description and
 location. Likewise, the sender's `user_id` comes from the inbound
 event and is injected server-side into `create_report`, `join_incident`,
-`get_status`, and `register_place`; it is not a model-facing tool parameter. The workflow downloads the WhatsApp
+`get_status`, `register_consent`, and `register_place`; it is not a model-facing tool parameter. The workflow downloads the WhatsApp
 asset into the KMS-encrypted media bucket, calls Rekognition `DetectFaces` and
 `DetectText`, and invokes the media Lambda to blur face boxes and plate-shaped
 alphanumeric text lines. Images with no sensitive regions are copied unchanged.

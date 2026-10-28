@@ -2,16 +2,27 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { IncidentsGateway } from '../../core/incidents-gateway';
 import { APP_CONFIG } from '../../core/app-config';
+import { I18nService, TranslatePipe } from '../../core/i18n';
 import { UserLocationService } from '../../core/location';
 import { SessionService } from '../../core/session';
 import { ThemeService } from '../../core/theme';
 import { BrandMark } from '../../shared/brand-mark';
 import { Icon } from '../../shared/icon';
+import { LanguageSwitch } from '../../shared/language-switch';
 import { PhoneMirror } from '../demo/phone-mirror';
 
 @Component({
   selector: 'fy-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, BrandMark, Icon, PhoneMirror],
+  imports: [
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
+    BrandMark,
+    Icon,
+    LanguageSwitch,
+    PhoneMirror,
+    TranslatePipe,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './shell.html',
   styleUrl: './shell.css',
@@ -22,10 +33,13 @@ export class Shell {
   private readonly config = inject(APP_CONFIG);
   protected readonly sessions = inject(SessionService);
   protected readonly theme = inject(ThemeService);
+  private readonly i18n = inject(I18nService);
 
   protected readonly location = inject(UserLocationService);
   protected readonly place = computed(() =>
-    this.location.source() === 'device' ? 'Your location' : this.config.defaultCenterLabel,
+    this.location.source() === 'device'
+      ? this.i18n.t('shell.yourLocation')
+      : this.config.defaultCenterLabel,
   );
   protected readonly simulated = this.gateway.simulated;
   protected readonly phoneOpen = signal(false);
@@ -33,7 +47,9 @@ export class Shell {
   protected readonly scope = computed(() => {
     const session = this.sessions.session();
     if (!session) return '';
-    return session.agencyId ? this.gateway.agencyName(session.agencyId) : 'All agencies';
+    return session.agencyId
+      ? this.gateway.agencyName(session.agencyId)
+      : this.i18n.t('shell.allAgencies');
   });
 
   constructor() {

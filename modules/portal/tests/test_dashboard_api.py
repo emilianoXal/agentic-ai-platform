@@ -147,6 +147,11 @@ class DashboardApiTest(unittest.TestCase):
         reports = [r for r in self.ddb.tables["reports"].values() if r["incident_id"]["S"] == self.leak]
         self.assertTrue(all(r["status"]["S"] == "En atencion" for r in reports))
 
+    def test_every_demo_incident_belongs_to_an_agency(self):
+        page = handler.lambda_handler(event("listIncidents", parent="Query"), None)
+        agencies = sorted(i["agencyId"] for i in page["items"])
+        self.assertEqual(agencies, ["limpia-publica", "obras-publicas", "organismo-de-agua", "servicios-publicos"])
+
     def test_operator_cannot_touch_another_agency(self):
         pothole = next(i for i in self.ddb.tables["incidents"].values() if i["category"]["S"] == "bacheo")["incident_id"]["S"]
         with self.assertRaises(Exception) as ctx:

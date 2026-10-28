@@ -13,6 +13,7 @@ import { FOLLOW_UP_REPLIES } from '../../core/bot-messages';
 import { formatClockEs } from '../../core/format';
 import { hasDemoControls, IncidentsGateway } from '../../core/incidents-gateway';
 import { DEMO_CITIZEN } from '../../core/scenario';
+import { TranslatePipe } from '../../core/i18n';
 import { BrandMark } from '../../shared/brand-mark';
 import { Icon } from '../../shared/icon';
 
@@ -22,7 +23,7 @@ import { Icon } from '../../shared/icon';
  */
 @Component({
   selector: 'fy-phone-mirror',
-  imports: [BrandMark, Icon],
+  imports: [BrandMark, Icon, TranslatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './phone-mirror.html',
   styleUrl: './phone-mirror.css',

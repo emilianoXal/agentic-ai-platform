@@ -7,7 +7,8 @@ import {
   IncidentsGateway,
 } from '../../core/incidents-gateway';
 import { UserLocationService } from '../../core/location';
-import { STATUS_ACTION } from '../../core/labels';
+import { I18nService, TranslatePipe } from '../../core/i18n';
+import { localizeTitle } from '../../core/localize';
 import { ToastService } from '../../core/toast';
 import { Icon } from '../../shared/icon';
 import { IconName } from '../../shared/icons.generated';
@@ -17,6 +18,7 @@ import { PhoneMirror } from './phone-mirror';
 
 interface DemoStep {
   readonly id: string;
+  /** i18n keys */
   readonly title: string;
   readonly detail: string;
   readonly icon: IconName;
@@ -32,7 +34,7 @@ interface DemoStep {
  */
 @Component({
   selector: 'fy-demo-page',
-  imports: [Icon, NeighborCount, PhoneMirror, RouterLink, StatusPill],
+  imports: [Icon, NeighborCount, PhoneMirror, RouterLink, StatusPill, TranslatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './demo-page.html',
   styleUrl: './demo-page.css',
@@ -41,6 +43,7 @@ export class DemoPage {
   private readonly gateway = inject(IncidentsGateway);
   private readonly toasts = inject(ToastService);
   private readonly location = inject(UserLocationService);
+  private readonly i18n = inject(I18nService);
 
   protected readonly done = signal<ReadonlySet<string>>(new Set());
   protected readonly busy = signal(false);
@@ -62,9 +65,8 @@ export class DemoPage {
     {
       id: 'new-report',
       syntheticOnly: true,
-      title: 'A new report arrives',
-      detail:
-        'A neighbor nearby sends a photo of a blocked storm drain. Its geohash cell flashes and the marker lands on the map.',
+      title: 'demo.step.newReport',
+      detail: 'demo.step.newReportDetail',
       icon: 'map-pin',
       run: () => this.controls()?.simulateNewReport(),
       enabled: () => true,
@@ -72,26 +74,24 @@ export class DemoPage {
     {
       id: 'join',
       syntheticOnly: true,
-      title: 'A neighbor joins the water leak',
-      detail:
-        'Instead of a duplicate ticket, the report joins the incident: the counter ticks up and the leak climbs the queue.',
+      title: 'demo.step.join',
+      detail: 'demo.step.joinDetail',
       icon: 'user-plus',
       run: () => this.controls()?.simulateNeighborJoin(this.leak()?.id ?? ''),
       enabled: () => true,
     },
     {
       id: 'in-progress',
-      title: 'The water utility starts work',
-      detail:
-        'The simulated agency marks the leak in progress. Every joined neighbor gets the update on WhatsApp in under a minute.',
+      title: 'demo.step.inProgress',
+      detail: 'demo.step.inProgressDetail',
       icon: 'tool',
       run: () => this.change('in_progress'),
       enabled: () => ['sent_to_agency', 'reopened', 'received'].includes(this.leak()?.status ?? ''),
     },
     {
       id: 'resolved',
-      title: 'The water utility resolves it',
-      detail: 'The agency marks it resolved. The bot schedules "Is it fixed?" for 24 hours later.',
+      title: 'demo.step.resolved',
+      detail: 'demo.step.resolvedDetail',
       icon: 'circle-check',
       run: () => this.change('resolved'),
       enabled: () => this.leak()?.status === 'in_progress',
@@ -99,9 +99,8 @@ export class DemoPage {
     {
       id: 'follow-up',
       syntheticOnly: true,
-      title: 'Ask the neighbors: "Is it fixed?"',
-      detail:
-        'Fast-forwards the 24 hours. Answer on the phone: "No, sigue igual" reopens the incident and alerts the agency.',
+      title: 'demo.step.followUp',
+      detail: 'demo.step.followUpDetail',
       icon: 'message-circle',
       run: () => this.controls()?.sendFollowUpNow(this.leak()?.id ?? ''),
       enabled: () => this.leak()?.status === 'resolved' && !!this.leak()?.followUpPending,
@@ -119,10 +118,10 @@ export class DemoPage {
       const point = await this.location.locate();
       const count = await this.gateway.seedDemoAt(point);
       this.done.set(new Set());
-      this.toasts.show(`Demo data loaded here · ${count} incidents from 30 synthetic reports`);
+      this.toasts.show(this.i18n.t('demo.toastLoaded', { count }));
     } catch (err) {
       this.toasts.show(
-        `Demo data was not loaded. ${err instanceof Error ? err.message : ''}`,
+        this.i18n.t('demo.toastLoadFailed', { detail: err instanceof Error ? err.message : '' }),
         'danger',
         6000,
       );
@@ -137,10 +136,10 @@ export class DemoPage {
     try {
       const removed = await this.gateway.resetDemo();
       this.done.set(new Set());
-      this.toasts.show(`Demo data removed · ${removed} synthetic incidents deleted`);
+      this.toasts.show(this.i18n.t('demo.toastRemoved', { count: removed }));
     } catch (err) {
       this.toasts.show(
-        `Demo data was not removed. ${err instanceof Error ? err.message : ''}`,
+        this.i18n.t('demo.toastRemoveFailed', { detail: err instanceof Error ? err.message : '' }),
         'danger',
         6000,
       );
@@ -157,6 +156,10 @@ export class DemoPage {
     const after = this.steps.slice(lastDone + 1).find((s) => s.enabled());
     return (after ?? this.steps.find((s) => !done.has(s.id) && s.enabled()))?.id ?? null;
   });
+
+  protected title(raw: string): string {
+    return localizeTitle(raw, this.i18n);
+  }
 
   protected async runStep(step: DemoStep): Promise<void> {
     if (this.busy() || !step.enabled()) return;
@@ -176,7 +179,7 @@ export class DemoPage {
     }
     this.controls()?.reset();
     this.done.set(new Set());
-    this.toasts.show('Demo reset · 30 reports in 4 incidents');
+    this.toasts.show(this.i18n.t('demo.toastReset'));
   }
 
   private controls(): DemoControls | null {
@@ -190,9 +193,10 @@ export class DemoPage {
       actor: 'Organismo de Agua (simulated)',
     });
     this.toasts.show(
-      this.simulated
-        ? `${STATUS_ACTION[to].done} · ${notified} neighbors notified`
-        : `${STATUS_ACTION[to].done} · WhatsApp update sent to ${notified} neighbors`,
+      this.i18n.t(this.simulated ? 'incidents.toastSim' : 'incidents.toastLive', {
+        done: this.i18n.t(`action.${to}.done`),
+        count: notified,
+      }),
     );
   }
 }

@@ -1,0 +1,96 @@
+import { I18nService } from './i18n';
+import { Incident, StatusCode, TimelineEntry } from './models';
+
+/**
+ * Localizes content that arrives as English text from the backend or the
+ * synthetic data set (incident titles and timeline entries), using their kind
+ * and structured fields. Free text written by staff (comments) is left as is.
+ */
+
+/** English title prefixes the backend, the demo seed and the synthetic set use. */
+const TITLE_PREFIXES: readonly [string, string][] = [
+  ['Blocked storm drain', 'title.drenaje'],
+  ['Street lights out', 'title.alumbrado'],
+  ['Overflowing bins', 'title.basura'],
+  ['Street lighting', 'category.alumbrado'],
+  ['Water leak', 'category.agua'],
+  ['Fallen tree', 'category.arbol'],
+  ['Drainage', 'category.drenaje'],
+  ['Pothole', 'category.bacheo'],
+  ['Safety', 'category.seguridad'],
+  ['Trash', 'category.basura'],
+  ['Pests', 'category.plagas'],
+  ['Incident', 'category.otro'],
+];
+
+export function localizeTitle(title: string, i18n: I18nService): string {
+  const match = TITLE_PREFIXES.find(([prefix]) => title.startsWith(prefix + ' '));
+  if (!match) return title;
+  const [prefix, key] = match;
+  const category = i18n.t(key);
+  const rest = title.slice(prefix.length + 1);
+  if (rest === 'near you') return i18n.t('title.nearYou', { category });
+  if (rest === 'near the demo point') return i18n.t('title.nearDemo', { category });
+  if (rest.startsWith('at ')) return i18n.t('title.at', { category, place: rest.slice(3) });
+  if (rest.startsWith('near ')) return i18n.t('title.near', { category, place: rest.slice(5) });
+  return title;
+}
+
+export function localizeIncidentTitle(
+  incident: Pick<Incident, 'title'>,
+  i18n: I18nService,
+): string {
+  return localizeTitle(incident.title, i18n);
+}
+
+function statusWord(status: StatusCode | null | undefined, i18n: I18nService): string {
+  return status ? i18n.t(`status.${status}`).toLowerCase() : '';
+}
+
+function firstNumber(text: string): number | null {
+  const found = /(\d+)/.exec(text);
+  return found ? Number(found[1]) : null;
+}
+
+export function localizeTimeline(entry: TimelineEntry, i18n: I18nService): string {
+  const text = entry.text ?? '';
+  switch (entry.kind) {
+    case 'status': {
+      if (text.startsWith('First report')) return i18n.t('timeline.firstReport');
+      if (!entry.status) return text;
+      const status = statusWord(entry.status, i18n);
+      if (!entry.actor) return i18n.t('timeline.statusNoActor', { status });
+      const reason = /Reason: (.+)$/.exec(text)?.[1];
+      return reason
+        ? i18n.t('timeline.statusReason', { status, actor: entry.actor, reason })
+        : i18n.t('timeline.status', { status, actor: entry.actor });
+    }
+    case 'joined': {
+      const n = firstNumber(text.replace(/••\d+/, ''));
+      return n && n > 1 ? i18n.t('timeline.joinedMany', { n }) : i18n.t('timeline.joined');
+    }
+    case 'routed': {
+      const agency = /Sent to (.+?) by routing rule/.exec(text)?.[1];
+      return agency ? i18n.t('timeline.routed', { agency }) : text;
+    }
+    case 'escalated':
+      return i18n.t('timeline.escalated');
+    case 'notified': {
+      const n = firstNumber(text);
+      return n !== null ? i18n.t('timeline.notified', { n }) : text;
+    }
+    case 'follow_up': {
+      const sent = /sent to (\d+)/.exec(text);
+      return sent
+        ? i18n.t('timeline.followUpSent', { n: Number(sent[1]) })
+        : i18n.t('timeline.followUpScheduled');
+    }
+    case 'reply':
+      return text.includes('No, sigue igual')
+        ? i18n.t('timeline.replyNo')
+        : i18n.t('timeline.replyYes');
+    case 'comment':
+    default:
+      return text;
+  }
+}

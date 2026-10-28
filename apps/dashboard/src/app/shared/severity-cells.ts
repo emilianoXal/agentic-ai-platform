@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, inject } from '@angular/core';
+import { I18nService } from '../core/i18n';
 import { SEVERITY } from '../core/labels';
 import { Severity } from '../core/models';
 
@@ -15,7 +16,7 @@ import { Severity } from '../core/models';
     @if (showLabel()) {
       <span class="label">{{ label() }}</span>
     }
-    <span class="visually-hidden">Severity {{ label() }}</span>
+    <span class="visually-hidden">{{ aria() }}</span>
   `,
   styles: `
     :host {
@@ -50,5 +51,9 @@ export class SeverityCells {
 
   protected readonly cells = [1, 2, 3, 4];
   protected readonly rank = computed(() => SEVERITY[this.severity()].rank);
-  protected readonly label = computed(() => SEVERITY[this.severity()].label);
+  private readonly i18n = inject(I18nService);
+  protected readonly label = computed(() => this.i18n.t(`severity.${this.severity()}`));
+  protected readonly aria = computed(() =>
+    this.i18n.t('severity.aria', { severity: this.label() }),
+  );
 }

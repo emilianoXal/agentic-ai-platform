@@ -118,19 +118,19 @@ def lambda_handler(event, context):
         "type": "text",
         "text": {"body": text},
     }
-    # TODO(confirm-on-first-send): raw UTF-8 JSON bytes, not base64 (botocore
-    # base64-encodes the blob automatically) - VP-1.
-    message_bytes = json.dumps(wa_obj).encode("utf-8")
+    # The `message` blob is the WhatsApp Cloud API object as a JSON STRING, not
+    # pre-encoded bytes. The AWS-documented working example passes the raw
+    # json.dumps(...) string directly; adding .encode("utf-8") produced an
+    # InvalidParametersException because the extra byte wrapping malformed the
+    # payload EUM expects.
+    message_payload = json.dumps(wa_obj)
 
     origination_id = _phone_number_id(origination)
 
     try:
         resp = _social.send_whatsapp_message(
             originationPhoneNumberId=origination_id,
-            message=message_bytes,
-            # TODO(confirm-on-first-send): META_API_VERSION default "v20.0";
-            # bump the env var (no code change) if the first send returns a
-            # version error - VP-2.
+            message=message_payload,
             metaApiVersion=META_API_VERSION,
         )
     except (ClientError, BotoCoreError) as exc:

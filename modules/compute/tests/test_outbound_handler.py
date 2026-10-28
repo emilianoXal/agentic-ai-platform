@@ -71,7 +71,9 @@ class OutboundHandlerTests(unittest.TestCase):
             "type": "text",
             "text": {"body": TEXT_HOLA},
         }
-        self.assertEqual(kwargs["message"], json.dumps(expected_obj).encode("utf-8"))
+        # message is the JSON STRING (not pre-encoded bytes) — matches the
+        # AWS-documented working example; botocore handles the blob encoding.
+        self.assertEqual(kwargs["message"], json.dumps(expected_obj))
 
     def test_phone_number_id_passthrough(self):
         # The full ARN (form `arn:...:phone-number-id/<id>`) and a bare

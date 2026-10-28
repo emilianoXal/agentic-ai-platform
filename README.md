@@ -37,16 +37,16 @@ The inbound integration is implemented in
 and invokes the queue at
 [`modules/compute/src/ingest/handler.py:414`](modules/compute/src/ingest/handler.py#L414).
 The agent creates its Bedrock model at
-[`modules/agent/src/agent/handler.py:653`](modules/agent/src/agent/handler.py#L653)
+[`modules/agent/src/agent/handler.py:685`](modules/agent/src/agent/handler.py#L685)
 and runs it at
-[`modules/agent/src/agent/handler.py:672`](modules/agent/src/agent/handler.py#L672).
+[`modules/agent/src/agent/handler.py:709`](modules/agent/src/agent/handler.py#L709).
 
 There is currently **no runtime import or call** to the CDS End User Messaging
 Social `SendWhatsAppMessage` client. The notifier’s outbound portion is a
 planned stub at
 [`modules/compute/src/notifier/handler.py:207`](modules/compute/src/notifier/handler.py#L207),
 and the agent returns its reply without an outbound handoff at
-[`modules/agent/src/agent/handler.py:688`](modules/agent/src/agent/handler.py#L688).
+[`modules/agent/src/agent/handler.py:725`](modules/agent/src/agent/handler.py#L725).
 Accordingly, this repository does not claim outbound WhatsApp delivery as a
 working feature. AgentCore Gateway and Memory are also feature-flagged and off
 in dev.
@@ -105,6 +105,7 @@ modules/compute/   # [done] ingest + notifier Lambdas, image blur workflow (Step
 modules/agent/     # [done] 6 tool Lambdas, SQS consumer, ECR, Guardrails, AgentCore (awscc)
 modules/media/     # [todo] Transcribe + Nova multimodal
 modules/portal/    # [done] Cognito + AppSync + dashboard Lambdas + Location key + WAF + Amplify Hosting
+modules/follow_up/ # [done] «¿Ya quedó?» Lambda + EventBridge Scheduler role
 apps/dashboard/    # [done] Angular officials' dashboard (UrbanBot): live AppSync data + real map
 .kiro/steering/    # IA context (product, structure, tech, terraform conventions)
 ```
@@ -125,6 +126,7 @@ table); the state key is isolated per environment
 | `agent`   | done   | `create_report` / `join_incident` / `get_status` / `register_place` / `route` / `escalate` tool Lambdas, SQS `consumer`, ECR, Bedrock Guardrails, AgentCore runtime/gateway/memory (flag-gated, default off) |
 | `media`   | todo   | Transcribe + Nova multimodal |
 | `portal`  | done   | Dashboard backend and hosting: Cognito staff pool (groups agency / official / admin, users as code), AppSync GraphQL + WAF, `dashboard-api` Lambda (paginated queries, status changes that emit `StatusChanged` to the notifier, admin demo seed), `stream-publisher` Lambda (incidents stream → real-time subscription), Amazon Location API key, Amplify Hosting |
+| `follow_up` | done | One-time «¿Ya quedó?» citizen follow-up after resolution: Lambda invoked by EventBridge Scheduler and by the agent's `respond_follow_up` tool, reusing the existing outbound Lambda; see [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | `apps/dashboard` | done | Angular dashboard: priority queue, MapLibre + Amazon Location map opening at the user's location, status changes, demo console. See [`apps/dashboard/README.md`](apps/dashboard/README.md) |
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for carried-forward TODOs.

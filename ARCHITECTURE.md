@@ -100,8 +100,8 @@ and [download guide](https://docs.aws.amazon.com/social-messaging/latest/usergui
 
 When staff mark an incident resolved, the portal first creates a one-time UTC
 EventBridge Scheduler schedule in the default group (`cdshack-*`, deleted after
-completion). The configurable delay is two minutes in dev and one day in QA and
-production. Its execution role can invoke only the follow-up Lambda. The portal
+completion). The configurable delay is two minutes in dev and 60 minutes in QA
+and production. Its execution role can invoke only the follow-up Lambda. The portal
 conditionally records the due timestamp and an empty delivery map on the
 incident; a failed write leaves a harmless schedule whose generation check skips
 the send. A later resolution gets a fresh generation, so old schedules and old

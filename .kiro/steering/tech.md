@@ -87,7 +87,7 @@ cuenta y el backend). Eso lo hace el pipeline.
 
 ## Modelo Bedrock
 
-Default: `anthropic.claude-3-5-sonnet-20241022-v2:0` (id de foundation-model
+Default: `anthropic.claude-sonnet-5-5` (id de foundation-model
 "pelado", NO el inference-profile `us.*`). El rol de ejecución deriva el ARN del
 inference-profile a partir de ese id. Se puede sobreescribir con la variable
 `bedrock_model_id`.

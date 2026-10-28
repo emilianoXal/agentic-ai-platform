@@ -7,8 +7,13 @@
   @if (target(); as to) {
     <form (submit)="submit($event)">
       <header>
-        <h2 id="status-dialog-title">{{ action()?.button }}</h2>
-        <button type="button" class="btn ghost close" (click)="closed.emit()" aria-label="Cancel">
+        <h2 id="status-dialog-title">{{ actionLabel() }}</h2>
+        <button
+          type="button"
+          class="btn ghost close"
+          (click)="closed.emit()"
+          [attr.aria-label]="'dialog.cancel' | t"
+        >
           <svg fyIcon="x" [size]="20"></svg>
         </button>
       </header>
@@ -17,60 +22,58 @@
         <fy-status-pill [status]="incident().status" />
         <svg fyIcon="chevron-right" [size]="18"></svg>
         <fy-status-pill [status]="to" />
-        <span class="muted">{{ incident().title }}</span>
+        <span class="muted">{{ title() }}</span>
       </div>
 
       @if (needsReason()) {
         <label class="field">
-          <span>Reason (required, sent to neighbors)</span>
+          <span>{{ 'dialog.reason' | t }}</span>
           <select
             id="status-reason"
             [value]="reason()"
             (change)="onTextInput('reason', $event)"
             required
           >
-            <option value="" disabled>Choose a reason</option>
-            @for (r of reasons; track r) {
-              <option [value]="r">{{ r }}</option>
+            <option value="" disabled>{{ 'dialog.chooseReason' | t }}</option>
+            @for (r of reasons; track r.key) {
+              <option [value]="r.value">{{ r.key | t }}</option>
             }
           </select>
         </label>
       }
 
       <label class="field">
-        <span>Comment for the timeline (optional, not sent)</span>
+        <span>{{ 'dialog.comment' | t }}</span>
         <textarea
           id="status-comment"
           rows="3"
           [value]="comment()"
           (input)="onTextInput('comment', $event)"
-          placeholder="What did the crew find or do?"
+          [placeholder]="'dialog.commentPlaceholder' | t"
         ></textarea>
       </label>
 
       @if (preview(); as message) {
-        <section class="preview" aria-label="WhatsApp message preview">
+        <section class="preview" [attr.aria-label]="'dialog.preview' | t">
           <div class="preview-head">
             <svg fyIcon="message-circle" [size]="18"></svg>
-            <strong
-              >{{ incident().neighbors.length || incident().reportCount }} neighbors will receive on
-              WhatsApp</strong
-            >
+            <strong>{{
+              'dialog.recipients'
+                | t: { count: incident().neighbors.length || incident().reportCount }
+            }}</strong>
           </div>
           <div class="bubble">
             <p>{{ message.es }}</p>
             <p class="gloss">{{ message.en }}</p>
           </div>
-          <p class="hint">
-            Sent within a minute. After the 24 h window, an approved template is used.
-          </p>
+          <p class="hint">{{ 'dialog.previewHint' | t }}</p>
         </section>
       }
 
       <footer>
-        <button type="button" class="btn" (click)="closed.emit()">Cancel</button>
+        <button type="button" class="btn" (click)="closed.emit()">{{ 'dialog.cancel' | t }}</button>
         <button type="submit" class="btn primary" [disabled]="!canConfirm()">
-          {{ action()?.button }}
+          {{ actionLabel() }}
         </button>
       </footer>
     </form>

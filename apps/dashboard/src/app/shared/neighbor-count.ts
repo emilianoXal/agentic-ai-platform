@@ -6,6 +6,7 @@ import {
   inject,
   input,
 } from '@angular/core';
+import { I18nService } from '../core/i18n';
 import { Icon } from './icon';
 
 /** Joined-neighbors counter in road-marking yellow; pulses once when a neighbor joins. */
@@ -17,11 +18,11 @@ import { Icon } from './icon';
     <svg fyIcon="users" [size]="14"></svg>
     <span class="mono">{{ count() }}</span>
     @if (long()) {
-      <span>{{ count() === 1 ? 'neighbor' : 'neighbors' }}</span>
+      <span>{{ i18n.t(count() === 1 ? 'neighbors.one' : 'neighbors.many') }}</span>
     }
   `,
   host: {
-    '[attr.aria-label]': 'count() + " neighbors joined"',
+    '[attr.aria-label]': 'i18n.t("neighbors.count", { count: count() })',
   },
   styles: `
     :host {
@@ -47,6 +48,7 @@ export class NeighborCount {
   readonly count = input.required<number>();
   readonly long = input(false);
 
+  protected readonly i18n = inject(I18nService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private previous: number | null = null;
 

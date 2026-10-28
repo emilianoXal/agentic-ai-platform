@@ -24,6 +24,8 @@ import {
   setWorkerUrl,
 } from 'maplibre-gl';
 import { APP_CONFIG } from '../../core/app-config';
+import { I18nService, TranslatePipe } from '../../core/i18n';
+import { localizeTitle } from '../../core/localize';
 import { geohashBounds } from '../../core/geo';
 import { STATUS } from '../../core/labels';
 import { UserLocationService } from '../../core/location';
@@ -55,6 +57,7 @@ interface MarkerEntry {
   selector: 'fy-incident-map',
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
+  imports: [TranslatePipe],
   templateUrl: './incident-map.html',
   styleUrl: './incident-map.css',
 })
@@ -69,6 +72,7 @@ export class IncidentMap {
   private readonly config = inject(APP_CONFIG);
   private readonly location = inject(UserLocationService);
   private readonly theme = inject(ThemeService);
+  private readonly i18n = inject(I18nService);
   private readonly container = viewChild.required<ElementRef<HTMLElement>>('map');
 
   protected readonly usingFallbackTiles = !this.config.mapsApiKey;
@@ -90,10 +94,11 @@ export class IncidentMap {
       this.map = null;
     });
 
-    // Keep markers in step with the data.
+    // Keep markers in step with the data (and their labels with the language).
     effect(() => {
       const incidents = this.incidents();
       const selected = this.selectedId();
+      this.i18n.lang();
       if (!this.ready()) return;
       untracked(() => this.syncMarkers(incidents, selected));
     });
@@ -252,12 +257,14 @@ export class IncidentMap {
     el.style.setProperty('--size', `${markerSize(incident.reportCount)}px`);
     el.style.zIndex = String(selected ? 1000 : order + 1);
     el.classList.toggle('selected', selected);
+    const title = localizeTitle(incident.title, this.i18n);
+    const statusLabel = this.i18n.t(`status.${incident.status}`);
     el.setAttribute(
       'aria-label',
-      `${incident.title}. ${meta.label}. ${incident.reportCount} neighbors joined.`,
+      this.i18n.t('map.markerAria', { title, status: statusLabel, count: incident.reportCount }),
     );
     el.setAttribute('aria-pressed', String(selected));
-    el.title = `${incident.title} · ${meta.label}`;
+    el.title = `${title} · ${statusLabel}`;
     const svg = el.querySelector('svg');
     if (svg && svg.dataset['icon'] !== meta.icon) {
       svg.innerHTML = ICONS[meta.icon] ?? '';

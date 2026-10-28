@@ -1,24 +1,29 @@
 <header class="topbar">
-  <a class="brand" routerLink="/incidents" aria-label="FixedYet home">
+  <a class="brand" routerLink="/incidents" [attr.aria-label]="'shell.home' | t">
     <fy-brand-mark [size]="26" [onDark]="true" />
     <span>FixedYet</span>
   </a>
 
-  <nav aria-label="Main">
-    <a routerLink="/incidents" routerLinkActive="active" ariaCurrentWhenActive="page">Incidents</a>
+  <nav [attr.aria-label]="'shell.nav' | t">
+    <a routerLink="/incidents" routerLinkActive="active" ariaCurrentWhenActive="page">{{
+      'shell.incidents' | t
+    }}</a>
     @if (sessions.isPresenter()) {
-      <a routerLink="/demo" routerLinkActive="active" ariaCurrentWhenActive="page">Demo console</a>
+      <a routerLink="/demo" routerLinkActive="active" ariaCurrentWhenActive="page">{{
+        'shell.demo' | t
+      }}</a>
     }
   </nav>
 
   <div class="meta">
     <span class="place">{{ place() }}</span>
     @if (simulated) {
-      <span class="sim" title="Synthetic data set; every agency is simulated">Simulated data</span>
+      <span class="sim" [title]="'shell.simulatedTitle' | t">{{ 'shell.simulated' | t }}</span>
     }
   </div>
 
   <div class="actions">
+    <fy-language-switch [onDark]="true" />
     @if (sessions.isPresenter() && simulated) {
       <button
         type="button"
@@ -26,17 +31,17 @@
         [class.on]="phoneOpen()"
         (click)="phoneOpen.set(!phoneOpen())"
         [attr.aria-pressed]="phoneOpen()"
-        aria-label="Show the neighbor's WhatsApp"
+        [attr.aria-label]="'shell.phoneAria' | t"
       >
         <svg fyIcon="device-mobile" [size]="20"></svg>
-        <span class="label">Phone</span>
+        <span class="label">{{ 'shell.phone' | t }}</span>
       </button>
     }
     <button
       type="button"
       class="icon-btn"
       (click)="theme.toggle()"
-      [attr.aria-label]="theme.isDark() ? 'Switch to light theme' : 'Switch to dark theme'"
+      [attr.aria-label]="(theme.isDark() ? 'shell.toLight' : 'shell.toDark') | t"
     >
       <svg [fyIcon]="theme.isDark() ? 'sun' : 'moon'" [size]="20"></svg>
     </button>
@@ -44,20 +49,25 @@
       <strong>{{ sessions.session()?.name }}</strong>
       <span>{{ scope() }}</span>
     </div>
-    <button type="button" class="icon-btn" (click)="signOut()" aria-label="Sign out">
+    <button
+      type="button"
+      class="icon-btn"
+      (click)="signOut()"
+      [attr.aria-label]="'shell.signOut' | t"
+    >
       <svg fyIcon="logout" [size]="20"></svg>
     </button>
   </div>
 </header>
 
-<div class="body" [class.with-phone]="phoneOpen()">
+<div class="body" [class.with-phone]="phoneOpen() && simulated">
   <main class="content">
     <router-outlet />
   </main>
   @if (phoneOpen() && simulated) {
     <aside
       class="phone-dock"
-      aria-label="Neighbor's WhatsApp"
+      [attr.aria-label]="'shell.phoneDock' | t"
       animate.enter="dock-in"
       animate.leave="dock-out"
     >

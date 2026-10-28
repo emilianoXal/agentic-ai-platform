@@ -11,8 +11,10 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { formatAbsolute, formatRelative } from '../../core/format';
+import { I18nService, TranslatePipe } from '../../core/i18n';
 import { IncidentsGateway } from '../../core/incidents-gateway';
-import { CATEGORY, compareForQueue, isClosed, STATUS_ACTION } from '../../core/labels';
+import { localizeTitle } from '../../core/localize';
+import { CATEGORY, compareForQueue, isClosed } from '../../core/labels';
 import { CategoryCode, Incident, StatusCode } from '../../core/models';
 import { SessionService } from '../../core/session';
 import { ToastService } from '../../core/toast';
@@ -39,6 +41,7 @@ type StatusFilter = 'open' | 'all' | 'closed';
     SeverityCells,
     StatusDialog,
     StatusPill,
+    TranslatePipe,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './incidents-page.html',
@@ -53,6 +56,7 @@ export class IncidentsPage {
   private readonly toasts = inject(ToastService);
   private readonly router = inject(Router);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  protected readonly i18n = inject(I18nService);
 
   protected readonly statusFilter = signal<StatusFilter>('open');
   protected readonly categoryFilter = signal<CategoryCode | null>(null);
@@ -157,14 +161,17 @@ export class IncidentsPage {
         reason: request.reason,
       });
       this.toasts.show(
-        this.simulated
-          ? `${STATUS_ACTION[request.to].done} · ${notified} neighbors notified`
-          : `${STATUS_ACTION[request.to].done} · WhatsApp update sent to ${notified} neighbors`,
+        this.i18n.t(this.simulated ? 'incidents.toastSim' : 'incidents.toastLive', {
+          done: this.i18n.t(`action.${request.to}.done`),
+          count: notified,
+        }),
       );
     } catch (err) {
       const detail = err instanceof Error ? err.message : '';
       this.toasts.show(
-        `The status was not saved. ${detail || 'Check your connection and try again.'}`,
+        this.i18n.t('incidents.saveError', {
+          detail: detail || this.i18n.t('incidents.saveErrorFallback'),
+        }),
         'danger',
         6000,
       );
@@ -172,11 +179,15 @@ export class IncidentsPage {
   }
 
   protected relative(iso: string): string {
-    return formatRelative(iso);
+    return formatRelative(iso, this.i18n);
   }
 
   protected absolute(iso: string): string {
-    return formatAbsolute(iso);
+    return formatAbsolute(iso, this.i18n.locale());
+  }
+
+  protected title(raw: string): string {
+    return localizeTitle(raw, this.i18n);
   }
 
   protected retry(): void {

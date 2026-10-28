@@ -55,6 +55,7 @@ h1 {
 }
 
 .panel {
+  position: relative;
   display: grid;
   place-items: center;
   padding: var(--space-8) var(--space-6);
@@ -175,6 +176,7 @@ h2 {
 }
 
 .field input {
+  width: 100%;
   height: 44px;
   padding: 0 12px;
   border: 1px solid var(--line-strong);
@@ -201,4 +203,42 @@ h2 {
 
 .form .btn.primary {
   min-height: 44px;
+}
+
+/* Password field with a show/hide button inside its right edge. */
+.secret {
+  position: relative;
+  display: block;
+}
+
+.secret input {
+  width: 100%;
+  padding-right: 48px;
+}
+
+.reveal {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.reveal:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
+.lang-corner {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
 }

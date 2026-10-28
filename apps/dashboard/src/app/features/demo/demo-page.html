@@ -1,38 +1,40 @@
 <div class="layout">
   <section class="story" aria-labelledby="demo-title">
     <header>
-      <h1 id="demo-title">Demo console</h1>
+      <h1 id="demo-title">{{ 'demo.title' | t }}</h1>
       @if (!simulated) {
         <div class="live-seed">
           <button type="button" class="btn primary" (click)="seedHere()" [disabled]="seeding()">
             <svg fyIcon="map-pin" [size]="16"></svg
-            >{{ seeding() ? 'Loading…' : 'Load demo data here' }}
+            >{{ (seeding() ? 'demo.loading' : 'demo.load') | t }}
           </button>
-          <span class="muted">
-            Writes 30 synthetic reports in 4 incidents around
-            {{ locationSource() === 'device' ? 'your current location' : 'the default center' }},
-            flagged as synthetic. Real WhatsApp reports appear alongside them.
-          </span>
+          <span class="muted">{{
+            'demo.loadLead'
+              | t
+                : {
+                    where:
+                      (locationSource() === 'device' ? 'demo.whereDevice' : 'demo.whereDefault')
+                      | t,
+                  }
+          }}</span>
         </div>
       }
       <p class="muted">
-        Plays the end-to-end loop on the data around you:
-        {{ totals().reports }} reports in {{ totals().incidents }} incidents. Every agency action
-        here is simulated and labeled as simulated.
+        {{ 'demo.lead' | t: { reports: totals().reports, incidents: totals().incidents } }}
       </p>
     </header>
 
     @if (leak(); as incident) {
       <a class="focus" [routerLink]="['/incidents', incident.id]">
-        <span class="label">Story incident</span>
-        <strong>{{ incident.title }}</strong>
+        <span class="label">{{ 'demo.story' | t }}</span>
+        <strong>{{ title(incident.title) }}</strong>
         <span class="facts">
           <fy-status-pill [status]="incident.status" />
           <fy-neighbor-count [count]="incident.reportCount" [long]="true" />
           <span class="mono muted">{{ incident.folio }}</span>
         </span>
         <span class="open"
-          >Open in the dashboard <svg fyIcon="chevron-right" [size]="16"></svg
+          >{{ 'demo.open' | t }} <svg fyIcon="chevron-right" [size]="16"></svg
         ></span>
       </a>
     }
@@ -49,8 +51,8 @@
               }
             </span>
             <div class="text">
-              <h2>{{ step.title }}</h2>
-              <p>{{ step.detail }}</p>
+              <h2>{{ step.title | t }}</h2>
+              <p>{{ step.detail | t }}</p>
             </div>
             <button
               type="button"
@@ -59,7 +61,7 @@
               [disabled]="busy() || !step.enabled()"
               (click)="runStep(step)"
             >
-              <svg fyIcon="player-play" [size]="16"></svg>Run
+              <svg fyIcon="player-play" [size]="16"></svg>{{ 'demo.run' | t }}
             </button>
           </li>
         }
@@ -67,28 +69,24 @@
 
       <div class="reset">
         <button type="button" class="btn" (click)="reset()">
-          <svg fyIcon="rotate" [size]="16"></svg>Reset demo data
+          <svg fyIcon="rotate" [size]="16"></svg>{{ 'demo.reset' | t }}
         </button>
-        <span class="muted">Restores the four incidents and clears the phone.</span>
+        <span class="muted">{{ 'demo.resetLead' | t }}</span>
       </div>
     } @else {
-      <p class="muted">The demo console works only with the synthetic data set.</p>
+      <p class="muted">{{ 'demo.unavailable' | t }}</p>
     }
   </section>
 
   @if (simulated) {
-    <section class="phone-col" aria-label="Neighbor's WhatsApp">
+    <section class="phone-col" [attr.aria-label]="'shell.phoneDock' | t">
       <fy-phone-mirror />
     </section>
   } @else {
-    <section class="phone-col live-note" aria-label="WhatsApp side of the demo">
+    <section class="phone-col live-note" [attr.aria-label]="'demo.liveAria' | t">
       <svg fyIcon="device-mobile" [size]="32"></svg>
-      <h2>WhatsApp side</h2>
-      <p>
-        Status changes here publish StatusChanged to the notifier, which sends the update through
-        AWS End User Messaging Social. Show the phone of a neighbor next to this screen to record
-        both sides of the loop.
-      </p>
+      <h2>{{ 'demo.liveTitle' | t }}</h2>
+      <p>{{ 'demo.liveText' | t }}</p>
     </section>
   }
 </div>

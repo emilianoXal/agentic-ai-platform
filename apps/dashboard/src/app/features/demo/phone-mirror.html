@@ -3,7 +3,7 @@
     <span class="avatar"><fy-brand-mark [size]="22" [onDark]="true" /></span>
     <div class="who">
       <strong>FixedYet</strong>
-      <span>WhatsApp of neighbor {{ citizen }}</span>
+      <span>{{ 'phone.who' | t: { id: citizen } }}</span>
     </div>
     <label class="gloss-toggle">
       <input
@@ -12,15 +12,15 @@
         [checked]="showEnglish()"
         (change)="showEnglish.set(!showEnglish())"
       />
-      <span>English</span>
+      <span>{{ 'phone.english' | t }}</span>
     </label>
   </header>
 
   @if (simulated) {
-    <p class="banner">Simulated · rebuilt from the messages the notifier sent</p>
+    <p class="banner">{{ 'phone.banner' | t }}</p>
   }
 
-  <div class="chat" #chat aria-live="polite" aria-label="WhatsApp conversation">
+  <div class="chat" #chat aria-live="polite" [attr.aria-label]="'phone.aria' | t">
     @for (message of thread(); track message.id) {
       <div class="msg" [class.out]="message.fromCitizen" animate.enter="bubble-in">
         <p>{{ message.textEs }}</p>
@@ -42,10 +42,7 @@
     } @empty {
       <div class="empty">
         <svg fyIcon="message-circle" [size]="28"></svg>
-        <p>
-          No messages yet. Change the status of the water leak (FY-2026-000214) and the update
-          arrives here.
-        </p>
+        <p>{{ 'phone.empty' | t }}</p>
       </div>
     }
   </div>

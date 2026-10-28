@@ -8,23 +8,17 @@ import {
   signal,
 } from '@angular/core';
 import { formatAbsolute, formatRelative } from '../../core/format';
+import { I18nService, TranslatePipe } from '../../core/i18n';
 import { IncidentsGateway } from '../../core/incidents-gateway';
-import { allowedTransitions, CATEGORY, STATUS_ACTION } from '../../core/labels';
-import { ChangeSource, Incident, StatusCode, TimelineKind } from '../../core/models';
+import { localizeTimeline, localizeTitle } from '../../core/localize';
+import { allowedTransitions, CATEGORY } from '../../core/labels';
+import { Incident, StatusCode, TimelineKind, TimelineEntry } from '../../core/models';
 import { SessionService } from '../../core/session';
 import { Icon } from '../../shared/icon';
 import { IconName } from '../../shared/icons.generated';
 import { NeighborCount } from '../../shared/neighbor-count';
 import { SeverityCells } from '../../shared/severity-cells';
 import { StatusPill } from '../../shared/status-pill';
-
-const SOURCE_LABEL: Record<ChangeSource, string> = {
-  whatsapp: 'WhatsApp',
-  dashboard: 'Dashboard',
-  routing: 'Routing rule',
-  bot: 'Bot',
-  simulated: 'Simulated',
-};
 
 const TIMELINE_ICON: Record<TimelineKind, IconName> = {
   status: 'circle-check',
@@ -40,7 +34,7 @@ const TIMELINE_ICON: Record<TimelineKind, IconName> = {
 /** Detail drawer: what happened, who is affected and the next action, in that order. */
 @Component({
   selector: 'fy-incident-detail',
-  imports: [Icon, NeighborCount, SeverityCells, StatusPill],
+  imports: [Icon, NeighborCount, SeverityCells, StatusPill, TranslatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './incident-detail.html',
   styleUrl: './incident-detail.css',
@@ -52,16 +46,19 @@ export class IncidentDetail {
 
   private readonly gateway = inject(IncidentsGateway);
   private readonly sessions = inject(SessionService);
+  private readonly i18n = inject(I18nService);
 
-  protected readonly sourceLabel = SOURCE_LABEL;
   protected readonly timelineIcon = TIMELINE_ICON;
-  protected readonly actionLabel = STATUS_ACTION;
   protected readonly commentDraft = signal('');
   protected readonly commenting = signal(false);
 
   protected readonly category = computed(() => CATEGORY[this.incident().category]);
   protected readonly agencyName = computed(
-    () => this.incident().agencyName ?? this.gateway.agencyName(this.incident().agencyId),
+    () =>
+      this.incident().agencyName ??
+      (this.incident().agencyId
+        ? this.gateway.agencyName(this.incident().agencyId)
+        : this.i18n.t('detail.notRouted')),
   );
   protected readonly isSupervisor = this.sessions.isSupervisor;
   protected readonly transitions = computed(() =>
@@ -78,7 +75,7 @@ export class IncidentDetail {
   );
 
   protected absolute(iso: string): string {
-    return formatAbsolute(iso);
+    return formatAbsolute(iso, this.i18n.locale());
   }
 
   /** Only entries that just happened animate in; opening the drawer shows history at rest. */
@@ -87,7 +84,13 @@ export class IncidentDetail {
   }
 
   protected relative(iso: string): string {
-    return formatRelative(iso);
+    return formatRelative(iso, this.i18n);
+  }
+
+  protected readonly title = computed(() => localizeTitle(this.incident().title, this.i18n));
+
+  protected entryText(entry: TimelineEntry): string {
+    return localizeTimeline(entry, this.i18n);
   }
 
   protected async saveComment(): Promise<void> {

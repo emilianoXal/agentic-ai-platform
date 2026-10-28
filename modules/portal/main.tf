@@ -244,6 +244,13 @@ data "aws_iam_policy_document" "dashboard_api" {
   }
 
   statement {
+    sid       = "Tracing"
+    effect    = "Allow"
+    actions   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+    resources = ["*"] # X-Ray trace APIs do not support resource-level permissions.
+  }
+
+  statement {
     sid       = "ReverseGeocode"
     effect    = "Allow"
     actions   = ["geo-places:ReverseGeocode"]
@@ -439,7 +446,9 @@ resource "aws_appsync_graphql_api" "this" {
   name                = "${local.name_prefix}-dashboard"
   authentication_type = "AMAZON_COGNITO_USER_POOLS"
   schema              = file("${path.module}/schema.graphql")
-  xray_enabled        = true
+  # X-Ray on AppSync needs the AWSServiceRoleForAppSync service-linked role, and the
+  # governance policy does not let the pipeline create it. Lambda keeps its own tracing.
+  xray_enabled = false
 
   user_pool_config {
     user_pool_id   = aws_cognito_user_pool.staff.id

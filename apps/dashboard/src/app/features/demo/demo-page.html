@@ -1,0 +1,94 @@
+<div class="layout">
+  <section class="story" aria-labelledby="demo-title">
+    <header>
+      <h1 id="demo-title">Demo console</h1>
+      @if (!simulated) {
+        <div class="live-seed">
+          <button type="button" class="btn primary" (click)="seedHere()" [disabled]="seeding()">
+            <svg fyIcon="map-pin" [size]="16"></svg
+            >{{ seeding() ? 'Loading…' : 'Load demo data here' }}
+          </button>
+          <span class="muted">
+            Writes 30 synthetic reports in 4 incidents around
+            {{ locationSource() === 'device' ? 'your current location' : 'the default center' }},
+            flagged as synthetic. Real WhatsApp reports appear alongside them.
+          </span>
+        </div>
+      }
+      <p class="muted">
+        Plays the end-to-end loop on the data around you:
+        {{ totals().reports }} reports in {{ totals().incidents }} incidents. Every agency action
+        here is simulated and labeled as simulated.
+      </p>
+    </header>
+
+    @if (leak(); as incident) {
+      <a class="focus" [routerLink]="['/incidents', incident.id]">
+        <span class="label">Story incident</span>
+        <strong>{{ incident.title }}</strong>
+        <span class="facts">
+          <fy-status-pill [status]="incident.status" />
+          <fy-neighbor-count [count]="incident.reportCount" [long]="true" />
+          <span class="mono muted">{{ incident.folio }}</span>
+        </span>
+        <span class="open"
+          >Open in the dashboard <svg fyIcon="chevron-right" [size]="16"></svg
+        ></span>
+      </a>
+    }
+
+    @if (available) {
+      <ol class="steps">
+        @for (step of steps; track step.id; let n = $index) {
+          <li [class.done]="done().has(step.id)">
+            <span class="num" aria-hidden="true">
+              @if (done().has(step.id)) {
+                <svg fyIcon="check" [size]="16"></svg>
+              } @else {
+                {{ n + 1 }}
+              }
+            </span>
+            <div class="text">
+              <h2>{{ step.title }}</h2>
+              <p>{{ step.detail }}</p>
+            </div>
+            <button
+              type="button"
+              class="btn"
+              [class.primary]="step.id === nextStepId()"
+              [disabled]="busy() || !step.enabled()"
+              (click)="runStep(step)"
+            >
+              <svg fyIcon="player-play" [size]="16"></svg>Run
+            </button>
+          </li>
+        }
+      </ol>
+
+      <div class="reset">
+        <button type="button" class="btn" (click)="reset()">
+          <svg fyIcon="rotate" [size]="16"></svg>Reset demo data
+        </button>
+        <span class="muted">Restores the four incidents and clears the phone.</span>
+      </div>
+    } @else {
+      <p class="muted">The demo console works only with the synthetic data set.</p>
+    }
+  </section>
+
+  @if (simulated) {
+    <section class="phone-col" aria-label="Neighbor's WhatsApp">
+      <fy-phone-mirror />
+    </section>
+  } @else {
+    <section class="phone-col live-note" aria-label="WhatsApp side of the demo">
+      <svg fyIcon="device-mobile" [size]="32"></svg>
+      <h2>WhatsApp side</h2>
+      <p>
+        Status changes here publish StatusChanged to the notifier, which sends the update through
+        AWS End User Messaging Social. Show the phone of a neighbor next to this screen to record
+        both sides of the loop.
+      </p>
+    </section>
+  }
+</div>

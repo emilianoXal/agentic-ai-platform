@@ -1,0 +1,78 @@
+<dialog
+  #dialog
+  aria-labelledby="status-dialog-title"
+  (close)="closed.emit()"
+  (cancel)="closed.emit()"
+>
+  @if (target(); as to) {
+    <form (submit)="submit($event)">
+      <header>
+        <h2 id="status-dialog-title">{{ action()?.button }}</h2>
+        <button type="button" class="btn ghost close" (click)="closed.emit()" aria-label="Cancel">
+          <svg fyIcon="x" [size]="20"></svg>
+        </button>
+      </header>
+
+      <div class="change">
+        <fy-status-pill [status]="incident().status" />
+        <svg fyIcon="chevron-right" [size]="18"></svg>
+        <fy-status-pill [status]="to" />
+        <span class="muted">{{ incident().title }}</span>
+      </div>
+
+      @if (needsReason()) {
+        <label class="field">
+          <span>Reason (required, sent to neighbors)</span>
+          <select
+            id="status-reason"
+            [value]="reason()"
+            (change)="onTextInput('reason', $event)"
+            required
+          >
+            <option value="" disabled>Choose a reason</option>
+            @for (r of reasons; track r) {
+              <option [value]="r">{{ r }}</option>
+            }
+          </select>
+        </label>
+      }
+
+      <label class="field">
+        <span>Comment for the timeline (optional, not sent)</span>
+        <textarea
+          id="status-comment"
+          rows="3"
+          [value]="comment()"
+          (input)="onTextInput('comment', $event)"
+          placeholder="What did the crew find or do?"
+        ></textarea>
+      </label>
+
+      @if (preview(); as message) {
+        <section class="preview" aria-label="WhatsApp message preview">
+          <div class="preview-head">
+            <svg fyIcon="message-circle" [size]="18"></svg>
+            <strong
+              >{{ incident().neighbors.length || incident().reportCount }} neighbors will receive on
+              WhatsApp</strong
+            >
+          </div>
+          <div class="bubble">
+            <p>{{ message.es }}</p>
+            <p class="gloss">{{ message.en }}</p>
+          </div>
+          <p class="hint">
+            Sent within a minute. After the 24 h window, an approved template is used.
+          </p>
+        </section>
+      }
+
+      <footer>
+        <button type="button" class="btn" (click)="closed.emit()">Cancel</button>
+        <button type="submit" class="btn primary" [disabled]="!canConfirm()">
+          {{ action()?.button }}
+        </button>
+      </footer>
+    </form>
+  }
+</dialog>

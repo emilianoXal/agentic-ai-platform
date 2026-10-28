@@ -1,0 +1,15 @@
+<div class="fy-map" #map role="region" aria-label="Map of incidents"></div>
+
+<div class="fy-map-tools">
+  <button type="button" class="btn" (click)="fitIncidents()">Show all incidents</button>
+  <button type="button" class="btn" (click)="locateMe()">My location</button>
+</div>
+
+<div class="fy-map-legend" aria-hidden="true">
+  <span><i class="fy-size small"></i><i class="fy-size big"></i>Size: neighbors joined</span>
+  <span>Color and glyph: status</span>
+  <span><i class="fy-esc-dot"></i>Escalated</span>
+  @if (usingFallbackTiles) {
+    <span class="fy-fallback">Local tiles · Amazon Location in deployed builds</span>
+  }
+</div>

@@ -1,0 +1,156 @@
+<div class="layout" [class.has-detail]="selected()">
+  <section class="queue" aria-labelledby="queue-title">
+    <div class="queue-head">
+      <h1 id="queue-title">Incidents</h1>
+      <dl class="summary">
+        <div>
+          <dt>Open</dt>
+          <dd>{{ summary().open }}</dd>
+        </div>
+        <div>
+          <dt>In progress</dt>
+          <dd>{{ summary().inProgress }}</dd>
+        </div>
+        <div>
+          <dt>Resolved today</dt>
+          <dd>{{ summary().resolvedToday }}</dd>
+        </div>
+        <div>
+          <dt>Neighbors waiting</dt>
+          <dd>{{ summary().neighbors }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="filters" role="group" aria-label="Filters">
+      <div class="chips" role="group" aria-label="Status">
+        <button
+          type="button"
+          class="chip"
+          [attr.aria-pressed]="statusFilter() === 'open'"
+          (click)="statusFilter.set('open')"
+        >
+          Open
+        </button>
+        <button
+          type="button"
+          class="chip"
+          [attr.aria-pressed]="statusFilter() === 'closed'"
+          (click)="statusFilter.set('closed')"
+        >
+          Closed
+        </button>
+        <button
+          type="button"
+          class="chip"
+          [attr.aria-pressed]="statusFilter() === 'all'"
+          (click)="statusFilter.set('all')"
+        >
+          All
+        </button>
+      </div>
+      <div class="chips" role="group" aria-label="Category">
+        @for (c of presentCategories(); track c) {
+          <button
+            type="button"
+            class="chip"
+            [attr.aria-pressed]="categoryFilter() === c"
+            (click)="categoryFilter.set(categoryFilter() === c ? null : c)"
+          >
+            <svg [fyIcon]="categories[c].icon" [size]="14"></svg>{{ categories[c].label }}
+          </button>
+        }
+      </div>
+      @if (isSupervisor()) {
+        <label class="agency">
+          <span class="visually-hidden">Agency</span>
+          <select id="agency-filter" (change)="setAgency($event)">
+            <option value="">All agencies</option>
+            @for (a of agencies(); track a.id) {
+              <option [value]="a.id">{{ a.name }}</option>
+            }
+          </select>
+        </label>
+      }
+    </div>
+
+    <ol class="rows" fyFlipList aria-label="Incident queue, highest priority first">
+      @for (incident of queue(); track incident.id) {
+        <li [attr.data-flip-id]="incident.id" class="row-item">
+          <button
+            type="button"
+            class="row"
+            [class.selected]="incident.id === selected()?.id"
+            [attr.aria-current]="incident.id === selected()?.id ? 'true' : null"
+            (click)="open(incident.id)"
+          >
+            <span class="cat"
+              ><svg [fyIcon]="categories[incident.category].icon" [size]="18"></svg
+            ></span>
+            <span class="main">
+              <span class="title">{{ incident.title }}</span>
+              <span class="meta">
+                <fy-status-pill [status]="incident.status" />
+                @if (incident.escalated) {
+                  <span class="flag">Escalated</span>
+                }
+                <fy-severity [severity]="incident.severity" />
+                <span [title]="absolute(incident.updatedAt)">{{
+                  relative(incident.updatedAt)
+                }}</span>
+              </span>
+            </span>
+            <fy-neighbor-count [count]="incident.reportCount" />
+          </button>
+        </li>
+      } @empty {
+        <li class="empty">
+          @if (loadState() === 'loading' || loadState() === 'idle') {
+            <svg fyIcon="clock" [size]="24"></svg>
+            <p>Loading incidents…</p>
+          } @else if (loadState() === 'error') {
+            <svg fyIcon="alert-triangle" [size]="24"></svg>
+            <p>The incidents could not be loaded. {{ loadError() }}</p>
+            <button type="button" class="btn" (click)="retry()">Try again</button>
+          } @else if (scoped().length === 0) {
+            <svg fyIcon="map-pin" [size]="24"></svg>
+            <p>No incidents yet. Reports sent to the WhatsApp number appear here in real time.</p>
+          } @else {
+            <svg fyIcon="filter" [size]="24"></svg>
+            <p>No incidents match these filters. Choose "All" to see closed ones too.</p>
+          }
+        </li>
+      }
+    </ol>
+  </section>
+
+  <fy-incident-map
+    class="map"
+    [incidents]="queue()"
+    [selectedId]="selected()?.id ?? null"
+    [lastEvent]="lastEvent()"
+    [rightInset]="selected() ? 400 : 0"
+    (select)="open($event)"
+  />
+
+  @if (selected(); as incident) {
+    <aside
+      class="detail"
+      aria-label="Incident details"
+      animate.enter="drawer-in"
+      animate.leave="drawer-out"
+    >
+      <fy-incident-detail
+        [incident]="incident"
+        (requestStatus)="dialogTarget.set($event)"
+        (closeDetail)="closeDetail()"
+      />
+    </aside>
+    <fy-status-dialog
+      [incident]="incident"
+      [target]="dialogTarget()"
+      (confirmed)="confirmStatus($event)"
+      (closed)="dialogTarget.set(null)"
+    />
+  }
+</div>

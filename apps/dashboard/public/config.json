@@ -1,0 +1,7 @@
+{
+  "dataSource": "synthetic",
+  "region": "us-east-1",
+  "mapsApiKey": "",
+  "defaultCenter": { "lat": 20.5931, "lng": -100.3921 },
+  "defaultCenterLabel": "Querétaro"
+}

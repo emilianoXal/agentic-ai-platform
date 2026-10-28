@@ -1,0 +1,110 @@
+<main class="page">
+  <section class="brand" aria-labelledby="brand-name">
+    <div class="brand-inner">
+      <fy-brand-mark [size]="112" [assemble]="true" [onDark]="true" />
+      <h1 id="brand-name">FixedYet</h1>
+      <p class="tagline">Neighborhood reports over WhatsApp that actually get closed.</p>
+    </div>
+    <p class="municipality">Officials' dashboard · the map opens where you are</p>
+  </section>
+
+  <section class="panel" aria-labelledby="sign-in-title">
+    <div class="panel-inner">
+      @if (live) {
+        @if (step() === 'credentials') {
+          <h2 id="sign-in-title">Sign in to the dashboard</h2>
+          <p class="muted">
+            Use the e-mail your administrator registered. Your group decides which incidents you
+            see.
+          </p>
+          <form class="form" (submit)="submitCredentials($event)">
+            <label class="field">
+              <span>E-mail</span>
+              <input id="email" name="email" type="email" autocomplete="username" required />
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                required
+              />
+            </label>
+            @if (error()) {
+              <p class="error" role="alert">{{ error() }}</p>
+            }
+            <button type="submit" class="btn primary" [disabled]="busy()">
+              {{ busy() ? 'Signing in…' : 'Sign in' }}
+            </button>
+          </form>
+        } @else {
+          <h2 id="sign-in-title">Choose your password</h2>
+          <p class="muted">
+            This is your first sign-in. Replace the temporary password with your own.
+          </p>
+          <form class="form" (submit)="submitNewPassword($event)">
+            <label class="field">
+              <span>New password</span>
+              <input
+                id="new-password"
+                name="new-password"
+                type="password"
+                autocomplete="new-password"
+                minlength="12"
+                required
+              />
+            </label>
+            <label class="field">
+              <span>Confirm new password</span>
+              <input
+                id="confirm-password"
+                name="confirm-password"
+                type="password"
+                autocomplete="new-password"
+                minlength="12"
+                required
+              />
+            </label>
+            <p class="hint">
+              At least 12 characters, with upper and lower case letters, a number and a symbol.
+            </p>
+            @if (error()) {
+              <p class="error" role="alert">{{ error() }}</p>
+            }
+            <button type="submit" class="btn primary" [disabled]="busy()">
+              {{ busy() ? 'Saving…' : 'Save password and sign in' }}
+            </button>
+          </form>
+        }
+      } @else {
+        <h2 id="sign-in-title">Sign in to the dashboard</h2>
+        <p class="muted">
+          No backend is configured for this build, so it runs on synthetic data around your location
+          ({{ placeLabel }} if the browser does not share it). Choose a demo account.
+        </p>
+
+        <ul class="accounts">
+          @for (account of accounts; track account.title) {
+            <li>
+              <button type="button" class="account" (click)="continueAs(account)">
+                <span class="icon"><svg [fyIcon]="account.icon" [size]="22"></svg></span>
+                <span class="text">
+                  <span class="title">Continue as {{ account.title.toLowerCase() }}</span>
+                  <span class="desc">{{ account.description }}</span>
+                </span>
+                <svg fyIcon="chevron-right" [size]="20"></svg>
+              </button>
+            </li>
+          }
+        </ul>
+
+        <p class="note">
+          <svg fyIcon="alert-triangle" [size]="16"></svg>
+          Every agency in this mode is simulated, and changes are labeled as simulated.
+        </p>
+      }
+    </div>
+  </section>
+</main>

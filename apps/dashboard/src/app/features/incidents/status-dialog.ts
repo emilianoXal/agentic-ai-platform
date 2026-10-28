@@ -1,0 +1,108 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { statusMessage } from '../../core/bot-messages';
+import { IncidentsGateway } from '../../core/incidents-gateway';
+import { STATUS, STATUS_ACTION } from '../../core/labels';
+import { Incident, StatusCode } from '../../core/models';
+import { Icon } from '../../shared/icon';
+import { StatusPill } from '../../shared/status-pill';
+
+export interface StatusChangeRequest {
+  readonly to: StatusCode;
+  readonly comment: string;
+  readonly reason?: string;
+}
+
+const NOT_APPLICABLE_REASONS = [
+  'Private property',
+  'Duplicate of another incident',
+  'Not a municipal responsibility',
+  'Could not be located',
+];
+
+/**
+ * Confirms a status change and previews exactly what neighbors will receive,
+ * so the consequence of the click is visible before it happens.
+ */
+@Component({
+  selector: 'fy-status-dialog',
+  imports: [Icon, StatusPill],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  templateUrl: './status-dialog.html',
+  styleUrl: './status-dialog.css',
+})
+export class StatusDialog {
+  readonly incident = input.required<Incident>();
+  readonly target = input<StatusCode | null>(null);
+  readonly confirmed = output<StatusChangeRequest>();
+  readonly closed = output<void>();
+
+  private readonly gateway = inject(IncidentsGateway);
+  private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
+
+  protected readonly reasons = NOT_APPLICABLE_REASONS;
+  protected readonly comment = signal('');
+  protected readonly reason = signal('');
+  protected readonly status = STATUS;
+
+  protected readonly needsReason = computed(() => this.target() === 'not_applicable');
+  protected readonly canConfirm = computed(() => !this.needsReason() || this.reason() !== '');
+  protected readonly action = computed(() => {
+    const target = this.target();
+    return target ? STATUS_ACTION[target] : null;
+  });
+  protected readonly agencyName = computed(
+    () => this.incident().agencyName ?? this.gateway.agencyName(this.incident().agencyId),
+  );
+  protected readonly preview = computed(() => {
+    const target = this.target();
+    if (!target) return null;
+    return statusMessage(
+      this.incident(),
+      target,
+      this.agencyName(),
+      new Date().toISOString(),
+      this.reason() || undefined,
+    );
+  });
+
+  constructor() {
+    effect(() => {
+      const el = this.dialog().nativeElement;
+      if (this.target()) {
+        this.comment.set('');
+        this.reason.set('');
+        if (!el.open) el.showModal();
+      } else if (el.open) {
+        el.close();
+      }
+    });
+  }
+
+  protected submit(event: Event): void {
+    event.preventDefault();
+    const target = this.target();
+    if (!target || !this.canConfirm()) return;
+    this.confirmed.emit({
+      to: target,
+      comment: this.comment(),
+      reason: this.reason() || undefined,
+    });
+  }
+
+  protected onTextInput(field: 'comment' | 'reason', event: Event): void {
+    const value = (event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement)
+      .value;
+    (field === 'comment' ? this.comment : this.reason).set(value);
+  }
+}

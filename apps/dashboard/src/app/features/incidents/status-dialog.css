@@ -1,0 +1,129 @@
+dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: var(--shadow-overlay);
+}
+
+dialog[open] {
+  animation: dialog-in var(--motion-base) var(--ease-emphasized);
+}
+
+dialog::backdrop {
+  background: rgba(17, 22, 24, 0.45);
+  animation: fade 200ms var(--ease-standard);
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+form {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+h2 {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+}
+
+.close {
+  min-height: 32px;
+  padding: 4px;
+}
+
+.change {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  padding: 8px 10px;
+  font-weight: 400;
+  font-size: 15px;
+  resize: vertical;
+}
+
+.preview {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--chat-bg);
+}
+
+.preview-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+
+.bubble {
+  justify-self: start;
+  max-width: 92%;
+  background: var(--bubble-in);
+  border-radius: 10px;
+  border-top-left-radius: 2px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+  line-height: 19px;
+}
+
+.gloss {
+  font-size: 12px;
+  line-height: 16px;
+  font-style: italic;
+  color: var(--ink-muted);
+}
+
+.hint {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-muted);
+}
+
+footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

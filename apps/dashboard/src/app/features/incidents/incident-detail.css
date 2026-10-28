@@ -1,0 +1,229 @@
+:host {
+  display: grid;
+  align-content: start;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-4) var(--space-8);
+}
+
+.head {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.kicker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.close {
+  margin-left: auto;
+  min-height: 32px;
+  padding: 4px;
+}
+
+h2 {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+  text-wrap: balance;
+}
+
+h3 {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  margin-bottom: var(--space-2);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 1px 8px 0;
+  border-radius: var(--radius-control);
+  border: 1.5px solid var(--danger);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ids {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-content: start;
+  gap: var(--space-4);
+  font-size: 13px;
+}
+
+.ids dt {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.ids dd {
+  margin: 0;
+}
+
+.actions {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-panel);
+  background: var(--surface-sunken);
+}
+
+.wide {
+  width: 100%;
+}
+
+.hint {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-muted);
+}
+
+.secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.comment {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.comment textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.comment .btn {
+  justify-self: start;
+}
+
+.photos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+
+/* Placeholder for a blurred photo: the real images arrive from the media pipeline already blurred. */
+.photo {
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-control);
+  display: grid;
+  place-items: center;
+  color: var(--ink-muted);
+  background:
+    radial-gradient(circle at 30% 35%, var(--line) 0 18%, transparent 42%),
+    radial-gradient(circle at 70% 65%, var(--line-strong) 0 12%, transparent 40%),
+    var(--surface-sunken);
+  filter: blur(0.3px);
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+  position: relative;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--line);
+}
+
+.timeline li {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: var(--space-3);
+  font-size: 14px;
+  line-height: 20px;
+  position: relative;
+}
+
+.node {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-raised);
+  border: 1.5px solid var(--line-strong);
+  color: var(--ink);
+}
+
+.when {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-muted);
+}
+
+.source {
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line-strong);
+}
+
+.simulated .source {
+  border-style: dashed;
+}
+
+.fresh {
+  animation: entry-in var(--motion-slow) var(--ease-emphasized);
+}
+
+@keyframes entry-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+.small {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.neighbors {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.neighbors li {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+}

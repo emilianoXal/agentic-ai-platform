@@ -103,3 +103,16 @@ variable "bedrock_model_id" {
   type        = string
   default     = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 }
+
+# =============================================================================
+# Portal module — dashboard staff accounts.
+# =============================================================================
+variable "staff_users" {
+  description = "Dashboard staff: email -> { name, group (agency | official | admin), agency_id }."
+  type = map(object({
+    name      = string
+    group     = string
+    agency_id = optional(string)
+  }))
+  default = {}
+}

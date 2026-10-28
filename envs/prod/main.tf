@@ -84,3 +84,28 @@ module "agent" {
   log_level                 = var.log_level
   bedrock_model_id          = var.bedrock_model_id
 }
+
+module "portal" {
+  source = "../../modules/portal"
+
+  environment = var.environment
+
+  kms_key_arn          = module.data.kms_key_arn
+  incidents_table_name = module.data.incidents_table_name
+  incidents_table_arn  = module.data.incidents_table_arn
+  incidents_stream_arn = module.data.incidents_stream_arn
+  reports_table_name   = module.data.reports_table_name
+  reports_table_arn    = module.data.reports_table_arn
+  audit_log_table_name = module.data.audit_log_table_name
+  audit_log_table_arn  = module.data.audit_log_table_arn
+  users_table_name     = module.data.users_table_name
+  users_table_arn      = module.data.users_table_arn
+  events_bus_name      = module.data.events_bus_name
+  events_bus_arn       = module.data.events_bus_arn
+
+  routing_rules_json            = var.routing_rules_json
+  staff_users                   = var.staff_users
+  user_pool_deletion_protection = var.environment == "prod" ? "ACTIVE" : "INACTIVE"
+  log_retention_days            = var.log_retention_days
+  log_level                     = var.log_level
+}

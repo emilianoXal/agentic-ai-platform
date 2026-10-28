@@ -30,48 +30,69 @@ backend through AppSync. Status changes emit EventBridge events to the notifier.
 | AppSync, Cognito, Amplify, Amazon Location | Authenticated officials portal, GraphQL API, hosting and map |
 | EventBridge | Domain events to the notification workflow |
 
-### CDS runtime call status
+### CDS requirement: runtime calls
 
-The inbound integration is implemented in
-[`modules/compute/src/ingest/handler.py:141`](modules/compute/src/ingest/handler.py#L141)
-and invokes the queue at
-[`modules/compute/src/ingest/handler.py:414`](modules/compute/src/ingest/handler.py#L414).
+The running code imports and calls two AWS Communication Developer Services clients.
+
+| CDS service | Client and call | Location |
+| --- | --- | --- |
+| AWS End User Messaging Social (WhatsApp) | `boto3.client("socialmessaging")`, `send_whatsapp_message` | [`modules/compute/src/outbound/handler.py:37`](modules/compute/src/outbound/handler.py#L37) (client), [`:154`](modules/compute/src/outbound/handler.py#L154) (call) |
+| Amazon SES | `boto3.client("sesv2")`, `send_email` | [`modules/compute/src/dependency_mailer/handler.py:35`](modules/compute/src/dependency_mailer/handler.py#L35) (client), [`:213`](modules/compute/src/dependency_mailer/handler.py#L213) (call) |
+
+The inbound path parses the End User Messaging Social webhook at
+[`modules/compute/src/ingest/handler.py:179`](modules/compute/src/ingest/handler.py#L179)
+and enqueues it at
+[`modules/compute/src/ingest/handler.py:460`](modules/compute/src/ingest/handler.py#L460).
 The agent creates its Bedrock model at
-[`modules/agent/src/agent/handler.py:685`](modules/agent/src/agent/handler.py#L685)
+[`modules/agent/src/agent/handler.py:788`](modules/agent/src/agent/handler.py#L788)
 and runs it at
-[`modules/agent/src/agent/handler.py:709`](modules/agent/src/agent/handler.py#L709).
+[`modules/agent/src/agent/handler.py:819`](modules/agent/src/agent/handler.py#L819).
 
-Outbound WhatsApp replies go through a single Lambda, the only caller of the
-CDS End User Messaging Social `SendWhatsAppMessage` API, at
-[`modules/compute/src/outbound/handler.py:154`](modules/compute/src/outbound/handler.py#L154).
-The consumer hands each agent reply to it at
-[`modules/agent/src/consumer/handler.py:164`](modules/agent/src/consumer/handler.py#L164),
+Outbound WhatsApp messages go through a single Lambda, the only caller of
+`SendWhatsAppMessage`. The consumer hands each agent reply to it at
+[`modules/agent/src/consumer/handler.py:166`](modules/agent/src/consumer/handler.py#L166),
 and the notifier sends status notifications at
-[`modules/compute/src/notifier/handler.py:252`](modules/compute/src/notifier/handler.py#L252).
-When staff resolve an incident, the portal schedules the «¿Ya quedó?» follow-up
+[`modules/compute/src/notifier/handler.py:324`](modules/compute/src/notifier/handler.py#L324).
+When staff resolve an incident, the portal schedules the «Is it fixed?» follow-up
 with EventBridge Scheduler at
-[`modules/portal/src/dashboard_api/handler.py:420`](modules/portal/src/dashboard_api/handler.py#L420);
-the follow-up Lambda asks consenting citizens through the same outbound Lambda at
-[`modules/follow_up/src/handler.py:114`](modules/follow_up/src/handler.py#L114),
-and the agent records their answer with `respond_follow_up`. Free-text delivery
+[`modules/portal/src/dashboard_api/handler.py:454`](modules/portal/src/dashboard_api/handler.py#L454);
+the follow-up Lambda sends it through the same outbound Lambda at
+[`modules/follow_up/src/handler.py:129`](modules/follow_up/src/handler.py#L129),
+and the agent records the answer with `respond_follow_up`. Free-text delivery
 requires an open WhatsApp conversation window. AgentCore Gateway and Memory are
-feature-flagged and off in dev.
+feature-flagged and off in dev; conversation history is kept in DynamoDB.
+
+### Pre-existing code declaration
+
+None. The repository was written for this hackathon, apart from third-party
+dependencies (the Strands Agents SDK and its Python dependencies vendored in
+`modules/agent/layers/`, Angular and MapLibre GL in `apps/dashboard`, and the
+Terraform providers).
 
 ### How to try it
 
-Send a WhatsApp message to **+1 319 271 6611**. Use synthetic content only.
-For example:
+Send a WhatsApp message to **+1 319 271 6611**. Use synthetic content only. The
+bot replies in English.
+
+1. Send a photo of a problem (a leak, a pothole) with a short description.
+2. When the bot asks, give your consent to process the report.
+3. Share your location with WhatsApp's location button. The report is created
+   with the blurred photo and the location, and the department is emailed.
+4. After staff resolve the incident in the officials portal, you receive
+   «Is it fixed?». Answer in your own words: the bot confirms the fix or
+   reopens the incident.
+
+Illustrative exchange:
 
 ```text
-You: There is a water leak on Calle Example near the park.
-UrbanBot: Please share the location and confirm that you consent to processing this report.
-You: I consent. The leak is by the north entrance.
+You: [photo] There is a water leak near the park.
+UrbanBot: Before I file this, do you consent to me processing your report?
+You: Yes.
+UrbanBot: Thanks. Please share the location of the leak.
 ```
 
-UrbanBot replies in the same WhatsApp chat. After staff resolve the incident,
-it asks «¿Ya quedó?» and confirms or reopens it from your answer. The officials
-portal is available to the team’s provisioned accounts; credentials are not
-stored in this repository.
+The officials portal is available to the team’s provisioned accounts; credentials
+are not stored in this repository.
 
 ### Deploy through GitLab CI/CD
 
@@ -111,7 +132,7 @@ modules/compute/   # [done] ingest + notifier Lambdas, image blur workflow (Step
 modules/agent/     # [done] 6 tool Lambdas, SQS consumer, ECR, Guardrails, AgentCore (awscc)
 modules/media/     # [todo] Transcribe + Nova multimodal
 modules/portal/    # [done] Cognito + AppSync + dashboard Lambdas + Location key + WAF + Amplify Hosting
-modules/follow_up/ # [done] «¿Ya quedó?» Lambda + EventBridge Scheduler role
+modules/follow_up/ # [done] «Is it fixed?» Lambda + EventBridge Scheduler role
 apps/dashboard/    # [done] Angular officials' dashboard (UrbanBot): live AppSync data + real map
 .kiro/steering/    # IA context (product, structure, tech, terraform conventions)
 ```
@@ -128,11 +149,11 @@ table); the state key is isolated per environment
 | Module    | Status | Summary |
 |-----------|--------|---------|
 | `data`    | done   | CMK, S3 media (SSE-KMS + retention), DynamoDB (reports/incidents/places/users/audit-log) with streams + GSIs, SNS inbound, SQS FIFO + DLQ, EventBridge bus |
-| `compute` | done   | `ingest` (SNS EUM WhatsApp webhook → deterministic guards → SQS FIFO), `notifier` (EventBridge→WhatsApp stub), and `dependency-mailer` (creation/escalation EventBridge events → SES) Lambdas, consent-gated image workflow (`GetWhatsAppMessageMedia` → S3 → Step Functions → Rekognition face/plate blur; see [`ARCHITECTURE.md`](ARCHITECTURE.md)), least-privilege IAM |
+| `compute` | done   | `ingest` (SNS EUM WhatsApp webhook → deterministic guards → SQS FIFO), `notifier` (EventBridge→WhatsApp), `outbound` (the single `SendWhatsAppMessage` caller), and `dependency-mailer` (creation/escalation EventBridge events → SES) Lambdas, consent-gated image workflow (`GetWhatsAppMessageMedia` → S3 → Step Functions → Rekognition face/plate blur; see [`ARCHITECTURE.md`](ARCHITECTURE.md)), least-privilege IAM |
 | `agent`   | done   | `create_report` / `join_incident` / `get_status` / `register_consent` / `register_place` / `route` / `escalate` tool Lambdas, SQS `consumer`, ECR, Bedrock Guardrails, AgentCore runtime/gateway/memory (flag-gated, default off) |
 | `media`   | todo   | Transcribe + Nova multimodal |
 | `portal`  | done   | Dashboard backend and hosting: Cognito staff pool (groups agency / official / admin, users as code), AppSync GraphQL + WAF, `dashboard-api` Lambda (paginated queries, status changes that emit `StatusChanged` to the notifier, admin demo seed), `stream-publisher` Lambda (incidents stream → real-time subscription), Amazon Location API key, Amplify Hosting |
-| `follow_up` | done | One-time «¿Ya quedó?» citizen follow-up after resolution: Lambda invoked by EventBridge Scheduler and by the agent's `respond_follow_up` tool, reusing the existing outbound Lambda; see [`ARCHITECTURE.md`](ARCHITECTURE.md) |
+| `follow_up` | done | One-time «Is it fixed?» citizen follow-up after resolution: Lambda invoked by EventBridge Scheduler and by the agent's `respond_follow_up` tool, reusing the existing outbound Lambda; see [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | `apps/dashboard` | done | Angular dashboard: priority queue, MapLibre + Amazon Location map opening at the user's location, status changes, demo console. See [`apps/dashboard/README.md`](apps/dashboard/README.md) |
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for carried-forward TODOs.

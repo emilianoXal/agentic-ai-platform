@@ -628,8 +628,9 @@ resource "aws_amplify_app" "dashboard" {
   platform    = "WEB"
 
   # Single-page app: every path without a file extension serves index.html.
+  # Static extensions are served as files (mjs = the MapLibre web worker).
   custom_rule {
-    source = "</^[^.]+$|\\.(?!(css|gif|ico|jpg|jpeg|js|json|map|png|svg|txt|webp|woff|woff2|ttf)$)([^.]+$)/>"
+    source = "</^[^.]+$|\\.(?!(css|gif|ico|jpg|jpeg|js|mjs|json|map|png|svg|txt|webp|woff|woff2|ttf)$)([^.]+$)/>"
     target = "/index.html"
     status = "200"
   }
@@ -646,6 +647,10 @@ resource "aws_amplify_app" "dashboard" {
             value: DENY
           - key: Referrer-Policy
             value: strict-origin-when-cross-origin
+      - pattern: '**/*.mjs'
+        headers:
+          - key: Content-Type
+            value: text/javascript
       - pattern: 'config.json'
         headers:
           - key: Cache-Control

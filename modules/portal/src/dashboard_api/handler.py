@@ -315,7 +315,7 @@ def _caller(event):
     if isinstance(groups, str):
         groups = [g.strip() for g in groups.split(",") if g.strip()]
     return {
-        "name": claims.get("name") or claims.get("email") or claims.get("cognito:username") or "Staff",
+        "name": claims.get("name") or claims.get("email") or claims.get("cognito:username") or claims.get("username") or "Staff",
         "groups": set(groups),
         "agency_id": claims.get("custom:agency_id"),
     }

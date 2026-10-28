@@ -179,7 +179,7 @@ class DroppedMediaPromptTests(unittest.TestCase):
                 self.assertEqual(result.get("reply"), REPLY)
                 prompt = _CapturingAgent.prompts[-1]
                 self.assertIn(handler._MEDIA_DROPPED_NOTES["consent_pending"], prompt)
-                self.assertIn("consentimiento", prompt)
+                self.assertIn("consent", prompt)
 
     def test_captioned_dropped_image_prompt_keeps_caption_and_reason(self):
         for reason in ("consent_pending", "rate_limited", "processing_error"):
@@ -188,7 +188,7 @@ class DroppedMediaPromptTests(unittest.TestCase):
                 self.assertTrue(result.get("ok"))
                 prompt = _CapturingAgent.prompts[-1]
                 self.assertTrue(prompt.startswith(handler._MEDIA_DROPPED_NOTES[reason]))
-                self.assertIn("reenvie la foto", prompt)
+                self.assertIn("resend the photo", prompt)
                 self.assertTrue(prompt.endswith("bache en la calle"))
 
     def test_text_without_dropped_media_has_no_photo_note(self):

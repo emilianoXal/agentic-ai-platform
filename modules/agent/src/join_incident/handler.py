@@ -146,13 +146,13 @@ def lambda_handler(event, context):
     if not incident_id:
         _log(logging.WARNING, "invalid_input", reason="missing_incident_id")
         return {"ok": False, "error": "invalid_input",
-                "message": "incident_id es obligatorio."}
+                "message": "incident_id is required."}
 
     has_create_triple = bool(user_id and category and geohash)
     if not report_id and not has_create_triple:
         _log(logging.WARNING, "invalid_input", reason="no_branch")
         return {"ok": False, "error": "invalid_input",
-                "message": "Proporciona report_id o user_id+category+geohash."}
+                "message": "Provide report_id or user_id+category+geohash."}
 
     try:
         created = False
@@ -231,7 +231,7 @@ def lambda_handler(event, context):
         if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
             _log(logging.WARNING, "incident_not_joinable", incident_id=incident_id)
             return {"ok": False, "error": "incident_not_joinable",
-                    "message": "El incidente no existe o no esta abierto."}
+                    "message": "The incident does not exist or is not open."}
         logger.exception(json.dumps({"event": "join_incident_failed",
                                      "incident_id": incident_id}))
         return {"ok": False, "error": "internal"}

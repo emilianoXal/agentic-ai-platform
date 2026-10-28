@@ -342,7 +342,7 @@ class AgentMemorySessionTests(unittest.TestCase):
         self._invoke_with_memory(citizen, "Quiero borrar mis datos")
         events_before = list(_SessionManager.memory_client.events.values())[0][:]
 
-        confirmed = self._invoke_with_memory(citizen, "CONFIRMO BORRAR MIS DATOS")
+        confirmed = self._invoke_with_memory(citizen, "I CONFIRM DELETE MY DATA")
 
         self.assertTrue(confirmed["ok"])
         self.assertEqual(self._last_model_roles(), ["user", "assistant", "user"])

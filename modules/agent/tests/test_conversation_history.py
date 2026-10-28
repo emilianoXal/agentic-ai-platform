@@ -170,7 +170,7 @@ def test_two_turn_deletion_erases_history_without_recreating_it(app):
             return "Datos borrados"
 
     agent.Agent = DeletingAgent
-    assert invoke(agent, "CONFIRMO BORRAR MIS DATOS")["ok"]
+    assert invoke(agent, "I CONFIRM DELETE MY DATA")["ok"]
     remaining = rows(ddb)
     assert len(remaining) == 1
     assert remaining[0]["citizen_id"]["S"] == agent._citizen_key("other")

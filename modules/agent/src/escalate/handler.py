@@ -100,7 +100,7 @@ def lambda_handler(event, context):
     if not incident_id:
         _log(logging.WARNING, "invalid_input", reason="missing_incident_id")
         return {"ok": False, "error": "invalid_input",
-                "message": "incident_id es obligatorio."}
+                "message": "incident_id is required."}
 
     try:
         resp = _ddb.get_item(
@@ -110,7 +110,7 @@ def lambda_handler(event, context):
         item = resp.get("Item")
         if not item:
             return {"ok": False, "error": "not_found",
-                    "message": "No se encontro el incidente."}
+                    "message": "Incident not found."}
 
         report_count = int(item.get("report_count", {}).get("N", "0"))
         age_days = _age_days(item.get("created_at", {}).get("S"))

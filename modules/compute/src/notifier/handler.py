@@ -32,12 +32,12 @@ OUTBOUND_ORIGINATION_PHONE_NUMBER_ID = os.environ.get(
 
 SUPPORTED_DETAIL_TYPES = ("StatusChanged", "IncidentNearby")
 
-# es-MX notification bodies keyed by EventBridge detail-type. Full template
+# English notification bodies keyed by EventBridge detail-type. Full template
 # rendering (per-report details, deep links, localization variants) is out of
 # scope -- TODO: replace this minimal map with real template rendering.
 _DETAIL_MSG = {
-    "StatusChanged": "Hay una actualización en el estatus de tu reporte.",
-    "IncidentNearby": "Se registró un incidente cerca de un lugar que te interesa.",
+    "StatusChanged": "There's an update on your report status.",
+    "IncidentNearby": "An incident was reported near a place you care about.",
 }
 
 # --- Clients created at module load ------------------------------------------
@@ -227,9 +227,9 @@ def _notify_user(user_id, detail_type, template_id, now):
 
     phone = user_item.get("phone", {}).get("S") or user_id
 
-    # Minimal es-MX body from the detail-type map; full template rendering is
+    # Minimal English body from the detail-type map; full template rendering is
     # out of scope (TODO above on _DETAIL_MSG).
-    text = _DETAIL_MSG.get(detail_type, "Tienes una actualización de Urbanbot.")
+    text = _DETAIL_MSG.get(detail_type, "You have an update from UrbanBot.")
 
     if over_cap:
         # Over daily cap: still NO individual send -- the digest-batching

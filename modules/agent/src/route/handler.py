@@ -121,13 +121,13 @@ def lambda_handler(event, context):
     if not category:
         _log(logging.WARNING, "invalid_input", reason="missing_category")
         return {"ok": False, "error": "invalid_input",
-                "message": "La categoria es obligatoria."}
+                "message": "A category is required."}
 
     target = _resolve(category)
     if not target:
         _log(logging.WARNING, "no_route", category=category)
         return {"ok": False, "error": "no_route",
-                "message": "No hay dependencia configurada para esta categoria."}
+                "message": "No agency is configured for this category."}
 
     dependency = target["dependency"]
     channel = target["channel"]

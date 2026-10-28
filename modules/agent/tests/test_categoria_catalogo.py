@@ -26,6 +26,7 @@ os.environ.update({
     "AUDIT_TABLE": "audit",
     "EVENTS_BUS_NAME": "bus",
     "PENDING_MEDIA_TABLE": "",
+    "DEPENDENCY_MAIL_CATEGORIES": "agua,alumbrado,bacheo,basura,drenaje,arbol,plagas",
 })
 
 _strands = mock.MagicMock()
@@ -217,6 +218,28 @@ class CatalogTests(unittest.TestCase):
             ConsistentRead=True,
         )["Item"]
         self.assertEqual(incident["routed_to"]["S"], "Obras Publicas")
+
+    def test_parked_patrol_car_route_says_the_notice_went_to_the_supervisor(self):
+        created = agent.create_report(
+            category="seguridad", geohash=GEOHASH,
+            description="Parked patrol car blocking the lane at the corner",
+        )
+        self.assertTrue(created["ok"])
+        routed = created["route"]
+        self.assertEqual(routed["authority"], "Seguridad Ciudadana")
+        self.assertFalse(routed["has_mailbox"])
+        self.assertIn("municipal supervisor", routed["reply_instruction"])
+        self.assertNotIn("routed to Seguridad Ciudadana", routed["reply_instruction"])
+        self.assertEqual(self._stored(created["incident_id"])["routed_to"]["S"], "Seguridad Ciudadana")
+
+    def test_route_with_a_mailbox_names_its_dependency(self):
+        routed = route.lambda_handler({"category": "bacheo"}, None)
+        self.assertTrue(routed["has_mailbox"])
+        self.assertIn("Obras Publicas", routed["reply_instruction"])
+        self.assertNotIn("supervisor", routed["reply_instruction"])
+        otro = route.lambda_handler({"category": "otro"}, None)
+        self.assertFalse(otro["has_mailbox"])
+        self.assertIn("municipal supervisor", otro["reply_instruction"])
 
     def _incident(self, incident_id="inc-1", **extra):
         item = {

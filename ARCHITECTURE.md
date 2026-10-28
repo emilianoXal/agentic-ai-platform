@@ -74,7 +74,9 @@ not written, so the model chooses again from `allowed`. The agent wrapper calls
 `route` after a successful create or a create-and-join, with the incident's
 stored category, and only when the incident has no `routed_to` yet. `otro` resolves to
 `Supervisor municipal` and the mailer sends that notice to the supervisor
-fallback. The short live matrix is the `category_probe` cases inside the manual
+fallback. `route` returns `has_mailbox` (category in `dependency_email_map`)
+and a `reply_instruction`: without a mailbox the bot says the notice went to the
+municipal supervisor, never to the dependency. The short live matrix is the `category_probe` cases inside the manual
 GitLab `agent:conversations` job; its markdown counts the category the model
 chose and whether the incident was routed.
 The mail contains operational incident fields only; citizen identity, phone, and

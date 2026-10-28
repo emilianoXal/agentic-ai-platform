@@ -24,6 +24,9 @@ from botocore.exceptions import ClientError
 
 # --- Config from environment -------------------------------------------------
 ROUTING_RULES_JSON = os.environ.get("ROUTING_RULES_JSON", "{}")
+MAIL_CATEGORIES = {
+    c.strip().lower() for c in os.environ.get("DEPENDENCY_MAIL_CATEGORIES", "").split(",") if c.strip()
+}
 INCIDENTS_TABLE = os.environ.get("INCIDENTS_TABLE", "")
 EVENTS_BUS_NAME = os.environ.get("EVENTS_BUS_NAME", "")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
@@ -137,6 +140,12 @@ def lambda_handler(event, context):
 
     dependency = target["dependency"]
     channel = target["channel"]
+    has_mailbox = str(category).strip().lower() in MAIL_CATEGORIES
+    if has_mailbox:
+        reply_instruction = "Tell the citizen the report was routed to " + dependency + "."
+    else:
+        reply_instruction = ("Tell the citizen the notice went to the municipal "
+                             "supervisor; do not say it went to " + dependency + ".")
 
     try:
         routed = False
@@ -186,6 +195,8 @@ def lambda_handler(event, context):
             "authority": dependency,
             "channel": channel,
             "routed": routed,
+            "has_mailbox": has_mailbox,
+            "reply_instruction": reply_instruction,
         }
     except ClientError:
         logger.exception(json.dumps({"event": "route_failed",

@@ -159,6 +159,7 @@ export class IncidentsPage {
         actor,
         comment: request.comment,
         reason: request.reason,
+        dependency: request.dependency,
       });
       this.toasts.show(
         this.i18n.t(this.simulated ? 'incidents.toastSim' : 'incidents.toastLive', {

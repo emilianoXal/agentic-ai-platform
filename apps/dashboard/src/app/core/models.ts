@@ -1,6 +1,7 @@
-/** The six standard incident statuses (RF-17). Escalation is a separate flag. */
+/** The six standard incident statuses (RF-17) plus the read-only pending_send code. Escalation is a separate flag. */
 export type StatusCode =
   | 'received'
+  | 'pending_send'
   | 'sent_to_agency'
   | 'in_progress'
   | 'resolved'
@@ -116,6 +117,8 @@ export interface GatewayEvent {
 export interface StatusChangeInput {
   readonly comment?: string;
   readonly reason?: string;
+  /** Agency name chosen for sent_to_agency. */
+  readonly dependency?: string;
   readonly actor: string;
 }
 

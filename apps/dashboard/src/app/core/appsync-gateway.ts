@@ -29,8 +29,8 @@ const LIST_INCIDENTS = `query ListIncidents($limit: Int, $nextToken: String) {
 }`;
 const GET_INCIDENT = `query GetIncident($id: ID!) { getIncident(id: $id) { ${INCIDENT_FIELDS} } }`;
 const LIST_AGENCIES = `query ListAgencies { listAgencies { id name } }`;
-const UPDATE_STATUS = `mutation UpdateIncidentStatus($id: ID!, $status: String!, $comment: String, $reason: String) {
-  updateIncidentStatus(id: $id, status: $status, comment: $comment, reason: $reason) { notified incident { ${INCIDENT_FIELDS} } }
+const UPDATE_STATUS = `mutation UpdateIncidentStatus($id: ID!, $status: String!, $comment: String, $reason: String, $dependency: String) {
+  updateIncidentStatus(id: $id, status: $status, comment: $comment, reason: $reason, dependency: $dependency) { notified incident { ${INCIDENT_FIELDS} } }
 }`;
 const ADD_COMMENT = `mutation AddIncidentComment($id: ID!, $text: String!) { addIncidentComment(id: $id, text: $text) { ${INCIDENT_FIELDS} } }`;
 const ESCALATE = `mutation EscalateIncident($id: ID!) { escalateIncident(id: $id) { ${INCIDENT_FIELDS} } }`;
@@ -126,6 +126,7 @@ export class AppSyncIncidentsGateway extends IncidentsGateway implements LiveDem
       status: to,
       comment: input.comment || null,
       reason: input.reason || null,
+      dependency: input.dependency || null,
     });
     this.upsert(this.toIncident(data.updateIncidentStatus.incident));
     this.emit(to === 'reopened' ? 'reopened' : 'status', incidentId);

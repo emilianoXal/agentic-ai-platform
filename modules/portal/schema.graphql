@@ -79,7 +79,7 @@ type Query {
 }
 
 type Mutation {
-  updateIncidentStatus(id: ID!, status: String!, comment: String, reason: String): StatusChangeResult!
+  updateIncidentStatus(id: ID!, status: String!, comment: String, reason: String, dependency: String): StatusChangeResult!
   addIncidentComment(id: ID!, text: String!): Incident!
   escalateIncident(id: ID!): Incident!
   # Admin only: writes the synthetic demo set (30 reports in 4 incidents) around a point,

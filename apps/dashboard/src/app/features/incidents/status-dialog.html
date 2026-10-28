@@ -42,6 +42,23 @@
         </label>
       }
 
+      @if (needsDependency()) {
+        <label class="field">
+          <span>{{ 'dialog.dependency' | t }}</span>
+          <select
+            id="status-dependency"
+            [value]="dependency()"
+            (change)="onTextInput('dependency', $event)"
+            required
+          >
+            <option value="" disabled>{{ 'dialog.chooseDependency' | t }}</option>
+            @for (a of agencies(); track a.id) {
+              <option [value]="a.name">{{ a.name }}</option>
+            }
+          </select>
+        </label>
+      }
+
       <label class="field">
         <span>{{ 'dialog.comment' | t }}</span>
         <textarea

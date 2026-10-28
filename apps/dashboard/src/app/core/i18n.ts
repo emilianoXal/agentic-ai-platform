@@ -14,6 +14,7 @@ const EN: Dictionary = {
   'lang.switch': 'Switch language to {lang}',
 
   'status.received': 'Received',
+  'status.pending_send': 'Received, pending send',
   'status.sent_to_agency': 'Sent to agency',
   'status.in_progress': 'In progress',
   'status.resolved': 'Resolved',
@@ -203,6 +204,8 @@ const EN: Dictionary = {
   'dialog.cancel': 'Cancel',
   'dialog.reason': 'Reason (required, sent to neighbors)',
   'dialog.chooseReason': 'Choose a reason',
+  'dialog.dependency': 'Agency (required, receives the email)',
+  'dialog.chooseDependency': 'Choose an agency',
   'dialog.comment': 'Comment for the timeline (optional, not sent)',
   'dialog.commentPlaceholder': 'What did the crew find or do?',
   'dialog.preview': 'WhatsApp message preview',
@@ -280,6 +283,7 @@ const ES: Dictionary = {
   'lang.switch': 'Cambiar idioma a {lang}',
 
   'status.received': 'Recibido',
+  'status.pending_send': 'Recibido pendiente de envío',
   'status.sent_to_agency': 'Enviado a dependencia',
   'status.in_progress': 'En atención',
   'status.resolved': 'Resuelto',
@@ -472,6 +476,8 @@ const ES: Dictionary = {
   'dialog.cancel': 'Cancelar',
   'dialog.reason': 'Motivo (obligatorio, se envía a los vecinos)',
   'dialog.chooseReason': 'Elige un motivo',
+  'dialog.dependency': 'Dependencia (obligatoria, recibe el correo)',
+  'dialog.chooseDependency': 'Elige una dependencia',
   'dialog.comment': 'Comentario para el historial (opcional, no se envía)',
   'dialog.commentPlaceholder': '¿Qué encontró o hizo la cuadrilla?',
   'dialog.preview': 'Vista previa del mensaje de WhatsApp',

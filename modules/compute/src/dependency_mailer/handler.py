@@ -80,6 +80,14 @@ def _is_creation(event, detail_type, detail):
     )
 
 
+def _is_dashboard_send(event, detail_type, detail):
+    return (
+        detail_type == "StatusChanged"
+        and event.get("source") == "urbanbot.dashboard"
+        and detail.get("status") == "sent_to_agency"
+    )
+
+
 def _is_escalation(event, detail_type, detail):
     if detail_type == "IncidentEscalated":
         return True
@@ -143,9 +151,12 @@ def _field(detail, item, *keys):
     return "No especificada"
 
 
-def _recipient(category):
-    agency = DEPENDENCY_EMAIL_MAP.get(category.strip().lower())
-    return (agency, True) if agency else (FALLBACK_EMAIL, False)
+def _recipient(*categories):
+    for category in categories:
+        agency = DEPENDENCY_EMAIL_MAP.get(str(category).strip().lower())
+        if agency:
+            return agency, True
+    return FALLBACK_EMAIL, False
 
 
 def _message(action, incident_id, category, neighborhood, priority, report_count):
@@ -169,7 +180,8 @@ def lambda_handler(event, context):
     detail_type = event.get("detail-type")
     is_creation = _is_creation(event, detail_type, detail)
     is_escalation = _is_escalation(event, detail_type, detail)
-    if not (is_creation or is_escalation):
+    is_send = _is_dashboard_send(event, detail_type, detail)
+    if not (is_creation or is_escalation or is_send):
         return {"ignored": True, "detail_type": detail_type}
 
     event_id = str(event.get("id") or "")
@@ -182,8 +194,10 @@ def lambda_handler(event, context):
         _log(logging.INFO, "duplicate_event", event_hash=_hash_id(event_id))
         return {"duplicate": True}
 
-    action = "creado" if is_creation else "escalado"
+    action = "creado" if is_creation else "enviado" if is_send else "escalado"
     change_key = action + "#" + incident_id
+    if is_send:
+        change_key += "#" + str(detail.get("authority") or "")
     try:
         claimed_change = _claim(change_key)
     except Exception:
@@ -199,7 +213,10 @@ def lambda_handler(event, context):
         neighborhood = _field(detail, item, "neighborhood", "address", "geohash")
         priority = _field(detail, item, "max_severity", "severity")
         report_count = _field(detail, item, "report_count")
-        recipient, to_agency = _recipient(category)
+        if is_send:
+            recipient, to_agency = _recipient(*(detail.get("dependency_categories") or []))
+        else:
+            recipient, to_agency = _recipient(category)
         if not recipient or not MAIL_FROM:
             raise ValueError("dependency mail sender or recipient is not configured")
         subject, body = _message(

@@ -9,8 +9,9 @@ neighbor, the same contract the compute notifier already consumes (RF-19).
 Legacy statuses written by the tool Lambdas (OPEN / ESCALATED / Spanish labels)
 are normalized on read to the six standard codes plus an escalated flag.
 OPEN and ESCALATED become sent_to_agency only when both dependency_mail_sent_at
-and routed_to are present. Either one alone keeps them received, and a stored
-sent_to_agency missing either one also reads as received (the item is not rewritten).
+and routed_to are present. Either one alone keeps them received. A stored
+sent_to_agency missing either one reads as pending_send, a display-only code
+that is never written back.
 
 Authorization (server side, from Cognito claims):
   - group "agency": only incidents routed to its custom:agency_id.
@@ -144,7 +145,7 @@ def slugify(value):
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
-def _agencies():
+def _dependency_map():
     names = dict(_DEFAULT_DEPENDENCIES)
     try:
         rules = json.loads(ROUTING_RULES_JSON or "{}")
@@ -153,7 +154,11 @@ def _agencies():
                 names[category] = rule["dependency"]
     except (ValueError, TypeError):
         _log(logging.WARNING, "routing_rules_parse_failed")
-    unique = {slugify(name): name for name in names.values()}
+    return names
+
+
+def _agencies():
+    unique = {slugify(name): name for name in _dependency_map().values()}
     return [{"id": slug, "name": name} for slug, name in sorted(unique.items())]
 
 
@@ -240,7 +245,7 @@ def to_incident(item, neighbors=None, timeline=None):
         _s(item, "status"), bool(routed_to), mail_sent
     )
     if status == "sent_to_agency" and not (mail_sent and routed_to):
-        status = "received"
+        status = "pending_send"
     escalated = item.get("escalated", {}).get("BOOL", False) or legacy_escalated
     category = _s(item, "category", "otro")
     geohash = _s(item, "geohash", "")
@@ -390,6 +395,7 @@ def allowed_transitions(status, supervisor):
     """Same rules the dashboard UI shows; enforced here as the source of truth."""
     table = {
         "received": ["sent_to_agency", "not_applicable"] if supervisor else ["in_progress", "not_applicable"],
+        "pending_send": ["sent_to_agency", "not_applicable"] if supervisor else ["in_progress", "not_applicable"],
         "sent_to_agency": ["in_progress", "not_applicable"],
         "in_progress": ["resolved"],
         "reopened": ["in_progress"],
@@ -439,6 +445,12 @@ def update_status(event, caller):
         raise DashboardError("invalid_input", "Unknown status.")
     if target == "not_applicable" and not reason:
         raise DashboardError("invalid_input", "A reason is required to mark an incident not applicable.")
+    dependency = (args.get("dependency") or "").strip()
+    dependency_categories = []
+    if target == "sent_to_agency":
+        dependency_categories = sorted(c for c, name in _dependency_map().items() if name == dependency)
+        if not dependency_categories:
+            raise DashboardError("invalid_input", "Choose the agency to send this incident to.")
 
     item = _get_item(incident_id)
     _require_access(caller, item)
@@ -452,11 +464,10 @@ def update_status(event, caller):
               ":previous": item["status"]}
     expression = "SET #s = :s, updated_at = :u, last_status_by = :by"
     routed_to = _s(item, "routed_to")
-    if target == "sent_to_agency" and not routed_to:
-        routed_to = _DEFAULT_DEPENDENCIES.get(_s(item, "category"))
-        if routed_to:
-            expression += ", routed_to = :rt"
-            values[":rt"] = {"S": routed_to}
+    if target == "sent_to_agency":
+        routed_to = dependency
+        expression += ", routed_to = :rt"
+        values[":rt"] = {"S": routed_to}
     if target == "resolved":
         due = now + timedelta(minutes=FOLLOW_UP_DELAY_MINUTES)
         due_at = due.isoformat()
@@ -491,7 +502,8 @@ def update_status(event, caller):
     )
 
     # Keep each report row in step so the bot's get_status reads the same status.
-    for report_id in _report_ids(item):
+    # A send waits for the dependency mailer before anyone is told it was sent.
+    for report_id in ([] if target == "sent_to_agency" else _report_ids(item)):
         try:
             _ddb.update_item(
                 TableName=REPORTS_TABLE,
@@ -506,13 +518,16 @@ def update_status(event, caller):
                 raise
 
     reason_text = ". Reason: {}".format(reason) if reason else ""
-    _audit(incident_id, "status", "Marked {} by {}{}".format(target.replace("_", " "), caller["name"], reason_text), caller["name"], to_status=target, from_status=current)
+    if target == "sent_to_agency":
+        _audit(incident_id, "status", "Send to {} requested by {}; agency email pending".format(dependency, caller["name"]), caller["name"], to_status="pending_send", from_status=current)
+    else:
+        _audit(incident_id, "status", "Marked {} by {}{}".format(target.replace("_", " "), caller["name"], reason_text), caller["name"], to_status=target, from_status=current)
     if comment:
         _audit(incident_id, "comment", comment, caller["name"])
     if target == "resolved":
         _audit(incident_id, "follow_up", '"Is it fixed?" scheduled for neighbors in {} min'.format(FOLLOW_UP_DELAY_MINUTES), "UrbanBot")
 
-    recipients = _recipients(item)
+    recipients = [] if target == "sent_to_agency" else _recipients(item)
     _emit("StatusChanged", {
         "incident_id": incident_id,
         "category": _s(item, "category"),
@@ -522,6 +537,7 @@ def update_status(event, caller):
         "authority": routed_to,
         "reason": reason or None,
         "user_ids": recipients,
+        "dependency_categories": dependency_categories or None,
         "source": "dashboard",
     })
     _audit(incident_id, "notified", "StatusChanged sent to the notifier for {} neighbors".format(len(recipients)), "UrbanBot")

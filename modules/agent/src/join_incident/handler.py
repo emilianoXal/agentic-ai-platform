@@ -138,7 +138,7 @@ def _create_report(user_id, category, geohash, media):
     if media:
         item["media"] = {"L": [{"S": key} for key in media]}
     _ddb.put_item(TableName=REPORTS_TABLE, Item=item)
-    return report_id
+    return report_id, len(media)
 
 
 def lambda_handler(event, context):
@@ -163,19 +163,16 @@ def lambda_handler(event, context):
 
     try:
         created = False
+        created_photos = 0
         if not report_id:
             # Branch (b): create then attach. Trusts incident_id; does NOT
             # re-check geohash/category equality against the incident.
-            report_id = _create_report(user_id, category, geohash, event.get("media"))
+            report_id, created_photos = _create_report(
+                user_id, category, geohash, event.get("media"))
             created = True
 
         subscriber = str(user_id) if user_id else None
-        update_expr = (
-            "ADD report_count :one"
-            + (" , subscribers :sub" if subscriber else "")
-            + " SET updated_at = :now, report_ids = "
-            "list_append(if_not_exists(report_ids, :empty), :rid)"
-        )
+        add_expr = "ADD report_count :one"
         values = {
             ":one": {"N": "1"},
             ":now": {"S": _now_iso()},
@@ -183,6 +180,15 @@ def lambda_handler(event, context):
             ":empty": {"L": []},
             ":open": {"S": "OPEN"},
         }
+        if created_photos:
+            add_expr += ", photo_count :photos"
+            values[":photos"] = {"N": str(int(created_photos))}
+        update_expr = (
+            add_expr
+            + (" , subscribers :sub" if subscriber else "")
+            + " SET updated_at = :now, report_ids = "
+            "list_append(if_not_exists(report_ids, :empty), :rid)"
+        )
         if subscriber:
             values[":sub"] = {"SS": [subscriber]}
 

@@ -151,44 +151,52 @@ def _find_open_incident(geohash, category):
     return None
 
 
-def _attach_report(incident_id, report_id):
+def _attach_report(incident_id, report_id, photo_count=0):
     """Attach the report to an existing OPEN incident (ADD report_count 1)."""
     now = _now_iso()
+    add_expr = "ADD report_count :one"
+    values = {
+        ":one": {"N": "1"},
+        ":now": {"S": now},
+        ":rid": {"L": [{"S": report_id}]},
+        ":empty": {"L": []},
+    }
+    if photo_count:
+        add_expr += ", photo_count :photos"
+        values[":photos"] = {"N": str(int(photo_count))}
     resp = _ddb.update_item(
         TableName=INCIDENTS_TABLE,
         Key={"incident_id": {"S": incident_id}},
         UpdateExpression=(
-            "ADD report_count :one "
-            "SET updated_at = :now, report_ids = "
+            add_expr +
+            " SET updated_at = :now, report_ids = "
             "list_append(if_not_exists(report_ids, :empty), :rid)"
         ),
-        ExpressionAttributeValues={
-            ":one": {"N": "1"},
-            ":now": {"S": now},
-            ":rid": {"L": [{"S": report_id}]},
-            ":empty": {"L": []},
-        },
+        ExpressionAttributeValues=values,
         ReturnValues="UPDATED_NEW",
     )
     return int(resp.get("Attributes", {}).get("report_count", {}).get("N", "1"))
 
 
-def _create_incident(geohash, category, report_id):
+def _create_incident(geohash, category, report_id, photo_count=0):
     """Create a new OPEN incident with this report as the first member."""
     incident_id = str(uuid.uuid4())
     now = _now_iso()
+    item = {
+        "incident_id": {"S": incident_id},
+        "geohash": {"S": geohash},
+        "category": {"S": category},
+        "status": {"S": "OPEN"},
+        "report_count": {"N": "1"},
+        "report_ids": {"L": [{"S": report_id}]},
+        "created_at": {"S": now},
+        "updated_at": {"S": now},
+    }
+    if photo_count:
+        item["photo_count"] = {"N": str(int(photo_count))}
     _ddb.put_item(
         TableName=INCIDENTS_TABLE,
-        Item={
-            "incident_id": {"S": incident_id},
-            "geohash": {"S": geohash},
-            "category": {"S": category},
-            "status": {"S": "OPEN"},
-            "report_count": {"N": "1"},
-            "report_ids": {"L": [{"S": report_id}]},
-            "created_at": {"S": now},
-            "updated_at": {"S": now},
-        },
+        Item=item,
     )
     return incident_id
 
@@ -244,13 +252,14 @@ def lambda_handler(event, context):
         _ddb.put_item(TableName=REPORTS_TABLE, Item=item)
 
         existing = _find_open_incident(geohash, category)
+        photo_count = len(media)
         if existing:
             incident_id = existing["incident_id"]["S"]
             created_at = existing.get("created_at", {}).get("S") or now
-            report_count = _attach_report(incident_id, report_id)
+            report_count = _attach_report(incident_id, report_id, photo_count)
             attached = True
         else:
-            incident_id = _create_incident(geohash, category, report_id)
+            incident_id = _create_incident(geohash, category, report_id, photo_count)
             created_at = now
             report_count = 1
             attached = False

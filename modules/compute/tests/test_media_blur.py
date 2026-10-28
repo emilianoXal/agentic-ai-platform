@@ -178,13 +178,43 @@ def test_download_returns_key_where_whatsapp_writes_the_object():
             None,
         )
         assert fake_social.calls[0]["destinationS3File"] == {"bucketName": "media", "key": "raw/"}
-        assert fake_social.calls[0]["originationPhoneNumberId"] == "abc"
+        assert fake_social.calls[0]["originationPhoneNumberId"] == (
+            "arn:aws:social-messaging:us-east-1:0:phone-number-id/abc"
+        )
         assert result == {
             "bucket": "media",
             "rawKey": raw_key,
             "sanitizedKey": "sanitized/report",
             "mimeType": mime_type,
         }
+
+
+def test_download_passes_full_origination_arn_to_whatsapp():
+    fake_social = FakeSocial("image/jpeg")
+    media_download_handler._social = fake_social
+    arn = "arn:aws:social-messaging:us-east-1:636487155766:phone-number-id/e644d37f4dab45d5a57a5676effc9956"
+    media_download_handler.lambda_handler(
+        {
+            "bucket": "media",
+            "mediaId": "530339869524171",
+            "originationPhoneNumberId": arn,
+            "sanitizedKey": "sanitized/report",
+        },
+        None,
+    )
+    assert fake_social.calls[0]["originationPhoneNumberId"] == arn
+    assert fake_social.calls[0]["originationPhoneNumberId"] != "e644d37f4dab45d5a57a5676effc9956"
+    bare = "phone-number-id-e644d37f4dab45d5a57a5676effc9956"
+    media_download_handler.lambda_handler(
+        {
+            "bucket": "media",
+            "mediaId": "530339869524171",
+            "originationPhoneNumberId": bare,
+            "sanitizedKey": "sanitized/report",
+        },
+        None,
+    )
+    assert fake_social.calls[1]["originationPhoneNumberId"] == bare
 
 
 def test_report_rejects_raw_media_references():

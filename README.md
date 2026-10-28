@@ -98,6 +98,12 @@ terraform validate
 Do not run `terraform plan` / `apply` locally — those need account credentials
 and the remote backend, which the pipeline provides via OIDC.
 
+How to test each kind of change (agent, tool Lambdas, Terraform, portal
+roles, WhatsApp channel) is in [`docs/oficios/tester.md`](docs/oficios/tester.md).
+In-process ingest: `python3 scripts/smoke_whatsapp.py --local --hasta ingesta`.
+Against deployed dev, the manual GitLab job `smoke:whatsapp` uses the OIDC
+deploy role (the human SSO role denies `SNS:Publish` on purpose).
+
 ## Model classification accuracy
 
 Category/severity classification accuracy must be measured on the synthetic test

@@ -1,7 +1,7 @@
 import { Injectable, effect, signal } from '@angular/core';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
-const STORAGE_KEY = 'fixedyet.theme';
+const STORAGE_KEY = 'urbanbot.theme';
 
 /** Light, dark or follow the OS; sets data-theme on <html>, which the tokens read. */
 @Injectable({ providedIn: 'root' })

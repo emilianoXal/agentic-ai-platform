@@ -210,7 +210,7 @@ def to_incident(item, neighbors=None, timeline=None):
     )
     return {
         "id": incident_id,
-        "folio": _s(item, "folio") or "FY-{}-{}".format(created_at[:4], incident_id[:6].upper()),
+        "folio": _s(item, "folio") or "UB-{}-{}".format(created_at[:4], incident_id[:6].upper()),
         "category": category,
         "title": title,
         "neighborhood": neighborhood,
@@ -434,7 +434,7 @@ def update_status(event, caller):
     if comment:
         _audit(incident_id, "comment", comment, caller["name"])
     if target == "resolved":
-        _audit(incident_id, "follow_up", '"Is it fixed?" scheduled for neighbors in {} h'.format(FOLLOW_UP_HOURS), "FixedYet")
+        _audit(incident_id, "follow_up", '"Is it fixed?" scheduled for neighbors in {} h'.format(FOLLOW_UP_HOURS), "UrbanBot")
 
     recipients = _recipients(item)
     _emit("StatusChanged", {
@@ -448,7 +448,7 @@ def update_status(event, caller):
         "user_ids": recipients,
         "source": "dashboard",
     })
-    _audit(incident_id, "notified", "StatusChanged sent to the notifier for {} neighbors".format(len(recipients)), "FixedYet")
+    _audit(incident_id, "notified", "StatusChanged sent to the notifier for {} neighbors".format(len(recipients)), "UrbanBot")
     _log(logging.INFO, "status_changed", incident_id=incident_id, to=target, recipients=len(recipients))
     return {"incident": _detail(_get_item(incident_id)), "notified": len(recipients)}
 

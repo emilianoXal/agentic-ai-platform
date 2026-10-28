@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 /**
- * FixedYet mark: a 3×3 grid of city blocks with the center block in road-marking
+ * UrbanBot mark: a 3×3 grid of city blocks with the center block in road-marking
  * yellow and a check. `assemble` plays the one-time sign-in animation.
  */
 @Component({

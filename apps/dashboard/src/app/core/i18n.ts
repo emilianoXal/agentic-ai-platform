@@ -2,7 +2,7 @@ import { Injectable, Pipe, PipeTransform, computed, effect, inject, signal } fro
 
 export type Lang = 'en' | 'es';
 
-const STORAGE_KEY = 'fixedyet.lang';
+const STORAGE_KEY = 'urbanbot.lang';
 
 type Dictionary = Record<string, string>;
 
@@ -69,7 +69,7 @@ const EN: Dictionary = {
   'time.hours': '{n} h ago',
   'time.days': '{n} d ago',
 
-  'shell.home': 'FixedYet home',
+  'shell.home': 'UrbanBot home',
   'shell.nav': 'Main',
   'shell.incidents': 'Incidents',
   'shell.demo': 'Demo console',
@@ -329,7 +329,7 @@ const ES: Dictionary = {
   'time.hours': 'hace {n} h',
   'time.days': 'hace {n} d',
 
-  'shell.home': 'Inicio de FixedYet',
+  'shell.home': 'Inicio de UrbanBot',
   'shell.nav': 'Principal',
   'shell.incidents': 'Incidentes',
   'shell.demo': 'Consola de demo',

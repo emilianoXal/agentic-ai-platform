@@ -6,26 +6,19 @@ store reports and incidents in DynamoDB and publish domain events to the custom
 EventBridge bus. The portal reads the same incident data through AppSync and
 also publishes status and escalation events.
 
-Personal-data deletion is a dedicated agent tool with a two-turn confirmation
-that relies on AgentCore Memory conversation history. The agent asks the citizen
-to reply `CONFIRMO BORRAR MIS DATOS`; the `delete_my_data` wrapper refuses unless
-`AGENTCORE_MEMORY_ID` is set and the current inbound message is that phrase
-(ignoring case, accents, and punctuation), and it always targets the event's sender `user_id`, never a value chosen
-by the model. Its isolated Lambda deletes the citizen's user and saved-place
-records, removes the phone from `incidents.subscribers`, removes identity and
-phone attributes from their reports, and leaves incidents and report counts
-intact. It also erases the citizen's AgentCore Memory: every event of the same
-HMAC-derived actor/session and any memory record whose namespace carries that
-key. The confirmation turn itself runs with `PersistenceMode.NONE`, so it reads
-history but writes nothing after the purge. If memory erasure cannot complete,
-including when less than 5 s of Lambda time remain (a retry resumes it
-idempotently), the tool returns `memory_erasure_failed` and logs only the hashed subject and an
-error code, never claiming full deletion. The audit table receives only a hashed
-subject identifier, deletion totals, and whether memory was erased. Its IAM role
-can access only the users, places, reports, audit tables, reports `by-user`
-index, incident subscriber scan and updates, the memory's
-`ListEvents`/`DeleteEvent`/`ListMemoryRecords`/`BatchDeleteMemoryRecords`, the
-identity secret, the KMS key, and its own logs.
+Personal-data deletion is a dedicated agent tool with two-turn confirmation.
+The agent asks the citizen to reply `CONFIRMO BORRAR MIS DATOS`; the wrapper
+requires a configured conversation backend and that exact current inbound phrase
+(ignoring case, accents, and punctuation). It always targets the inbound sender,
+never a model-selected identity. The isolated Lambda deletes the citizen's user,
+saved places and conversation history, removes incident subscriptions and
+anonymizes reports while preserving incident counts. History deletion queries all
+pages by the same HMAC citizen key and deletes each item, including expired items.
+If erasure fails or time runs short, it returns `memory_erasure_failed` rather
+than claiming completion. Confirmation turns load history but never persist a
+new pair after the purge. Optional AgentCore events and memory records are also
+erased when that backend is enabled. Audit records contain only subject hashes,
+counts and erasure status.
 
 The compute module has two outbound event consumers. `notifier` handles citizen
 notification events for the WhatsApp channel. `dependency-mailer` handles an
@@ -46,25 +39,27 @@ conversation case, correlates tool Lambda logs and DynamoDB observations, and
 publishes JSON and Markdown transcripts as CI artifacts; it never sends a real
 WhatsApp message.
 
-In dev, the agent Lambda persists each consenting citizen's conversation through
-the Strands AgentCore Memory session manager. While `consent_pending` is true the
-agent runs without a session manager, so nothing from that turn is persisted.
-Actor and session identifiers are HMAC-SHA256 of the citizen number keyed by a
-Terraform-created Secrets Manager secret (generated with `random_password`, so
-it also lives in the encrypted Terraform state; the Lambda receives only its
-ARN), so the phone number cannot be recovered from them by brute force. The
-memory uses AWS default encryption and expires events after 7 days. The HMAC
-identity secret remains encrypted with the project CMK. Before each turn the
-agent lists the session's raw events,
-decodes them with the session manager's converter, and deletes by `eventId`
-every message event newer than the last final assistant reply, so a retried
-failure or timeout cannot leave an unanswered user/tool turn that breaks role
-alternation. The consumer invokes the agent with a client whose read timeout
-outlasts the agent's 90 s timeout and that never re-sends `Invoke`, the event-source
-batch size is 1 so a serial agent call always fits in the consumer's 120 s
-timeout, and the ingest queue's 720 s visibility timeout (six consumer timeouts)
-keeps SQS from redelivering a message while its turn is still running. Terraform
-preconditions on the consumer event-source mapping enforce these relationships,
-so one SQS delivery cannot produce two overlapping turns on the same session. QA and
-production keep the
-integration disabled unless their environment flag is set.
+The agent Lambda loads the latest ten completed conversation turns from the
+CMK-encrypted DynamoDB conversation-history table into Strands `messages` before
+invoking the model. Each item holds one user/assistant pair, keyed by HMAC-SHA256
+citizen identity and an ordered timestamp. Pairs are written only after a valid
+reply; failed, timed-out and empty replies leave no orphan turn to restore.
+Items expire after seven days with DynamoDB TTL; reads also exclude expired
+items while asynchronous TTL deletion catches up. Read or write failures log
+metadata only and allow the current response to continue without history.
+`consent_pending` turns neither load nor save conversation history.
+
+The HMAC key is held in a CMK-encrypted Secrets Manager secret and encrypted
+Terraform state; Lambdas receive its ARN. Agent and erasure IAM grants are scoped
+to the history table (Query/PutItem and Query/DeleteItem respectively), the
+identity secret and project key. Dev sets `enable_agentcore_memory = false` so
+its apply creates no AgentCore Memory. The optional AgentCore session backend
+remains available when no DynamoDB history table is configured; its restore
+still discards messages newer than the last final assistant reply.
+
+The consumer's read timeout exceeds the agent timeout and its batch size is one.
+The queue visibility timeout covers six consumer timeouts, preventing duplicate
+in-flight turns from one SQS delivery. Terraform preconditions enforce these
+relationships. Runtime history and erasure regressions run with
+`python3 -m pytest -q modules/agent/tests/test_conversation_history.py`; mocked
+Terraform plans assert the table configuration and disabled memory resource.

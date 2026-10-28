@@ -30,6 +30,8 @@ import re
 import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import time
+from uuid import uuid4
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError, ReadTimeoutError
@@ -49,6 +51,10 @@ TOOL_REGISTER_PLACE_FN = os.environ.get("TOOL_REGISTER_PLACE_FN", "")
 TOOL_ROUTE_FN = os.environ.get("TOOL_ROUTE_FN", "")
 TOOL_ESCALATE_FN = os.environ.get("TOOL_ESCALATE_FN", "")
 TOOL_DELETE_MY_DATA_FN = os.environ.get("TOOL_DELETE_MY_DATA_FN", "")
+CONVERSATION_HISTORY_TABLE = os.environ.get("CONVERSATION_HISTORY_TABLE", "")
+_HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
+_HISTORY_TURNS = 10
+
 AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
 AGENTCORE_IDENTITY_SECRET_ARN = os.environ.get("AGENTCORE_IDENTITY_SECRET_ARN", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -64,6 +70,7 @@ INFERENCE_PROFILE_ID = "us." + BEDROCK_MODEL_ID if BEDROCK_MODEL_ID else ""
 _lambda = boto3.client("lambda", region_name=AWS_REGION)
 _secrets = boto3.client("secretsmanager", region_name=AWS_REGION)
 _identity_key = None
+_ddb = boto3.client("dynamodb", region_name=AWS_REGION)
 
 # --- Structured JSON-line logger (PII-masking; mirrors compute/ingest) -------
 logger = logging.getLogger()
@@ -342,7 +349,7 @@ def delete_my_data() -> dict:
     anonimizados y los conteos de incidentes.
     """
     user_id = _turn.get("user_id")
-    if not AGENTCORE_MEMORY_ID or not user_id:
+    if not (CONVERSATION_HISTORY_TABLE or AGENTCORE_MEMORY_ID) or not user_id:
         return {"ok": False, "error": "deletion_unavailable"}
     if not _is_deletion_confirmation(_turn.get("text")):
         return {
@@ -496,6 +503,45 @@ def _discard_unanswered_turn(session_manager):
         )
 
 
+def _load_history(citizen_key):
+    response = _ddb.query(
+        TableName=CONVERSATION_HISTORY_TABLE,
+        KeyConditionExpression="citizen_id = :c AND #ts >= :since",
+        ExpressionAttributeNames={"#ts": "ts"},
+        ExpressionAttributeValues={
+            ":c": {"S": citizen_key},
+            ":since": {"S": datetime.fromtimestamp(
+                time.time() - _HISTORY_TTL_SECONDS, timezone.utc,
+            ).isoformat()},
+        },
+        ScanIndexForward=False, Limit=_HISTORY_TURNS, ConsistentRead=True,
+    )
+    messages = []
+    for item in reversed(response.get("Items", [])):
+        if int(item["expires_at"]["N"]) <= time.time():
+            continue
+        for role in ("user", "assistant"):
+            messages.append({"role": role, "content": [{"text": item[role]["S"]}]})
+    _log(logging.INFO, "history_loaded", citizen_key=citizen_key, turns=len(messages) // 2)
+    return messages
+
+
+def _save_history(user_id, text, reply):
+    try:
+        _ddb.put_item(
+            TableName=CONVERSATION_HISTORY_TABLE,
+            Item={
+                "citizen_id": {"S": _citizen_key(user_id)},
+                "ts": {"S": _now_iso() + "#" + uuid4().hex},
+                "user": {"S": text},
+                "assistant": {"S": reply},
+                "expires_at": {"N": str(int(time.time()) + _HISTORY_TTL_SECONDS)},
+            },
+        )
+    except Exception:
+        _log(logging.WARNING, "history_unavailable", operation="write")
+
+
 @contextmanager
 def _agent_for_citizen(model, user_id, consent_pending):
     agent_kwargs = {
@@ -504,6 +550,13 @@ def _agent_for_citizen(model, user_id, consent_pending):
         "system_prompt": _SYSTEM_PROMPT,
         "callback_handler": None,
     }
+    if CONVERSATION_HISTORY_TABLE and not consent_pending:
+        try:
+            agent_kwargs["messages"] = _load_history(_citizen_key(user_id))
+        except Exception:
+            _log(logging.WARNING, "history_unavailable", operation="read")
+        yield Agent(**agent_kwargs)
+        return
     if not AGENTCORE_MEMORY_ID or consent_pending:
         yield Agent(**agent_kwargs)
         return
@@ -564,7 +617,7 @@ def lambda_handler(event, context):
          message_id=event.get("message_id"),
          text_len=len(text), consent_pending=consent_pending,
          rate_limited=rate_limited,
-         memory=bool(AGENTCORE_MEMORY_ID) and not consent_pending)
+         memory=bool(CONVERSATION_HISTORY_TABLE or AGENTCORE_MEMORY_ID) and not consent_pending)
 
     try:
         # Build the Bedrock model targeting the inference profile with the
@@ -597,6 +650,10 @@ def lambda_handler(event, context):
                  user_hash=_hash_id(user_id))
             return {"ok": False, "error": "internal"}
 
+        if (CONVERSATION_HISTORY_TABLE and not consent_pending
+                and not _is_deletion_confirmation(text)):
+            _save_history(user_id, text, reply)
+
         _log(logging.INFO, "agent_done", user_hash=_hash_id(user_id),
              reply_len=len(reply))
         _record_simulated_reply(user_id, reply, event.get("message_id"))
@@ -619,12 +676,8 @@ def lambda_handler(event, context):
             _log(logging.WARNING, "agent_error", reason="bedrock_throttled",
                  user_hash=_hash_id(user_id))
             return {"ok": False, "error": "bedrock_throttled"}
-        logger.exception(json.dumps({"event": "agent_error",
-                                     "reason": "client_error",
-                                     "user_hash": _hash_id(user_id)}))
+        _log(logging.ERROR, "agent_error", reason="client_error", user_hash=_hash_id(user_id))
         return {"ok": False, "error": "internal"}
     except Exception:  # noqa: BLE001 - never raise out of lambda_handler
-        logger.exception(json.dumps({"event": "agent_error",
-                                     "reason": "unexpected",
-                                     "user_hash": _hash_id(user_id)}))
+        _log(logging.ERROR, "agent_error", reason="unexpected", user_hash=_hash_id(user_id))
         return {"ok": False, "error": "internal"}

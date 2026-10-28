@@ -425,6 +425,15 @@ resource "aws_iam_role" "delete_my_data" {
 }
 
 data "aws_iam_policy_document" "delete_my_data" {
+  dynamic "statement" {
+    for_each = var.conversation_history_table_arn != "" ? [1] : []
+    content {
+      sid       = "ConversationHistory"
+      actions   = ["dynamodb:Query", "dynamodb:DeleteItem"]
+      resources = [var.conversation_history_table_arn]
+    }
+  }
+
   statement {
     sid    = "Logs"
     effect = "Allow"
@@ -501,7 +510,7 @@ data "aws_iam_policy_document" "delete_my_data" {
   }
 
   dynamic "statement" {
-    for_each = var.enable_agentcore_memory ? [1] : []
+    for_each = [1]
 
     content {
       sid       = "AgentCoreMemoryIdentityKey"
@@ -736,7 +745,6 @@ resource "aws_lambda_layer_version" "strands" {
 # =============================================================================
 # agent — role + least-privilege policy + attachment.
 # Runs the Strands agent loop: Bedrock invoke + guardrail + tool-Lambda invoke
-# + kms + logs. NO DynamoDB (the tool Lambdas own all table access).
 # =============================================================================
 resource "aws_iam_role" "agent" {
   name               = "${local.name_prefix}-agent-role"
@@ -744,6 +752,15 @@ resource "aws_iam_role" "agent" {
 }
 
 data "aws_iam_policy_document" "agent" {
+  dynamic "statement" {
+    for_each = var.conversation_history_table_arn != "" ? [1] : []
+    content {
+      sid       = "ConversationHistory"
+      actions   = ["dynamodb:Query", "dynamodb:PutItem"]
+      resources = [var.conversation_history_table_arn]
+    }
+  }
+
   statement {
     sid    = "Logs"
     effect = "Allow"
@@ -811,7 +828,7 @@ data "aws_iam_policy_document" "agent" {
   }
 
   dynamic "statement" {
-    for_each = var.enable_agentcore_memory ? [1] : []
+    for_each = [1]
 
     content {
       sid       = "AgentCoreMemoryIdentityKey"
@@ -981,7 +998,8 @@ resource "aws_lambda_function" "delete_my_data" {
       AUDIT_TABLE                   = var.audit_log_table_name
       LOG_LEVEL                     = var.log_level
       AGENTCORE_MEMORY_ID           = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
-      AGENTCORE_IDENTITY_SECRET_ARN = var.enable_agentcore_memory ? one(aws_secretsmanager_secret.agentcore_identity[*].arn) : ""
+      AGENTCORE_IDENTITY_SECRET_ARN = one(aws_secretsmanager_secret.agentcore_identity[*].arn)
+      CONVERSATION_HISTORY_TABLE    = var.conversation_history_table_name
     }
   }
 
@@ -1094,7 +1112,8 @@ resource "aws_lambda_function" "agent" {
       TOOL_ESCALATE_FN              = aws_lambda_function.escalate.function_name
       TOOL_DELETE_MY_DATA_FN        = aws_lambda_function.delete_my_data.function_name
       AGENTCORE_MEMORY_ID           = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
-      AGENTCORE_IDENTITY_SECRET_ARN = var.enable_agentcore_memory ? one(aws_secretsmanager_secret.agentcore_identity[*].arn) : ""
+      AGENTCORE_IDENTITY_SECRET_ARN = one(aws_secretsmanager_secret.agentcore_identity[*].arn)
+      CONVERSATION_HISTORY_TABLE    = var.conversation_history_table_name
       LOG_LEVEL                     = var.log_level
       SIMULATE_WHATSAPP_REPLY       = "1"
     }
@@ -1304,25 +1323,26 @@ resource "awscc_bedrockagentcore_memory" "this" {
   tags = local.tags
 }
 
-# HMAC key for the AgentCore Memory actor/session ids. The value lives only in
+# HMAC key for conversation history and optional AgentCore actor/session ids.
+# The value lives only in
 # Secrets Manager and in the encrypted Terraform state; the agent Lambda only
 # receives the secret ARN. Never output or log it.
 resource "random_password" "agentcore_identity" {
-  count = var.enable_agentcore_memory ? 1 : 0
+  count = 1
 
   length  = 64
   special = false
 }
 
 resource "aws_secretsmanager_secret" "agentcore_identity" {
-  count = var.enable_agentcore_memory ? 1 : 0
+  count = 1
 
   name       = "${local.name_prefix}-agentcore-identity-key"
   kms_key_id = var.kms_key_arn
 }
 
 resource "aws_secretsmanager_secret_version" "agentcore_identity" {
-  count = var.enable_agentcore_memory ? 1 : 0
+  count = 1
 
   secret_id     = aws_secretsmanager_secret.agentcore_identity[0].id
   secret_string = random_password.agentcore_identity[0].result

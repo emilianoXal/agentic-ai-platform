@@ -72,3 +72,15 @@ segundo mensaje. Verificar en DynamoDB que no quede el número ficticio en users
 places, reports ni en `subscribers` de incidents y que el incidente conserve su
 `report_count`; el audit log solo debe contener el hash y, tras un mensaje
 nuevo, el agente no debe recordar la conversación anterior al borrado.
+
+Para el historial DynamoDB, instalar las dependencias de prueba con
+`python3 -m pip install boto3 pytest 'moto[dynamodb,secretsmanager]'` y ejecutar
+`python3 -m pytest -q modules/agent/tests/test_conversation_history.py`.
+Los planes simulados del contrato de almacenamiento se ejecutan con
+`terraform -chdir=modules/data test -filter=tests/conversation_history.tftest.hcl`
+y `terraform -chdir=modules/agent test -filter=tests/conversation_history.tftest.hcl`
+después de inicializar los módulos con `init -backend=false`.
+Después del apply autorizado de main, enviar dos turnos del mismo ciudadano
+(por ejemplo descripción y luego ubicación), y comprobar `history_loaded` con
+`turns` mayor que cero en el segundo turno. El registro contiene solo la clave
+HMAC y el conteo; el texto de la conversación no debe aparecer en CloudWatch.

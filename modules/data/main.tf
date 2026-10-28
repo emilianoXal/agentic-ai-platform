@@ -365,3 +365,27 @@ resource "aws_sqs_queue" "ingest" {
 resource "aws_cloudwatch_event_bus" "events" {
   name = "${local.name_prefix}-events"
 }
+
+resource "aws_dynamodb_table" "conversation_history" {
+  name         = "${local.name_prefix}-conversation-history"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "citizen_id"
+  range_key    = "ts"
+
+  attribute {
+    name = "citizen_id"
+    type = "S"
+  }
+  attribute {
+    name = "ts"
+    type = "S"
+  }
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.this.arn
+  }
+}

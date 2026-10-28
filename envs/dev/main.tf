@@ -59,7 +59,9 @@ module "compute" {
 }
 
 module "agent" {
-  source = "../../modules/agent"
+  source                          = "../../modules/agent"
+  conversation_history_table_name = module.data.conversation_history_table_name
+  conversation_history_table_arn  = module.data.conversation_history_table_arn
 
   environment = var.environment
 

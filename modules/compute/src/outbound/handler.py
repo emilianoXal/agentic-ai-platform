@@ -87,25 +87,12 @@ def _phone_number_id(value):
     return str(value)
 
 
-def _normalize_mx_number(to):
-    """Normalize Mexican WhatsApp numbers from 521 + 10 digits to 52 + 10.
-
-    WhatsApp historically prefixes Mexican mobiles with an extra '1' after the
-    52 country code (521 + 10 digits = 13 digits). The WhatsApp Cloud API wants
-    the E.164 form (52 + 10 digits = 12 digits), so drop that leading '1' right
-    after the country code. Only touches numbers that are exactly `521` + 10
-    digits; any other number (other countries, already-normalized 52 numbers,
-    non-numeric ids) is returned unchanged. An optional leading '+' is handled.
-    """
-    if not isinstance(to, str):
-        return to
-    stripped = to.strip()
-    plus = stripped.startswith("+")
-    digits = stripped[1:] if plus else stripped
-    if digits.isdigit() and len(digits) == 13 and digits.startswith("521"):
-        digits = "52" + digits[3:]
-        return ("+" + digits) if plus else digits
-    return stripped
+# NOTE on Mexican numbers (521 vs 52): WhatsApp delivers the Mexican sender as a
+# 13-digit wa_id starting 521... When REPLYING we must send to that exact wa_id,
+# so this path intentionally does NOT rewrite 521->52 — doing so caused
+# "Invalid destination phone number". A 521->52 normalization is only correct
+# when INITIATING a conversation to a dialed/stored number (not this reply path),
+# so no normalization helper is applied here.
 
 
 def lambda_handler(event, context):
@@ -130,7 +117,13 @@ def lambda_handler(event, context):
         )
         return {"ok": False, "error": "invalid_input"}
 
-    to = _normalize_mx_number(to.strip())
+    # Do NOT normalize the recipient for REPLIES. WhatsApp hands us the Mexican
+    # sender as a 13-digit wa_id starting 521...; to reply we must use that same
+    # wa_id verbatim. Rewriting 521->52 produced "Invalid destination phone
+    # number" because 52... is not the wa_id WhatsApp knows this user by. The
+    # 521->52 normalization only applies when INITIATING to a dialed number
+    # (e.g. from a form/CRM), which this reply path never does.
+    to = to.strip()
     text = text.strip()
 
     wa_obj = {

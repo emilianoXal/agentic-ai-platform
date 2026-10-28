@@ -35,8 +35,7 @@ _spec.loader.exec_module(handler)
 
 from botocore.exceptions import ClientError  # noqa: E402
 
-RECIPIENT = "5215512345678"  # 521 + 10 digits (WhatsApp MX form)
-RECIPIENT_NORMALIZED = "525512345678"  # 52 + 10 digits (E.164, what we send)
+RECIPIENT = "5215512345678"  # 521 + 10 digits — the Mexican wa_id, sent verbatim
 TEXT_HOLA = "hola, listo"
 AWS_PHONE_ID = "976c72a700aac43eaf573ae050example"
 PHONE_ARN = (
@@ -68,8 +67,8 @@ class OutboundHandlerTests(unittest.TestCase):
         self.assertEqual(kwargs["metaApiVersion"], "v20.0")
         expected_obj = {
             "messaging_product": "whatsapp",
-            # The 521... recipient is normalized to 52... before sending.
-            "to": RECIPIENT_NORMALIZED,
+            # The recipient wa_id is sent verbatim (no 521->52 rewrite).
+            "to": RECIPIENT,
             "type": "text",
             "text": {"body": TEXT_HOLA},
         }
@@ -89,19 +88,18 @@ class OutboundHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._phone_number_id(""))
         self.assertIsNone(handler._phone_number_id(None))
 
-    def test_normalize_mx_number(self):
-        # 521 + 10 digits -> 52 + 10 digits (drop the extra WhatsApp '1').
-        self.assertEqual(handler._normalize_mx_number("5214421234567"), "524421234567")
-        # Leading '+' preserved.
-        self.assertEqual(handler._normalize_mx_number("+5214421234567"), "+524421234567")
-        # Already E.164 (52 + 10) -> unchanged.
-        self.assertEqual(handler._normalize_mx_number("524421234567"), "524421234567")
-        # Other country code -> untouched.
-        self.assertEqual(handler._normalize_mx_number("13334445555"), "13334445555")
-        # Not 13 digits (e.g. 521 + 9) -> untouched.
-        self.assertEqual(handler._normalize_mx_number("521442123456"), "521442123456")
-        # Non-numeric -> untouched.
-        self.assertEqual(handler._normalize_mx_number("not-a-number"), "not-a-number")
+    def test_recipient_sent_verbatim(self):
+        # A Mexican 521... wa_id must be sent back UNCHANGED (it's the wa_id
+        # WhatsApp knows the user by); rewriting it to 52... fails delivery.
+        event = {
+            "to": RECIPIENT,
+            "text": TEXT_HOLA,
+            "origination_phone_number_id": PHONE_ARN,
+        }
+        handler.lambda_handler(event, None)
+        kwargs = handler._social.send_whatsapp_message.call_args.kwargs
+        sent = json.loads(kwargs["message"])
+        self.assertEqual(sent["to"], RECIPIENT)
 
     def test_missing_to_is_invalid_input(self):
         event = {"text": TEXT_HOLA, "origination_phone_number_id": PHONE_ARN}

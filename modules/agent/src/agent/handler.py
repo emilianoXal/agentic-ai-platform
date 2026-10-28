@@ -3,7 +3,7 @@
 The citizen-reporting agent for Queretaro urban infrastructure over WhatsApp.
 Runs a Strands agent loop against Amazon Bedrock through a cross-region
 inference profile, with a Bedrock Guardrail applied declaratively on the model.
-The model only plans and converses; every state change is executed by the seven
+The model only plans and converses; every state change is executed by the
 tool Lambdas exposed here as @tool wrappers (RNF-07). The consumer Lambda invokes
 this function synchronously (RequestResponse) with the normalized inbound message.
 
@@ -52,6 +52,7 @@ TOOL_REGISTER_PLACE_FN = os.environ.get("TOOL_REGISTER_PLACE_FN", "")
 TOOL_ROUTE_FN = os.environ.get("TOOL_ROUTE_FN", "")
 TOOL_ESCALATE_FN = os.environ.get("TOOL_ESCALATE_FN", "")
 TOOL_DELETE_MY_DATA_FN = os.environ.get("TOOL_DELETE_MY_DATA_FN", "")
+TOOL_REGISTER_CONSENT_FN = os.environ.get("TOOL_REGISTER_CONSENT_FN", "")
 CONVERSATION_HISTORY_TABLE = os.environ.get("CONVERSATION_HISTORY_TABLE", "")
 _HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 _HISTORY_TURNS = 10
@@ -298,6 +299,23 @@ def respond_follow_up(incident_id: str, decision: str) -> dict:
 
 
 @tool
+def register_consent() -> dict:
+    """Registra el consentimiento del ciudadano remitente para tratar sus datos.
+
+    Llama esta herramienta cuando el texto libre del ciudadano acepta el
+    tratamiento. No la llames si rechaza o si no queda claro. El sujeto es
+    siempre el remitente de este mensaje. Si ok es verdadero, el consentimiento
+    quedó guardado y puedes atender el resto de este mismo mensaje.
+    """
+    result = _invoke_tool(TOOL_REGISTER_CONSENT_FN, {
+        "user_id": _turn.get("user_id"),
+    })
+    if result.get("ok"):
+        _turn["consent_pending"] = False
+    return result
+
+
+@tool
 def register_place(alias: str, geohash: str = None,
                    lat: float = None, lng: float = None, place_id: str = None,
                    radius_m: int = None) -> dict:
@@ -391,6 +409,7 @@ _TOOLS = [
     join_incident,
     get_status,
     respond_follow_up,
+    register_consent,
     register_place,
     route,
     escalate,
@@ -406,7 +425,11 @@ _SYSTEM_PROMPT = (
     "los cambios de estado los ejecutan las herramientas disponibles, nunca "
     "escribas directamente en los datos. Nunca repitas ni guardes numeros de "
     "telefono completos ni otra informacion personal; si consent_pending es "
-    "verdadero, pide el consentimiento antes de actuar. Para crear o unir "
+    "verdadero, interpreta si el texto libre acepta el tratamiento de datos: "
+    "si acepta, llama register_consent y no afirmes que quedó registrado hasta "
+    "que la herramienta responda ok; si responde ok, atiende el resto de este "
+    "mismo mensaje; si rechaza o no queda claro, no llames la herramienta. "
+    "Para crear o unir "
     "reportes necesitas la ubicacion (lat/lng); si falta, pidela y no inventes "
     "una celda. Si una persona pide borrar sus datos, primero explica que sus "
     "datos personales y lugares se eliminaran, que sus reportes se conservaran "
@@ -701,8 +724,10 @@ def lambda_handler(event, context):
             _turn["follow_ups"] = pending.get("pending", []) if pending.get("ok") else []
         if consent_pending:
             prompt = (
-                "[El usuario aun no ha dado su consentimiento: pide opt-in antes "
-                "de ejecutar acciones.]\n" + prompt
+                "[El usuario aun no ha dado su consentimiento. Si el texto libre "
+                "acepta el tratamiento, llama register_consent; no afirmes el "
+                "registro sin ok de la herramienta. Si acepto y pide algo mas "
+                "en este mensaje, atiendelo despues del ok.]\n" + prompt
             )
 
         with _agent_for_citizen(model, user_id, consent_pending) as agent:

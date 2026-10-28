@@ -87,6 +87,27 @@ def _phone_number_id(value):
     return str(value)
 
 
+def _normalize_mx_number(to):
+    """Normalize Mexican WhatsApp numbers from 521 + 10 digits to 52 + 10.
+
+    WhatsApp historically prefixes Mexican mobiles with an extra '1' after the
+    52 country code (521 + 10 digits = 13 digits). The WhatsApp Cloud API wants
+    the E.164 form (52 + 10 digits = 12 digits), so drop that leading '1' right
+    after the country code. Only touches numbers that are exactly `521` + 10
+    digits; any other number (other countries, already-normalized 52 numbers,
+    non-numeric ids) is returned unchanged. An optional leading '+' is handled.
+    """
+    if not isinstance(to, str):
+        return to
+    stripped = to.strip()
+    plus = stripped.startswith("+")
+    digits = stripped[1:] if plus else stripped
+    if digits.isdigit() and len(digits) == 13 and digits.startswith("521"):
+        digits = "52" + digits[3:]
+        return ("+" + digits) if plus else digits
+    return stripped
+
+
 def lambda_handler(event, context):
     event = event if isinstance(event, dict) else {}
     to = event.get("to")
@@ -109,7 +130,7 @@ def lambda_handler(event, context):
         )
         return {"ok": False, "error": "invalid_input"}
 
-    to = to.strip()
+    to = _normalize_mx_number(to.strip())
     text = text.strip()
 
     wa_obj = {
@@ -118,19 +139,19 @@ def lambda_handler(event, context):
         "type": "text",
         "text": {"body": text},
     }
-    # TODO(confirm-on-first-send): raw UTF-8 JSON bytes, not base64 (botocore
-    # base64-encodes the blob automatically) - VP-1.
-    message_bytes = json.dumps(wa_obj).encode("utf-8")
+    # The `message` blob is the WhatsApp Cloud API object as a JSON STRING, not
+    # pre-encoded bytes. The AWS-documented working example passes the raw
+    # json.dumps(...) string directly; adding .encode("utf-8") produced an
+    # InvalidParametersException because the extra byte wrapping malformed the
+    # payload EUM expects.
+    message_payload = json.dumps(wa_obj)
 
     origination_id = _phone_number_id(origination)
 
     try:
         resp = _social.send_whatsapp_message(
             originationPhoneNumberId=origination_id,
-            message=message_bytes,
-            # TODO(confirm-on-first-send): META_API_VERSION default "v20.0";
-            # bump the env var (no code change) if the first send returns a
-            # version error - VP-2.
+            message=message_payload,
             metaApiVersion=META_API_VERSION,
         )
     except (ClientError, BotoCoreError) as exc:

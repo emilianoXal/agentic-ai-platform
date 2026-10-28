@@ -35,7 +35,8 @@ _spec.loader.exec_module(handler)
 
 from botocore.exceptions import ClientError  # noqa: E402
 
-RECIPIENT = "5215512345678"
+RECIPIENT = "5215512345678"  # 521 + 10 digits (WhatsApp MX form)
+RECIPIENT_NORMALIZED = "525512345678"  # 52 + 10 digits (E.164, what we send)
 TEXT_HOLA = "hola, listo"
 AWS_PHONE_ID = "976c72a700aac43eaf573ae050example"
 PHONE_ARN = (
@@ -67,11 +68,14 @@ class OutboundHandlerTests(unittest.TestCase):
         self.assertEqual(kwargs["metaApiVersion"], "v20.0")
         expected_obj = {
             "messaging_product": "whatsapp",
-            "to": RECIPIENT,
+            # The 521... recipient is normalized to 52... before sending.
+            "to": RECIPIENT_NORMALIZED,
             "type": "text",
             "text": {"body": TEXT_HOLA},
         }
-        self.assertEqual(kwargs["message"], json.dumps(expected_obj).encode("utf-8"))
+        # message is the JSON STRING (not pre-encoded bytes) — matches the
+        # AWS-documented working example; botocore handles the blob encoding.
+        self.assertEqual(kwargs["message"], json.dumps(expected_obj))
 
     def test_phone_number_id_passthrough(self):
         # The full ARN (form `arn:...:phone-number-id/<id>`) and a bare
@@ -84,6 +88,20 @@ class OutboundHandlerTests(unittest.TestCase):
         self.assertEqual(handler._phone_number_id(bare), bare)
         self.assertIsNone(handler._phone_number_id(""))
         self.assertIsNone(handler._phone_number_id(None))
+
+    def test_normalize_mx_number(self):
+        # 521 + 10 digits -> 52 + 10 digits (drop the extra WhatsApp '1').
+        self.assertEqual(handler._normalize_mx_number("5214421234567"), "524421234567")
+        # Leading '+' preserved.
+        self.assertEqual(handler._normalize_mx_number("+5214421234567"), "+524421234567")
+        # Already E.164 (52 + 10) -> unchanged.
+        self.assertEqual(handler._normalize_mx_number("524421234567"), "524421234567")
+        # Other country code -> untouched.
+        self.assertEqual(handler._normalize_mx_number("13334445555"), "13334445555")
+        # Not 13 digits (e.g. 521 + 9) -> untouched.
+        self.assertEqual(handler._normalize_mx_number("521442123456"), "521442123456")
+        # Non-numeric -> untouched.
+        self.assertEqual(handler._normalize_mx_number("not-a-number"), "not-a-number")
 
     def test_missing_to_is_invalid_input(self):
         event = {"text": TEXT_HOLA, "origination_phone_number_id": PHONE_ARN}

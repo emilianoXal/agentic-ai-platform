@@ -1,6 +1,7 @@
-environment             = "dev"
-media_retention_days    = 30
-enable_agentcore_memory = true
+environment                 = "dev"
+media_retention_days        = 30
+enable_agentcore_memory     = false
+enable_conversation_history = true
 
 dependency_email_map = {
   agua      = "antonio.miguel+agua@xaldigital.com"

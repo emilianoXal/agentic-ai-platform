@@ -135,3 +135,10 @@ output "events_bus_name" {
   description = "Name of the custom EventBridge bus."
   value       = aws_cloudwatch_event_bus.events.name
 }
+
+output "conversation_history_table_name" {
+  value = one(aws_dynamodb_table.conversation_history[*].name)
+}
+output "conversation_history_table_arn" {
+  value = one(aws_dynamodb_table.conversation_history[*].arn)
+}

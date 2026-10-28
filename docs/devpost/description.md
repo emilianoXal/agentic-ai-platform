@@ -20,7 +20,7 @@ The officials portal uses Amazon Cognito, AWS AppSync, AWS Amplify Hosting, Amaz
 
 The important challenge was keeping an agent useful without allowing it to write directly to operational data. We addressed it with deterministic checks before model use, Bedrock Guardrails, explicit typed tools, least-privilege IAM, and tool-owned data access. We also designed for privacy: consent precedes actions, logs mask identifiers, and the media pipeline is deliberately marked as future work.
 
-The outbound WhatsApp handoff is not complete today: the notifier records what it would send, but it does not yet create a `socialmessaging` client or call `SendWhatsAppMessage` at runtime. This is planned work, not a demonstrated capability. AgentCore Gateway is also flag-gated and disabled in dev; AgentCore Memory is enabled in dev for consenting citizens' conversation history.
+The outbound WhatsApp handoff is not complete today: the notifier records what it would send, but it does not yet create a `socialmessaging` client or call `SendWhatsAppMessage` at runtime. This is planned work, not a demonstrated capability. AgentCore Gateway is also flag-gated and disabled in dev, as is AgentCore Memory. Consenting citizens' conversation history is kept in DynamoDB for 7 days.
 
 ## What's next
 

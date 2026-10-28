@@ -16,6 +16,7 @@ REPORTS_TABLE = os.environ.get("REPORTS_TABLE", "")
 INCIDENTS_TABLE = os.environ.get("INCIDENTS_TABLE", "")
 REPORTS_USER_INDEX = os.environ.get("REPORTS_USER_INDEX", "by-user")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
+CONVERSATION_HISTORY_TABLE = os.environ.get("CONVERSATION_HISTORY_TABLE", "")
 AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
 AGENTCORE_IDENTITY_SECRET_ARN = os.environ.get("AGENTCORE_IDENTITY_SECRET_ARN", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -158,11 +159,33 @@ def _paginate(context, method, items_key, **kwargs):
         kwargs["nextToken"] = token
 
 
+def _erase_history(user_id, context):
+    if not CONVERSATION_HISTORY_TABLE:
+        return 0
+    secret = _secrets.get_secret_value(SecretId=AGENTCORE_IDENTITY_SECRET_ARN)
+    key = hmac.new(secret["SecretString"].encode("utf-8"),
+                   user_id.encode("utf-8"), hashlib.sha256).hexdigest()
+    items = _query_all(
+        TableName=CONVERSATION_HISTORY_TABLE,
+        KeyConditionExpression="citizen_id = :c",
+        ExpressionAttributeValues={":c": {"S": key}},
+        ProjectionExpression="citizen_id, #ts",
+        ExpressionAttributeNames={"#ts": "ts"},
+        ConsistentRead=True,
+    )
+    for item in items:
+        _ensure_time(context)
+        _ddb.delete_item(TableName=CONVERSATION_HISTORY_TABLE,
+                         Key={"citizen_id": item["citizen_id"], "ts": item["ts"]})
+    return len(items)
+
+
 def _erase_memory(user_id, context):
     """Delete the citizen's AgentCore Memory events and memory records.
 
     Uses the same HMAC-derived actor/session ids as the agent Lambda.
     """
+    _erase_history(user_id, context)
     if not AGENTCORE_MEMORY_ID:
         return 0, 0
     secret = _secrets.get_secret_value(SecretId=AGENTCORE_IDENTITY_SECRET_ARN)

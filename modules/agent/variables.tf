@@ -13,7 +13,7 @@ variable "enable_agentcore_gateway" {
 }
 
 variable "enable_agentcore_memory" {
-  description = "Create the AgentCore Memory (awscc) and its HMAC identity secret, and persist consenting citizens' conversations from the agent Lambda. Default false."
+  description = "Create optional AgentCore Memory (awscc). DynamoDB history uses an independent HMAC identity secret. Default false."
   type        = bool
   default     = false
 }
@@ -167,4 +167,15 @@ variable "bedrock_model_id" {
   description = "Bare Bedrock foundation-model id (NOT a us.* inference-profile id); the exec-role derives the profile ARN from it."
   type        = string
   default     = "anthropic.claude-sonnet-5-5"
+}
+
+variable "conversation_history_table_name" {
+  type     = string
+  default  = ""
+  nullable = false
+}
+variable "conversation_history_table_arn" {
+  type     = string
+  default  = ""
+  nullable = false
 }

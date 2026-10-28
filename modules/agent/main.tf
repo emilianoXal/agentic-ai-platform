@@ -775,6 +775,17 @@ data "aws_iam_policy_document" "agent" {
     }
   }
 
+  dynamic "statement" {
+    for_each = var.enable_agentcore_memory ? [1] : []
+
+    content {
+      sid       = "AgentCoreMemoryIdentityKey"
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [one(aws_secretsmanager_secret.agentcore_identity[*].arn)]
+    }
+  }
+
   statement {
     sid     = "InvokeTools"
     effect  = "Allow"
@@ -1034,19 +1045,20 @@ resource "aws_lambda_function" "agent" {
 
   environment {
     variables = {
-      BEDROCK_MODEL_ID        = var.bedrock_model_id
-      GUARDRAIL_ID            = aws_bedrock_guardrail.this.guardrail_id
-      GUARDRAIL_VERSION       = aws_bedrock_guardrail_version.this.version
-      TOOL_CREATE_REPORT_FN   = aws_lambda_function.create_report.function_name
-      TOOL_JOIN_INCIDENT_FN   = aws_lambda_function.join_incident.function_name
-      TOOL_GET_STATUS_FN      = aws_lambda_function.get_status.function_name
-      TOOL_REGISTER_PLACE_FN  = aws_lambda_function.register_place.function_name
-      TOOL_ROUTE_FN           = aws_lambda_function.route.function_name
-      TOOL_ESCALATE_FN        = aws_lambda_function.escalate.function_name
-      TOOL_DELETE_MY_DATA_FN  = aws_lambda_function.delete_my_data.function_name
-      AGENTCORE_MEMORY_ID     = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
-      LOG_LEVEL               = var.log_level
-      SIMULATE_WHATSAPP_REPLY = "1"
+      BEDROCK_MODEL_ID              = var.bedrock_model_id
+      GUARDRAIL_ID                  = aws_bedrock_guardrail.this.guardrail_id
+      GUARDRAIL_VERSION             = aws_bedrock_guardrail_version.this.version
+      TOOL_CREATE_REPORT_FN         = aws_lambda_function.create_report.function_name
+      TOOL_JOIN_INCIDENT_FN         = aws_lambda_function.join_incident.function_name
+      TOOL_GET_STATUS_FN            = aws_lambda_function.get_status.function_name
+      TOOL_REGISTER_PLACE_FN        = aws_lambda_function.register_place.function_name
+      TOOL_ROUTE_FN                 = aws_lambda_function.route.function_name
+      TOOL_ESCALATE_FN              = aws_lambda_function.escalate.function_name
+      TOOL_DELETE_MY_DATA_FN        = aws_lambda_function.delete_my_data.function_name
+      AGENTCORE_MEMORY_ID           = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
+      AGENTCORE_IDENTITY_SECRET_ARN = var.enable_agentcore_memory ? one(aws_secretsmanager_secret.agentcore_identity[*].arn) : ""
+      LOG_LEVEL                     = var.log_level
+      SIMULATE_WHATSAPP_REPLY       = "1"
     }
   }
 
@@ -1233,7 +1245,33 @@ resource "awscc_bedrockagentcore_memory" "this" {
   count = var.enable_agentcore_memory ? 1 : 0
 
   name                  = replace("${local.name_prefix}-memory", "-", "_")
-  event_expiry_duration = 30
+  event_expiry_duration = 7
+  encryption_key_arn    = var.kms_key_arn
 
   tags = local.tags
+}
+
+# HMAC key for the AgentCore Memory actor/session ids. The value is generated
+# ephemerally and written write-only, so it never lands in Terraform state; the
+# agent Lambda only receives the secret ARN.
+ephemeral "aws_secretsmanager_random_password" "agentcore_identity" {
+  count = var.enable_agentcore_memory ? 1 : 0
+
+  password_length     = 64
+  exclude_punctuation = true
+}
+
+resource "aws_secretsmanager_secret" "agentcore_identity" {
+  count = var.enable_agentcore_memory ? 1 : 0
+
+  name       = "${local.name_prefix}-agentcore-identity-key"
+  kms_key_id = var.kms_key_arn
+}
+
+resource "aws_secretsmanager_secret_version" "agentcore_identity" {
+  count = var.enable_agentcore_memory ? 1 : 0
+
+  secret_id                = aws_secretsmanager_secret.agentcore_identity[0].id
+  secret_string_wo         = ephemeral.aws_secretsmanager_random_password.agentcore_identity[0].random_password
+  secret_string_wo_version = 1
 }

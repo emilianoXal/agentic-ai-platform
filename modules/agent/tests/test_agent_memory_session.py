@@ -1,5 +1,6 @@
 """AgentCore Memory session continuity for the citizen agent."""
 
+import hashlib
 import importlib.util
 import os
 import sys
@@ -47,18 +48,41 @@ class _Result:
         return self.reply
 
 
-class _MemoryClient:
+class _StoredMessage:
+    def __init__(self, event_id, message):
+        self.message_id = event_id
+        self.message = message
+
+    def to_message(self):
+        return dict(self.message)
+
+
+class _DataPlane:
+    def __init__(self, store):
+        self.store = store
+
+    def delete_event(self, memoryId, actorId, sessionId, eventId):
+        events = self.store.events[(memoryId, actorId, sessionId)]
+        events[:] = [event for event in events if event.message_id != eventId]
+
+
+class _MemoryStore:
     def __init__(self):
         self.events = {}
         self.calls = []
+        self.gmdp_client = _DataPlane(self)
+        self._next_id = 0
 
-    def list_events(self, memory_id, actor_id, session_id):
-        self.calls.append(("list", memory_id, actor_id, session_id))
-        return list(self.events.get((memory_id, actor_id, session_id), []))
+    def list_events(self, key):
+        self.calls.append(("list",) + key)
+        return list(self.events.get(key, []))
 
-    def create_event(self, memory_id, actor_id, session_id, messages):
-        self.calls.append(("create", memory_id, actor_id, session_id))
-        self.events.setdefault((memory_id, actor_id, session_id), []).extend(messages)
+    def create_event(self, key, message):
+        self.calls.append(("create",) + key)
+        self._next_id += 1
+        self.events.setdefault(key, []).append(
+            _StoredMessage(f"event-{self._next_id}", message),
+        )
 
 
 class _MemoryConfig:
@@ -69,13 +93,26 @@ class _MemoryConfig:
 
 
 class _SessionManager:
-    client = _MemoryClient()
+    """Persists each message as soon as it is added, like the real manager."""
+
+    memory_client = _MemoryStore()
     configurations = []
 
     def __init__(self, agentcore_memory_config, region_name):
         self.config = agentcore_memory_config
         self.region_name = region_name
         self.configurations.append(agentcore_memory_config)
+
+    @property
+    def _key(self):
+        return (self.config.memory_id, self.config.actor_id, self.config.session_id)
+
+    def list_messages(self, session_id, agent_id):
+        assert session_id == self.config.session_id
+        return self.memory_client.list_events(self._key)
+
+    def append_message(self, message):
+        self.memory_client.create_event(self._key, message)
 
     def __enter__(self):
         return self
@@ -84,28 +121,43 @@ class _SessionManager:
         return False
 
 
+def _text(role, text):
+    return {"role": role, "content": [{"text": text}]}
+
+
 class _Agent:
     instances = []
+    model_failures = []
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.instances.append(self)
+        manager = kwargs.get("session_manager")
+        self.messages = (
+            [stored.to_message() for stored in
+             manager.list_messages(manager.config.session_id, "default")]
+            if manager else []
+        )
+        self.model_inputs = []
+
+    def _add(self, message):
+        self.messages.append(message)
+        manager = self.kwargs.get("session_manager")
+        if manager is not None:
+            manager.append_message(message)
 
     def __call__(self, prompt):
-        manager = self.kwargs.get("session_manager")
-        if manager is None:
-            return _Result("sin memoria")
-        config = manager.config
-        history = manager.client.list_events(
-            config.memory_id, config.actor_id, config.session_id,
-        )
-        reply = "historial: " + " | ".join(history + [prompt])
-        manager.client.create_event(
-            config.memory_id,
-            config.actor_id,
-            config.session_id,
-            [prompt, reply],
-        )
+        self._add(_text("user", prompt))
+        self.model_inputs.append([dict(m) for m in self.messages])
+        if self.model_failures:
+            raise self.model_failures.pop(0)
+        if self.kwargs.get("session_manager") is None:
+            reply = "sin memoria"
+        else:
+            reply = "historial: " + " | ".join(
+                m["content"][0]["text"] for m in self.messages if m["role"] == "user"
+            )
+        self._add(_text("assistant", reply))
         return _Result(reply)
 
 
@@ -134,21 +186,36 @@ def _agentcore_modules():
 
 class AgentMemorySessionTests(unittest.TestCase):
     def setUp(self):
-        _SessionManager.client = _MemoryClient()
+        _SessionManager.memory_client = _MemoryStore()
         _SessionManager.configurations = []
         _Agent.instances = []
+        _Agent.model_failures = []
         handler.Agent = _Agent
         handler.BedrockModel = mock.MagicMock()
         handler._lambda = mock.MagicMock()
+        handler._identity_key = None
+        handler._secrets = mock.MagicMock()
+        handler._secrets.get_secret_value.return_value = {
+            "SecretString": "identity-key-one",
+        }
 
-    def _event(self, citizen, text):
-        return {"user_id": citizen, "text": text, "type": "text"}
+    def _event(self, citizen, text, consent_pending=False):
+        return {"user_id": citizen, "text": text, "type": "text",
+                "consent_pending": consent_pending}
 
-    def _invoke_with_memory(self, citizen, text):
-        with mock.patch.dict(sys.modules, _agentcore_modules()), mock.patch.object(
-            handler, "AGENTCORE_MEMORY_ID", "memory-1234567890",
+    def _invoke_with_memory(self, citizen, text, consent_pending=False):
+        with mock.patch.dict(sys.modules, _agentcore_modules()), mock.patch.multiple(
+            handler,
+            AGENTCORE_MEMORY_ID="memory-1234567890",
+            AGENTCORE_IDENTITY_SECRET_ARN="arn:aws:secretsmanager:us-east-1:1:secret:id",
         ):
-            return handler.lambda_handler(self._event(citizen, text), None)
+            return handler.lambda_handler(
+                self._event(citizen, text, consent_pending), None,
+            )
+
+    def _stored_events(self):
+        return [event for events in _SessionManager.memory_client.events.values()
+                for event in events]
 
     def test_same_citizen_restores_previous_turn(self):
         citizen = "5215512345678"
@@ -163,6 +230,26 @@ class AgentMemorySessionTests(unittest.TestCase):
         self.assertNotIn(citizen, first_config.actor_id)
         self.assertNotIn(citizen, first_config.session_id)
 
+    def test_identity_is_keyed_hmac_not_plain_hash(self):
+        citizen = "5215512345678"
+        self._invoke_with_memory(citizen, "Hola")
+        unsalted = hashlib.sha256(citizen.encode("utf-8")).hexdigest()
+        first_config = _SessionManager.configurations[0]
+        self.assertNotIn(unsalted, first_config.actor_id)
+        self.assertNotIn(unsalted, first_config.session_id)
+        handler._secrets.get_secret_value.assert_called_once_with(
+            SecretId="arn:aws:secretsmanager:us-east-1:1:secret:id",
+        )
+
+        handler._identity_key = None
+        handler._secrets.get_secret_value.return_value = {
+            "SecretString": "identity-key-two",
+        }
+        self._invoke_with_memory(citizen, "Hola")
+        second_config = _SessionManager.configurations[1]
+        self.assertNotEqual(first_config.actor_id, second_config.actor_id)
+        self.assertNotEqual(first_config.session_id, second_config.session_id)
+
     def test_different_citizens_have_isolated_sessions(self):
         self._invoke_with_memory("5215512345678", "Hay un bache")
         other = self._invoke_with_memory("5215587654321", "Donde esta el bache")
@@ -172,6 +259,33 @@ class AgentMemorySessionTests(unittest.TestCase):
         self.assertNotEqual(first_config.actor_id, second_config.actor_id)
         self.assertNotEqual(first_config.session_id, second_config.session_id)
 
+    def test_consent_pending_turn_persists_nothing(self):
+        citizen = "5215512345678"
+        pending = self._invoke_with_memory(citizen, "Hay un bache", consent_pending=True)
+
+        self.assertTrue(pending["ok"])
+        self.assertEqual(_SessionManager.configurations, [])
+        self.assertEqual(_SessionManager.memory_client.calls, [])
+        self.assertNotIn("session_manager", _Agent.instances[0].kwargs)
+        handler._secrets.get_secret_value.assert_not_called()
+
+        later = self._invoke_with_memory(citizen, "Acepto")
+        self.assertNotIn("Hay un bache", later["reply"])
+
+    def test_retried_failed_turn_does_not_leave_orphan_user_message(self):
+        citizen = "5215512345678"
+        self._invoke_with_memory(citizen, "Hola")
+        _Agent.model_failures = [handler.ModelThrottledException()]
+        failed = self._invoke_with_memory(citizen, "Hay un bache")
+        retried = self._invoke_with_memory(citizen, "Hay un bache")
+
+        self.assertEqual(failed, {"ok": False, "error": "bedrock_throttled"})
+        self.assertTrue(retried["ok"])
+        roles = [m["role"] for m in _Agent.instances[-1].model_inputs[-1]]
+        self.assertEqual(roles, ["user", "assistant", "user"])
+        stored_roles = [event.message["role"] for event in self._stored_events()]
+        self.assertEqual(stored_roles, ["user", "assistant", "user", "assistant"])
+
     def test_without_memory_does_not_call_memory_client(self):
         with mock.patch.object(handler, "AGENTCORE_MEMORY_ID", ""):
             result = handler.lambda_handler(
@@ -180,7 +294,7 @@ class AgentMemorySessionTests(unittest.TestCase):
 
         self.assertEqual(result, {"ok": True, "reply": "sin memoria"})
         self.assertEqual(_SessionManager.configurations, [])
-        self.assertEqual(_SessionManager.client.calls, [])
+        self.assertEqual(_SessionManager.memory_client.calls, [])
         self.assertNotIn("session_manager", _Agent.instances[0].kwargs)
 
 

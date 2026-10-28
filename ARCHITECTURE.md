@@ -37,8 +37,14 @@ conversation case, correlates tool Lambda logs and DynamoDB observations, and
 publishes JSON and Markdown transcripts as CI artifacts; it never sends a real
 WhatsApp message.
 
-In dev, the agent Lambda persists each citizen's conversation through the
-Strands AgentCore Memory session manager. Both the actor and session identifiers
-are stable SHA-256-derived values, so later messages restore conversation
-history without storing the citizen's phone number as an identifier. QA and
-production keep the integration disabled unless their environment flag is set.
+In dev, the agent Lambda persists each consenting citizen's conversation through
+the Strands AgentCore Memory session manager. While `consent_pending` is true the
+agent runs without a session manager, so nothing from that turn is persisted.
+Actor and session identifiers are HMAC-SHA256 of the citizen number keyed by a
+Terraform-created Secrets Manager secret (generated write-only, never in state;
+the Lambda receives only its ARN), so the phone number cannot be recovered from
+them by brute force. The memory is encrypted with the project CMK and expires
+events after 7 days. Before each turn the agent deletes any persisted messages
+after the last final assistant reply, so a retried failure cannot leave an
+unanswered turn that breaks role alternation. QA and production keep the
+integration disabled unless their environment flag is set.

@@ -22,6 +22,7 @@ Verified against strands-agents==1.62.0:
 """
 
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -49,6 +50,7 @@ TOOL_ROUTE_FN = os.environ.get("TOOL_ROUTE_FN", "")
 TOOL_ESCALATE_FN = os.environ.get("TOOL_ESCALATE_FN", "")
 TOOL_DELETE_MY_DATA_FN = os.environ.get("TOOL_DELETE_MY_DATA_FN", "")
 AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
+AGENTCORE_IDENTITY_SECRET_ARN = os.environ.get("AGENTCORE_IDENTITY_SECRET_ARN", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 SIMULATE_WHATSAPP_REPLY = os.environ.get("SIMULATE_WHATSAPP_REPLY", "")
 SMOKE_TEST_NUMBER = os.environ.get("SMOKE_TEST_NUMBER", "5215599900001")
@@ -60,6 +62,8 @@ INFERENCE_PROFILE_ID = "us." + BEDROCK_MODEL_ID if BEDROCK_MODEL_ID else ""
 
 # --- Clients created at module load (reused across warm invocations) ---------
 _lambda = boto3.client("lambda", region_name=AWS_REGION)
+_secrets = boto3.client("secretsmanager", region_name=AWS_REGION)
+_identity_key = None
 
 # --- Structured JSON-line logger (PII-masking; mirrors compute/ingest) -------
 logger = logging.getLogger()
@@ -445,15 +449,51 @@ def _record_simulated_reply(user_id, reply, message_id=None):
     )
 
 
+def _citizen_key(user_id):
+    global _identity_key
+    if _identity_key is None:
+        _identity_key = _secrets.get_secret_value(
+            SecretId=AGENTCORE_IDENTITY_SECRET_ARN,
+        )["SecretString"].encode("utf-8")
+    return hmac.new(
+        _identity_key, str(user_id).encode("utf-8"), hashlib.sha256,
+    ).hexdigest()
+
+
+def _is_answered(message):
+    return message.get("role") == "assistant" and not any(
+        "toolUse" in block for block in message.get("content", [])
+    )
+
+
+def _discard_unanswered_turn(session_manager):
+    """Delete persisted messages after the last final assistant reply.
+
+    The session manager persists each message as soon as Strands adds it, so a
+    turn that failed or timed out before the final reply leaves user/toolResult
+    events that would break role alternation on the next restore.
+    """
+    config = session_manager.config
+    messages = session_manager.list_messages(config.session_id, "default")
+    while messages and not _is_answered(messages[-1].to_message()):
+        orphan = messages.pop()
+        session_manager.memory_client.gmdp_client.delete_event(
+            memoryId=config.memory_id,
+            actorId=config.actor_id,
+            sessionId=config.session_id,
+            eventId=orphan.message_id,
+        )
+
+
 @contextmanager
-def _agent_for_citizen(model, user_id):
+def _agent_for_citizen(model, user_id, consent_pending):
     agent_kwargs = {
         "model": model,
         "tools": _TOOLS,
         "system_prompt": _SYSTEM_PROMPT,
         "callback_handler": None,
     }
-    if not AGENTCORE_MEMORY_ID:
+    if not AGENTCORE_MEMORY_ID or consent_pending:
         yield Agent(**agent_kwargs)
         return
 
@@ -464,16 +504,17 @@ def _agent_for_citizen(model, user_id):
         AgentCoreMemorySessionManager,
     )
 
-    citizen_hash = hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()
+    citizen_key = _citizen_key(user_id)
     memory_config = AgentCoreMemoryConfig(
         memory_id=AGENTCORE_MEMORY_ID,
-        actor_id=f"citizen-{citizen_hash}",
-        session_id=f"conversation-{citizen_hash}",
+        actor_id=f"citizen-{citizen_key}",
+        session_id=f"conversation-{citizen_key}",
     )
     with AgentCoreMemorySessionManager(
         agentcore_memory_config=memory_config,
         region_name=AWS_REGION,
     ) as session_manager:
+        _discard_unanswered_turn(session_manager)
         yield Agent(session_manager=session_manager, **agent_kwargs)
 
 
@@ -508,7 +549,7 @@ def lambda_handler(event, context):
          message_id=event.get("message_id"),
          text_len=len(text), consent_pending=consent_pending,
          rate_limited=rate_limited,
-         memory=bool(AGENTCORE_MEMORY_ID))
+         memory=bool(AGENTCORE_MEMORY_ID) and not consent_pending)
 
     try:
         # Build the Bedrock model targeting the inference profile with the
@@ -531,7 +572,7 @@ def lambda_handler(event, context):
                 "de ejecutar acciones.]\n" + prompt
             )
 
-        with _agent_for_citizen(model, user_id) as agent:
+        with _agent_for_citizen(model, user_id, consent_pending) as agent:
             result = agent(prompt)
         reply = _extract_reply(result)
 

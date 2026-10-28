@@ -6,12 +6,6 @@ variable "environment" {
   type        = string
 }
 
-variable "enable_agentcore_runtime" {
-  description = "Create the AgentCore Runtime (awscc). Default false so terraform validate / dev plan need no agent image."
-  type        = bool
-  default     = false
-}
-
 variable "enable_agentcore_gateway" {
   description = "Create the AgentCore Gateway (awscc). Default false."
   type        = bool

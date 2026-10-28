@@ -41,10 +41,15 @@ sin llaves estáticas. Stages:
 - `tf_validate` — `terraform fmt -check -recursive` + `terraform validate`.
 - `tf_plan` — `terraform plan -out=tfplan` (soporta `TF_TARGET`). Sube `tfplan`
   y `modules/compute/build/` como artifacts.
-- `tf_apply` — `terraform apply tfplan` (**manual**, en ramas
-  `main|feat/*|fix/*|hotfix/*|release/*`).
-- `tf_destroy` — manual, gated en `TF_DESTROY=true`.
+- `tf_apply` — `terraform apply tfplan` (**manual**, solo en `main`).
+- `tf_destroy` — manual, gated en `TF_DESTROY=true` (solo `main`).
 - `tf_untaint` — manual, gated en `TF_UNTAINT_TARGET`.
+- `bedrock:smoke` — manual, solo en `main`. Invoca el inference profile Sonnet
+  del agente (`us.anthropic.claude-3-5-sonnet-...`) con `bedrock-runtime converse`
+  y verifica que Bedrock responde con texto (T-0011, comprobar invocación
+  Bedrock). Si se cambia el modelo del agente, actualizar `BEDROCK_PROFILE_ID`
+  en el job. OJO: la política de gobierno solo permite perfiles `us.*` de
+  `claude-sonnet-*` y `amazon.nova-*` — no Haiku ni prefijo `global.*`.
 
 ### Variables de CI/CD requeridas (Settings → CI/CD → Variables)
 

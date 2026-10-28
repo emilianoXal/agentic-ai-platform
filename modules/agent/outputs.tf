@@ -75,11 +75,26 @@ output "consumer_function_arn" {
 }
 
 # =============================================================================
-# ECR.
+# Agent Lambda + Strands layer.
 # =============================================================================
-output "ecr_repository_url" {
-  description = "URL of the ECR repository for the Strands agent image."
-  value       = aws_ecr_repository.agent.repository_url
+output "agent_function_name" {
+  description = "Name of the Strands agent Lambda."
+  value       = aws_lambda_function.agent.function_name
+}
+
+output "agent_function_arn" {
+  description = "ARN of the Strands agent Lambda."
+  value       = aws_lambda_function.agent.arn
+}
+
+output "agent_role_arn" {
+  description = "ARN of the Strands agent Lambda execution role."
+  value       = aws_iam_role.agent.arn
+}
+
+output "strands_layer_arn" {
+  description = "ARN of the published Strands Lambda layer version."
+  value       = aws_lambda_layer_version.strands.arn
 }
 
 # =============================================================================
@@ -101,11 +116,6 @@ output "guardrail_version" {
 output "agentcore_exec_role_arn" {
   description = "ARN of the AgentCore execution role (created regardless of the flags)."
   value       = aws_iam_role.agentcore_exec.arn
-}
-
-output "agentcore_runtime_id" {
-  description = "Id of the AgentCore Runtime (null when enable_agentcore_runtime is false)."
-  value       = one(awscc_bedrockagentcore_runtime.this[*].agent_runtime_id)
 }
 
 output "agentcore_gateway_id" {

@@ -2,14 +2,14 @@
 
 Drains the data module's FIFO ingest queue (SQS event-source mapping). Parses the
 normalized message the compute ingest Lambda enqueued, logs it with PII masking,
-writes a lightweight inbound audit record, and — once the AgentCore runtime is
-enabled — will invoke it. The InvokeAgentRuntime call is a clearly-marked TODO
-gated behind AGENTCORE_RUNTIME_ENABLED; while false (the default) this is a no-op
-and NO bedrock-agentcore SDK is imported or called.
+writes a lightweight inbound audit record, then synchronously invokes the Strands
+agent Lambda (AGENT_FUNCTION_NAME) and classifies its response.
 
 Error handling is the SQS ESM partial-batch-failure contract (NOT the ingest
 swallow-and-continue): per-record try/except, failed messageIds returned in
 batchItemFailures so only those ride the existing ingest-queue redrive to the DLQ.
+A retriable agent outcome is signaled by raising ValueError inside the record so
+it fails ONLY that record and never escapes lambda_handler.
 
 Stdlib + boto3 only (bundled in the python3.12 Lambda runtime).
 """
@@ -22,16 +22,20 @@ import re
 from datetime import datetime, timezone
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 # --- Config from environment -------------------------------------------------
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
-AGENTCORE_RUNTIME_ENABLED = os.environ.get("AGENTCORE_RUNTIME_ENABLED", "false")
-AGENTCORE_RUNTIME_ARN = os.environ.get("AGENTCORE_RUNTIME_ARN", "")
+AGENT_FUNCTION_NAME = os.environ.get("AGENT_FUNCTION_NAME", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+# Agent error codes worth a redrive; everything else (incl. invalid_input,
+# tool_invoke_failed, and unknown values) is terminal.
+RETRIABLE_AGENT_ERRORS = {"bedrock_throttled", "internal"}
 
 # --- Clients created at module load (reused across warm invocations) ---------
 _ddb = boto3.client("dynamodb")
+_lambda = boto3.client("lambda")
 
 # --- Structured JSON-line logger (PII-masking; mirrors compute/ingest) -------
 logger = logging.getLogger()
@@ -104,16 +108,42 @@ def _process_record(record):
         rate_limited=msg.get("rate_limited"),
     )
 
-    # TODO(agentcore): once enable_agentcore_runtime is true, invoke the
-    # AgentCore runtime here, e.g.:
-    #     _agentcore = boto3.client("bedrock-agentcore")
-    #     _agentcore.invoke_agent_runtime(
-    #         agentRuntimeArn=AGENTCORE_RUNTIME_ARN,
-    #         payload=json.dumps(msg).encode("utf-8"),
-    #     )
-    # Gated below so it stays a no-op until the runtime image is pushed/enabled.
-    if AGENTCORE_RUNTIME_ENABLED == "true" and AGENTCORE_RUNTIME_ARN:
-        _log(logging.INFO, "agentcore_invoke_skipped_todo", message_id=message_id)
+    # Synchronously invoke the agent with the FULL parsed msg (Decision 2 shape:
+    # do not reconstruct field-by-field, so no field is silently dropped).
+    resp = _lambda.invoke(
+        FunctionName=AGENT_FUNCTION_NAME,
+        InvocationType="RequestResponse",
+        Payload=json.dumps(msg).encode(),
+    )
+
+    raw = resp["Payload"].read()
+    try:
+        payload = json.loads(raw) if raw else {}
+    except (ValueError, TypeError):
+        payload = {}
+
+    # Classification order (Decision 6 + resolved points): a FunctionError or any
+    # retriable/garbled outcome raises ValueError to fail ONLY this record.
+    if resp.get("FunctionError"):
+        _log(logging.WARNING, "agent_invoked", message_id=message_id,
+             user_hash=_hash_id(user_id), ok=None,
+             function_error=resp.get("FunctionError"))
+        raise ValueError("agent_function_error")
+
+    ok = payload.get("ok")
+    error = payload.get("error")
+
+    _log(logging.INFO, "agent_invoked", message_id=message_id,
+         user_hash=_hash_id(user_id), ok=ok, error=error)
+
+    if ok is True:
+        return  # processed
+    if ok is False and error in RETRIABLE_AGENT_ERRORS:
+        raise ValueError("agent_retry")
+    if ok is False:
+        return  # terminal error (e.g. invalid_input, tool_invoke_failed)
+    # ok missing/None or body empty/garbled -> retriable.
+    raise ValueError("agent_retry")
 
 
 def lambda_handler(event, context):
@@ -123,7 +153,7 @@ def lambda_handler(event, context):
     for record in records:
         try:
             _process_record(record)
-        except (ClientError, ValueError, TypeError):
+        except (ClientError, BotoCoreError, ValueError, TypeError):
             message_id = record.get("messageId")
             logger.exception(json.dumps({"event": "record_failed",
                                          "messageId": message_id}))

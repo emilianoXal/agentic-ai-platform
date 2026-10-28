@@ -8,9 +8,12 @@ also publishes status and escalation events.
 
 The compute module has two outbound event consumers. `notifier` handles citizen
 notification events for the WhatsApp channel. `dependency-mailer` handles an
-incident's initial route (`StatusChanged` from `urbanbot.agent`) and portal
-escalations (`IncidentEscalated`). It enriches each event from the incidents
-table, conditionally records the EventBridge event id in the audit table, and
+incident's initial route (`StatusChanged` from `urbanbot.agent`), portal
+escalations (`IncidentEscalated`), and automatic agent escalations
+(`IncidentNearby` from `urbanbot.agent` with status `ESCALATED`). It enriches
+each event from the incidents table, conditionally records both the EventBridge
+event id and the incident change (creation or escalation) in the audit table, so
+retries and agent/portal events for the same escalation send one notice, and
 sends a Spanish agency notice with SES v2. The mail contains operational
 incident fields only; citizen identity, phone, and saved places never enter the
 message. Terraform provisions the Lambda, EventBridge rule, SES identities, and

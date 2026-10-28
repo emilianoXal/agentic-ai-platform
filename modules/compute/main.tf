@@ -318,7 +318,7 @@ resource "aws_lambda_function" "dependency_mailer" {
       DEPENDENCY_EMAIL_MAP      = jsonencode(var.dependency_email_map)
       DEPENDENCY_FALLBACK_EMAIL = var.dependency_fallback_email
       MAIL_FROM                 = var.dependency_mail_from
-      PORTAL_URL                = "https://main.d1taemvhj3go47.amplifyapp.com/incidents"
+      PORTAL_URL                = "${var.portal_url}/incidents"
       LOG_LEVEL                 = var.log_level
     }
   }
@@ -377,7 +377,7 @@ resource "aws_cloudwatch_event_rule" "dependency_mailer" {
   event_bus_name = var.event_bus_name
 
   event_pattern = jsonencode({
-    "detail-type" = ["StatusChanged", "IncidentEscalated"]
+    "detail-type" = ["StatusChanged", "IncidentEscalated", "IncidentNearby"]
   })
 }
 

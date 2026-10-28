@@ -18,7 +18,7 @@ class FakeDynamoDB:
             "incident_id": {"S": "INC-42"},
             "category": {"S": "agua"},
             "neighborhood": {"S": "Centro"},
-            "priority": {"N": "9"},
+            "max_severity": {"S": "high"},
             "report_count": {"N": "7"},
         }
 
@@ -72,9 +72,10 @@ class DependencyMailerTest(unittest.TestCase):
         self.handler = module
 
     def event(self, detail_type, event_id):
-        return {
+        agent_types = ("StatusChanged", "IncidentNearby")
+        event = {
             "id": event_id,
-            "source": "urbanbot.agent" if detail_type == "StatusChanged" else "urbanbot.dashboard",
+            "source": "urbanbot.agent" if detail_type in agent_types else "urbanbot.dashboard",
             "detail-type": detail_type,
             "detail": {
                 "incident_id": "INC-42",
@@ -84,6 +85,9 @@ class DependencyMailerTest(unittest.TestCase):
                 "places": ["Casa", "Escuela"],
             },
         }
+        if detail_type == "IncidentNearby":
+            event["detail"]["status"] = "ESCALATED"
+        return event
 
     def assert_safe_message(self, sent):
         serialized = json.dumps(sent, ensure_ascii=False)
@@ -91,7 +95,7 @@ class DependencyMailerTest(unittest.TestCase):
             "INC-42",
             "agua",
             "Centro",
-            "9",
+            "Prioridad: high",
             "7",
             "https://main.d1taemvhj3go47.amplifyapp.com/incidents",
         ):
@@ -129,6 +133,54 @@ class DependencyMailerTest(unittest.TestCase):
 
         self.assertTrue(first["sent"])
         self.assertTrue(second["duplicate"])
+        self.assertEqual(1, len(self.ses.sent))
+
+    def test_agent_escalation_sends_escalation_email(self):
+        result = self.handler.lambda_handler(self.event("IncidentNearby", "evt-agent"), None)
+
+        self.assertTrue(result["sent"])
+        self.assertEqual(1, len(self.ses.sent))
+        self.assertIn(
+            "escalado",
+            self.ses.sent[0]["Content"]["Simple"]["Subject"]["Data"],
+        )
+        self.assert_safe_message(self.ses.sent[0])
+
+    def test_agent_nearby_without_escalation_is_ignored(self):
+        event = self.event("IncidentNearby", "evt-nearby")
+        event["detail"]["status"] = "OPEN"
+
+        result = self.handler.lambda_handler(event, None)
+
+        self.assertTrue(result["ignored"])
+        self.assertEqual([], self.ses.sent)
+
+    def test_agent_and_portal_escalation_send_one_email(self):
+        agent = self.handler.lambda_handler(self.event("IncidentNearby", "evt-agent"), None)
+        portal = self.handler.lambda_handler(self.event("IncidentEscalated", "evt-portal"), None)
+
+        self.assertTrue(agent["sent"])
+        self.assertTrue(portal["duplicate"])
+        self.assertEqual(1, len(self.ses.sent))
+
+    def test_location_falls_back_to_geohash(self):
+        del self.ddb.incident["neighborhood"]
+        self.ddb.incident["geohash"] = {"S": "9g3w81t"}
+
+        self.handler.lambda_handler(self.event("StatusChanged", "evt-geo"), None)
+
+        body = self.ses.sent[0]["Content"]["Simple"]["Body"]["Text"]["Data"]
+        self.assertIn("Colonia: 9g3w81t", body)
+
+    def test_failed_send_releases_claims_for_retry(self):
+        event = self.event("IncidentEscalated", "evt-retry")
+        with mock.patch.object(self.ses, "send_email", side_effect=RuntimeError("ses down")):
+            with self.assertRaises(RuntimeError):
+                self.handler.lambda_handler(event, None)
+
+        result = self.handler.lambda_handler(event, None)
+
+        self.assertTrue(result["sent"])
         self.assertEqual(1, len(self.ses.sent))
 
 

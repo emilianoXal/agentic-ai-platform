@@ -88,6 +88,13 @@ variable "dependency_fallback_email" {
   default     = "antonio.miguel+supervisor@xaldigital.com"
 }
 
+variable "portal_url" {
+  description = "Dashboard origin linked from dependency e-mails; null keeps the dev Amplify origin."
+  type        = string
+  default     = "https://main.d1taemvhj3go47.amplifyapp.com"
+  nullable    = false
+}
+
 variable "dependency_mail_from" {
   description = "Verified SES identity used as the dependency notice sender."
   type        = string

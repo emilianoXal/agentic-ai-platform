@@ -16,10 +16,7 @@ FALLBACK_EMAIL = os.environ.get(
     "DEPENDENCY_FALLBACK_EMAIL",
     "antonio.miguel+supervisor@xaldigital.com",
 )
-PORTAL_URL = os.environ.get(
-    "PORTAL_URL",
-    "https://main.d1taemvhj3go47.amplifyapp.com/incidents",
-)
+PORTAL_URL = os.environ.get("PORTAL_URL") or "https://main.d1taemvhj3go47.amplifyapp.com/incidents"
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 
@@ -56,12 +53,22 @@ def _is_creation(event, detail_type, detail):
     )
 
 
-def _claim(event_id):
+def _is_escalation(event, detail_type, detail):
+    if detail_type == "IncidentEscalated":
+        return True
+    return (
+        detail_type == "IncidentNearby"
+        and event.get("source") == "urbanbot.agent"
+        and detail.get("status") == "ESCALATED"
+    )
+
+
+def _claim(key):
     try:
         _ddb.put_item(
             TableName=AUDIT_TABLE,
             Item={
-                "entity_id": {"S": "dependency-mail#" + event_id},
+                "entity_id": {"S": "dependency-mail#" + key},
                 "ts": {"S": "dedup"},
                 "kind": {"S": "dependency_mail"},
             },
@@ -74,11 +81,11 @@ def _claim(event_id):
         raise
 
 
-def _release(event_id):
+def _release(key):
     _ddb.delete_item(
         TableName=AUDIT_TABLE,
         Key={
-            "entity_id": {"S": "dependency-mail#" + event_id},
+            "entity_id": {"S": "dependency-mail#" + key},
             "ts": {"S": "dedup"},
         },
     )
@@ -134,7 +141,7 @@ def lambda_handler(event, context):
     detail = detail if isinstance(detail, dict) else {}
     detail_type = event.get("detail-type")
     is_creation = _is_creation(event, detail_type, detail)
-    is_escalation = detail_type == "IncidentEscalated"
+    is_escalation = _is_escalation(event, detail_type, detail)
     if not (is_creation or is_escalation):
         return {"ignored": True, "detail_type": detail_type}
 
@@ -148,16 +155,21 @@ def lambda_handler(event, context):
         _log(logging.INFO, "duplicate_event", event_hash=_hash_id(event_id))
         return {"duplicate": True}
 
+    action = "creado" if is_creation else "escalado"
+    change_key = action + "#" + incident_id
+    if not _claim(change_key):
+        _log(logging.INFO, "duplicate_change", incident_id=incident_id, action=action)
+        return {"duplicate": True}
+
     try:
         item = _incident(incident_id)
         category = _field(detail, item, "category")
-        neighborhood = _field(detail, item, "neighborhood", "colonia")
-        priority = _field(detail, item, "priority")
+        neighborhood = _field(detail, item, "neighborhood", "address", "geohash")
+        priority = _field(detail, item, "max_severity", "severity")
         report_count = _field(detail, item, "report_count")
         recipient = _recipient(category)
         if not recipient or not MAIL_FROM:
             raise ValueError("dependency mail sender or recipient is not configured")
-        action = "creado" if is_creation else "escalado"
         subject, body = _message(
             action,
             incident_id,
@@ -177,6 +189,7 @@ def lambda_handler(event, context):
             },
         )
     except Exception:
+        _release(change_key)
         _release(event_id)
         raise
 

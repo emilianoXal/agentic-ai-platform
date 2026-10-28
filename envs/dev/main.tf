@@ -47,6 +47,7 @@ module "compute" {
   dependency_email_map      = var.dependency_email_map
   dependency_fallback_email = var.dependency_fallback_email
   dependency_mail_from      = var.dependency_mail_from
+  portal_url                = module.portal.dashboard_url
 
   rate_limit_per_hour = var.rate_limit_per_hour
   max_text_len        = var.max_text_len

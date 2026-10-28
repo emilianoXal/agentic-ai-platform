@@ -21,7 +21,12 @@ os.environ.update({
     "PENDING_MEDIA_TABLE": "pending-media",
     "REPORTS_TABLE": "reports",
     "INCIDENTS_TABLE": "incidents",
+    "INCIDENTS_TABLE_NAME": "incidents",
+    "REPORTS_TABLE_NAME": "reports",
     "AUDIT_TABLE": "audit",
+    "AUDIT_TABLE_NAME": "audit",
+    "USERS_TABLE_NAME": "users",
+    "EVENT_BUS_NAME": "bus",
     "INGEST_QUEUE_URL": "https://sqs.us-east-1.amazonaws.com/000000000000/q.fifo",
     "USERS_TABLE": "users",
     "MEDIA_BUCKET": "media",
@@ -45,9 +50,14 @@ def _load(name, path):
     return module
 
 
+_PORTAL_DIR = os.path.join(_ROOT, "portal", "src", "dashboard_api")
+if _PORTAL_DIR not in sys.path:
+    sys.path.insert(0, _PORTAL_DIR)
+
 agent = _load("foto_pendiente_agent", ("agent", "src", "agent", "handler.py"))
 create_report = _load("foto_pendiente_create_report", ("agent", "src", "create_report", "handler.py"))
 ingest = _load("foto_pendiente_ingest", ("compute", "src", "ingest", "handler.py"))
+portal = _load("foto_pendiente_portal", ("portal", "src", "dashboard_api", "handler.py"))
 
 SENDER = "5215599900001"
 LAT = 20.58806
@@ -131,6 +141,23 @@ class FakeDynamo:
         self._table(TableName)[json.dumps(Item, sort_keys=True)] = Item
         return {}
 
+    def get_item(self, TableName, Key, **kwargs):
+        for item in self._table(TableName).values():
+            if all(item.get(k) == v for k, v in Key.items()):
+                return {"Item": item}
+        return {}
+
+    def batch_get_item(self, RequestItems):
+        out = {}
+        for table, spec in RequestItems.items():
+            found = []
+            for key in spec.get("Keys", []):
+                item = self.get_item(table, key).get("Item")
+                if item:
+                    found.append(item)
+            out[table] = found
+        return {"Responses": out}
+
     def query(self, TableName, **kwargs):
         values = list(self._table(TableName).values())
         citizen = (kwargs.get("ExpressionAttributeValues") or {}).get(":c", {}).get("S")
@@ -193,6 +220,7 @@ class FotoPendienteTests(unittest.TestCase):
         agent.TOOL_FOLLOW_UP_FN = ""
         agent.CONVERSATION_HISTORY_TABLE = "history"
         agent._citizen_key = lambda user_id: "ck-" + str(user_id)
+        portal._ddb = self.ddb
         _ScriptedAgent.prompts = []
         _ScriptedAgent.calls_report = False
 
@@ -269,10 +297,36 @@ class FotoPendienteTests(unittest.TestCase):
     def _incidents(self):
         return list(self.ddb.tables.get("incidents", {}).values())
 
+    def _pending_sanitized_keys(self):
+        keys = []
+        for item in self.ddb.tables.get("pending-media", {}).values():
+            keys.extend(k for k in item if k.startswith("sanitized/"))
+        return keys
+
+    def _history_items(self):
+        return list(self.ddb.tables.get("history", {}).values())
+
+    def _get_incident(self, incident_id):
+        return portal.lambda_handler(
+            {
+                "info": {"parentTypeName": "Query", "fieldName": "getIncident"},
+                "arguments": {"id": incident_id},
+                "identity": {
+                    "claims": {
+                        "cognito:groups": ["official"],
+                        "email": "staff@example.com",
+                    }
+                },
+            },
+            None,
+        )
+
     def _photo_then_location(self, caption=CAPTION, wipe_pending=False):
         photo = self._ingest(self._image_event(caption))
         self.assertTrue(ingest._sfn.start_execution.called)
         self.assertTrue(agent.lambda_handler(photo, None)["ok"])
+        self.assertEqual(self._pending_sanitized_keys(), photo["media"])
+        self.assertTrue(all("media" not in item for item in self._history_items()))
         if wipe_pending:
             self.ddb.tables["pending-media"] = {}
         _ScriptedAgent.calls_report = True
@@ -280,6 +334,7 @@ class FotoPendienteTests(unittest.TestCase):
         self.assertTrue(agent.lambda_handler(location, None)["ok"])
         reports = self._reports()
         self.assertEqual(len(reports), 1)
+        self.assertEqual(self.ddb.tables.get("pending-media", {}), {})
         return photo, reports[0]
 
     def test_captioned_photo_then_location_attaches_sanitized_key(self):
@@ -287,17 +342,18 @@ class FotoPendienteTests(unittest.TestCase):
         self.assertEqual(self._report_media(report), photo["media"])
         self.assertEqual(photo["media"], [_sanitized_key(PHOTO_ID)])
         self.assertEqual(self._incidents()[0]["photo_count"]["N"], "1")
-        self.assertEqual(self.ddb.tables.get("pending-media", {}), {})
 
-    def test_captioned_photo_survives_pending_table_gap_via_history(self):
+    def test_location_turn_without_pending_media_does_not_attach_photo(self):
         photo, report = self._photo_then_location(wipe_pending=True)
-        self.assertEqual(self._report_media(report), photo["media"])
-        self.assertEqual(self._incidents()[0]["photo_count"]["N"], "1")
+        self.assertEqual(self._report_media(report), [])
+        self.assertNotEqual(photo["media"], [])
+        self.assertNotIn("photo_count", self._incidents()[0])
 
-    def test_captionless_photo_then_text_attaches_sanitized_key(self):
+    def test_captionless_photo_then_text_attaches_via_pending_media(self):
         photo = self._ingest(self._image_event(None, message_id="wamid.FOTO2"))
         self.assertTrue(agent.lambda_handler(photo, None)["ok"])
-        self.ddb.tables["pending-media"] = {}
+        self.assertEqual(self._pending_sanitized_keys(), photo["media"])
+        self.assertTrue(all("media" not in item for item in self._history_items()))
         _ScriptedAgent.calls_report = True
         followup = self._ingest(self._text_event(CAPTION))
         self.assertEqual(followup.get("media"), None)
@@ -306,6 +362,13 @@ class FotoPendienteTests(unittest.TestCase):
         self.assertEqual(len(reports), 1)
         self.assertEqual(self._report_media(reports[0]), photo["media"])
         self.assertEqual(self._incidents()[0]["photo_count"]["N"], "1")
+        self.assertEqual(self.ddb.tables.get("pending-media", {}), {})
+
+    def test_get_incident_photo_count_after_photo_then_location(self):
+        photo, _report = self._photo_then_location()
+        detail = self._get_incident(self._incidents()[0]["incident_id"]["S"])
+        self.assertGreater(detail["photoCount"], 0)
+        self.assertEqual(detail["photoCount"], len(photo["media"]))
 
     def test_unfinished_sanitize_still_attaches_the_key(self):
         photo, report = self._photo_then_location()

@@ -57,7 +57,6 @@ CONVERSATION_HISTORY_TABLE = os.environ.get("CONVERSATION_HISTORY_TABLE", "")
 _HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 _HISTORY_TURNS = 10
 _PENDING_LOCATION_SECONDS = 30 * 60
-_PENDING_MEDIA_SECONDS = 3600
 
 AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
 AGENTCORE_IDENTITY_SECRET_ARN = os.environ.get("AGENTCORE_IDENTITY_SECRET_ARN", "")
@@ -650,35 +649,23 @@ def _load_history(citizen_key):
     )
     messages = []
     pending_location = None
-    pending_media = []
     for item in reversed(response.get("Items", [])):
         if int(item["expires_at"]["N"]) <= time.time():
             continue
-        shared_at = datetime.fromisoformat(
-            item["ts"]["S"].split("#")[0]).timestamp()
         stored = _coerce_location(item.get("location", {}).get("S"))
         if stored:
-            stored["shared_at"] = shared_at
+            stored["shared_at"] = datetime.fromisoformat(
+                item["ts"]["S"].split("#")[0]).timestamp()
             pending_location = stored
-        stored_media = item.get("media", {}).get("S")
-        if stored_media:
-            try:
-                keys = json.loads(stored_media)
-            except (ValueError, TypeError):
-                keys = []
-            keys = _sanitized_media(keys)
-            if keys and time.time() - shared_at <= _PENDING_MEDIA_SECONDS:
-                pending_media = keys
         if item.get("report_created", {}).get("BOOL"):
             pending_location = None
-            pending_media = []
         for role in ("user", "assistant"):
             messages.append({"role": role, "content": [{"text": item[role]["S"]}]})
     _log(logging.INFO, "history_loaded", citizen_key=citizen_key, turns=len(messages) // 2)
     if (pending_location
             and time.time() - pending_location["shared_at"] > _PENDING_LOCATION_SECONDS):
         pending_location = None
-    return messages, pending_location, pending_media
+    return messages, pending_location
 
 
 def _save_history(user_id, text, reply, location=None):
@@ -692,8 +679,6 @@ def _save_history(user_id, text, reply, location=None):
         }
         if location:
             item["location"] = {"S": json.dumps(location)}
-        if _turn.get("media"):
-            item["media"] = {"S": json.dumps(list(_turn["media"]))}
         if _turn.get("report_created"):
             item["report_created"] = {"BOOL": True}
         _ddb.put_item(TableName=CONVERSATION_HISTORY_TABLE, Item=item)
@@ -782,12 +767,9 @@ def lambda_handler(event, context):
     history_messages = []
     if CONVERSATION_HISTORY_TABLE and not consent_pending:
         try:
-            history_messages, pending_location, pending_media = _load_history(
-                _citizen_key(user_id))
+            history_messages, pending_location = _load_history(_citizen_key(user_id))
             if pending_location and not location:
                 _turn["location"] = pending_location
-            if pending_media:
-                _turn["media"] = list(dict.fromkeys(media + pending_media))
         except Exception:
             _log(logging.WARNING, "history_unavailable", operation="read")
 

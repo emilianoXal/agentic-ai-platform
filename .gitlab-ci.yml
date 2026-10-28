@@ -327,6 +327,31 @@ bedrock:smoke:
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: manual
 
+agent:conversations:
+  <<: *aws_auth
+  stage: smoke
+  image:
+    name: python:3.12-alpine
+    entrypoint: [""]
+  before_script:
+    - apk add --no-cache aws-cli jq
+    - pip install --quiet boto3
+    - !reference [.aws_auth, before_script]
+  script:
+    - python3 scripts/conversation_matrix.py --output-dir conversation-artifacts
+  artifacts:
+    when: always
+    paths:
+      - conversation-artifacts/conversation_matrix.json
+      - conversation-artifacts/conversation_matrix.md
+    expire_in: 30 days
+  timeout: 1h
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+    - if: '$CI_COMMIT_BRANCH =~ /^feat\//'
+      when: manual
+
 # =============================================================================
 # WhatsApp smoke — publica un envelope EUM ficticio en el SNS inbound de dev
 # y espera el log enqueued de la Lambda de ingesta. Manual, despues de apply,

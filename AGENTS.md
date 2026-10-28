@@ -7,6 +7,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - See `ARCHITECTURE.md` for the event flow and outbound channel boundaries.
 
 How to test each kind of hackathon change, including the WhatsApp SNS smoke (`scripts/smoke_whatsapp.py`) and simulated outbound `WOULD_SEND_REPLY`, is in `docs/oficios/tester.md`.
+The live Sonnet conversation matrix runs through the manual GitLab `agent:conversations` job implemented by `scripts/conversation_matrix.py`.
 
 ## Maintaining this file
 

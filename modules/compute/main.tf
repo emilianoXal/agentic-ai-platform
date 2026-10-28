@@ -265,7 +265,7 @@ resource "aws_iam_role_policy_attachment" "dependency_mailer" {
 
 # =============================================================================
 # outbound — IAM role + customer-managed least-privilege policy + attachment.
-# The ONE and only role that holds socialmessaging:SendWhatsAppMessage (RB-01).
+# The ONE and only role that holds social-messaging:SendWhatsAppMessage (RB-01).
 # =============================================================================
 resource "aws_iam_role" "outbound" {
   name               = "${local.name_prefix}-outbound-role"
@@ -293,9 +293,12 @@ data "aws_iam_policy_document" "outbound" {
   # which grants the social-messaging.amazonaws.com service principal (not this
   # role); text-only SendWhatsAppMessage needs no caller-side KMS.
   statement {
-    sid     = "SendWhatsApp"
-    effect  = "Allow"
-    actions = ["socialmessaging:SendWhatsAppMessage"]
+    sid    = "SendWhatsApp"
+    effect = "Allow"
+    # IAM service prefix is "social-messaging" (with hyphen) per the AWS
+    # service-authorization reference — NOT "socialmessaging" (that's only the
+    # boto3 client name). The wrong prefix grants nothing -> AccessDenied.
+    actions = ["social-messaging:SendWhatsAppMessage"]
     # VP-4: no confirmed resource-level ARN support for this action in the EUM
     # Social service-authorization reference; tighten Resource to the
     # phone-number-id ARN if/when the service adds it. PostWhatsAppMessageMedia

@@ -60,6 +60,12 @@ data "archive_file" "register_place" {
   output_path = "${path.module}/build/register_place.zip"
 }
 
+data "archive_file" "register_consent" {
+  type        = "zip"
+  source_dir  = "${path.module}/src/register_consent"
+  output_path = "${path.module}/build/register_consent.zip"
+}
+
 data "archive_file" "delete_my_data" {
   type        = "zip"
   source_dir  = "${path.module}/src/delete_my_data"
@@ -120,6 +126,11 @@ resource "aws_cloudwatch_log_group" "get_status" {
 
 resource "aws_cloudwatch_log_group" "register_place" {
   name              = "/aws/lambda/${local.name_prefix}-register-place"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_cloudwatch_log_group" "register_consent" {
+  name              = "/aws/lambda/${local.name_prefix}-register-consent"
   retention_in_days = var.log_retention_days
 }
 
@@ -431,6 +442,55 @@ resource "aws_iam_policy" "register_place" {
 resource "aws_iam_role_policy_attachment" "register_place" {
   role       = aws_iam_role.register_place.name
   policy_arn = aws_iam_policy.register_place.arn
+}
+
+# =============================================================================
+# register_consent — role + policy + attachment.
+# users UpdateItem only + kms + logs.
+# =============================================================================
+resource "aws_iam_role" "register_consent" {
+  name               = "${local.name_prefix}-register-consent-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+data "aws_iam_policy_document" "register_consent" {
+  statement {
+    sid    = "Logs"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = [
+      aws_cloudwatch_log_group.register_consent.arn,
+      "${aws_cloudwatch_log_group.register_consent.arn}:*",
+    ]
+  }
+
+  statement {
+    sid       = "UsersConsentWrite"
+    effect    = "Allow"
+    actions   = ["dynamodb:UpdateItem"]
+    resources = [var.users_table_arn]
+  }
+
+  statement {
+    sid       = "KmsDataKey"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = [var.kms_key_arn]
+  }
+}
+
+resource "aws_iam_policy" "register_consent" {
+  name   = "${local.name_prefix}-register-consent-policy"
+  policy = data.aws_iam_policy_document.register_consent.json
+}
+
+resource "aws_iam_role_policy_attachment" "register_consent" {
+  role       = aws_iam_role.register_consent.name
+  policy_arn = aws_iam_policy.register_consent.arn
 }
 
 resource "aws_iam_role" "delete_my_data" {
@@ -869,6 +929,7 @@ data "aws_iam_policy_document" "agent" {
       aws_lambda_function.join_incident.arn,
       aws_lambda_function.get_status.arn,
       aws_lambda_function.register_place.arn,
+      aws_lambda_function.register_consent.arn,
       aws_lambda_function.route.arn,
       aws_lambda_function.escalate.arn,
       aws_lambda_function.delete_my_data.arn,
@@ -999,6 +1060,29 @@ resource "aws_lambda_function" "register_place" {
   depends_on = [
     aws_cloudwatch_log_group.register_place,
     aws_iam_role_policy_attachment.register_place,
+  ]
+}
+
+resource "aws_lambda_function" "register_consent" {
+  function_name    = "${local.name_prefix}-register-consent"
+  role             = aws_iam_role.register_consent.arn
+  runtime          = "python3.12"
+  handler          = "handler.lambda_handler"
+  filename         = data.archive_file.register_consent.output_path
+  source_code_hash = data.archive_file.register_consent.output_base64sha256
+  timeout          = 30
+  memory_size      = 256
+
+  environment {
+    variables = {
+      USERS_TABLE = var.users_table_name
+      LOG_LEVEL   = var.log_level
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.register_consent,
+    aws_iam_role_policy_attachment.register_consent,
   ]
 }
 
@@ -1133,6 +1217,7 @@ resource "aws_lambda_function" "agent" {
       TOOL_GET_STATUS_FN            = aws_lambda_function.get_status.function_name
       TOOL_FOLLOW_UP_FN             = var.follow_up_function_name
       TOOL_REGISTER_PLACE_FN        = aws_lambda_function.register_place.function_name
+      TOOL_REGISTER_CONSENT_FN      = aws_lambda_function.register_consent.function_name
       TOOL_ROUTE_FN                 = aws_lambda_function.route.function_name
       TOOL_ESCALATE_FN              = aws_lambda_function.escalate.function_name
       TOOL_DELETE_MY_DATA_FN        = aws_lambda_function.delete_my_data.function_name
@@ -1292,6 +1377,7 @@ data "aws_iam_policy_document" "agentcore_exec" {
       aws_lambda_function.join_incident.arn,
       aws_lambda_function.get_status.arn,
       aws_lambda_function.register_place.arn,
+      aws_lambda_function.register_consent.arn,
       aws_lambda_function.route.arn,
       aws_lambda_function.escalate.arn,
     ]

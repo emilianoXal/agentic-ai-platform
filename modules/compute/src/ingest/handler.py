@@ -16,7 +16,6 @@ import logging
 import os
 import re
 import time
-import unicodedata
 from datetime import datetime, timezone
 
 import boto3
@@ -249,64 +248,6 @@ def _already_processed(message_id):
         raise
 
 
-# Accepted opt-in confirmation phrases (RF-38). Inbound text is normalized
-# (trimmed, accent-stripped, uppercased, whitespace-collapsed, outer punctuation
-# removed) and must EXACTLY match one of these -- substring matches are rejected
-# so "I accept that it's broken" does NOT grant consent. "SI ACEPTO" also covers
-# "SÍ ACEPTO" and "SI" covers "SÍ" after accent-stripping.
-_CONSENT_PHRASES = frozenset(
-    {
-        "I ACCEPT",
-        "YES I ACCEPT",
-        "ACCEPT",
-        "I AGREE",
-        "YES",
-        "SI ACEPTO",
-        "ACEPTO",
-        "SI",
-    }
-)
-
-
-def _normalize_consent_text(text):
-    """Normalize inbound text for exact consent-phrase matching."""
-    if text is None:
-        return ""
-    s = unicodedata.normalize("NFKD", str(text))
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = s.strip().upper()
-    s = re.sub(r"\s+", " ", s)
-    s = s.strip(".,;:!?\"'()[]{}-¡¿")
-    return s.strip()
-
-
-def _is_consent_phrase(text):
-    """True when the normalized inbound text is an opt-in confirmation."""
-    return _normalize_consent_text(text) in _CONSENT_PHRASES
-
-
-def _grant_consent(user_id):
-    """Persist opt-in consent (RF-38): set consent=true and consent_at.
-
-    Never raises -- on a DynamoDB failure it logs a masked warning and returns
-    so the inbound message is still enqueued.
-    """
-    if not user_id:
-        return
-    try:
-        _ddb.update_item(
-            TableName=USERS_TABLE,
-            Key={"user_id": {"S": str(user_id)}},
-            UpdateExpression="SET consent = :true, consent_at = :now",
-            ExpressionAttributeValues={
-                ":true": {"BOOL": True},
-                ":now": {"S": _now_iso()},
-            },
-        )
-    except (BotoCoreError, ClientError):
-        _log(logging.WARNING, "consent_write_failed", user=_mask_phone(user_id))
-
-
 def _check_consent(user_id):
     """Consent / opt-in (RF-38). Returns True if consent is granted.
 
@@ -434,21 +375,7 @@ def _process_item(item):
 
     # Persist consent deterministically on the same turn the citizen opts in, so
     # a brand-new user's first "I ACCEPT" is already consented and enqueues
-    # consent_pending=false (activating memory immediately). Never logs raw text.
     consent_granted = _check_consent(user_id)
-    if (
-        not consent_granted
-        and item.get("type") in ("text", "caption")
-        and _is_consent_phrase(safe_text)
-    ):
-        _grant_consent(user_id)
-        consent_granted = True
-        _log(
-            logging.INFO,
-            "consent_granted",
-            user=_mask_phone(user_id),
-            user_hash=_hash_id(user_id),
-        )
 
     rate_limited = _check_rate_limit(user_id)
     media_dropped = None

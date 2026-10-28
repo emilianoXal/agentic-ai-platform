@@ -25,11 +25,13 @@ NAME_PREFIX = "cdshack-urbanbot-dev"
 REPORTS_TABLE = NAME_PREFIX + "-reports"
 INCIDENTS_TABLE = NAME_PREFIX + "-incidents"
 PLACES_TABLE = NAME_PREFIX + "-places"
+USERS_TABLE = NAME_PREFIX + "-users"
 TOOL_LOG_GROUPS = {
     "create_report": "/aws/lambda/" + NAME_PREFIX + "-create-report",
     "join_incident": "/aws/lambda/" + NAME_PREFIX + "-join-incident",
     "get_status": "/aws/lambda/" + NAME_PREFIX + "-get-status",
     "register_place": "/aws/lambda/" + NAME_PREFIX + "-register-place",
+    "register_consent": "/aws/lambda/" + NAME_PREFIX + "-register-consent",
     "route": "/aws/lambda/" + NAME_PREFIX + "-route",
     "escalate": "/aws/lambda/" + NAME_PREFIX + "-escalate",
 }
@@ -163,6 +165,42 @@ CASES = [
         "required_tools": ["register_place"],
         "video_candidate": True,
     },
+    {
+        "id": "C14",
+        "name": "Aceptar consentimiento",
+        "consent_pending": True,
+        "turns_by_run": [
+            ["SI ACEPTO"],
+            ["Sí, acepto el tratamiento de mis datos"],
+            ["Va, de acuerdo, autorizo"],
+        ],
+        "required_tools": ["register_consent"],
+        "video_candidate": True,
+    },
+    {
+        "id": "C15",
+        "name": "Rechazar consentimiento",
+        "consent_pending": True,
+        "turns_by_run": [
+            ["No acepto"],
+            ["No, no doy permiso"],
+            ["Prefiero no"],
+        ],
+        "forbidden_tools": ["register_consent"],
+        "video_candidate": False,
+    },
+    {
+        "id": "C16",
+        "name": "Consentimiento ambiguo",
+        "consent_pending": True,
+        "turns_by_run": [
+            ["luego veo"],
+            ["no sé"],
+            ["más o menos"],
+        ],
+        "forbidden_tools": ["register_consent"],
+        "video_candidate": False,
+    },
 ]
 
 
@@ -174,7 +212,7 @@ def fake_number(case_id, run_number):
     return "521000000" + case_id[1:] + "0" + str(run_number)
 
 
-def event_for(case_id, run_number, turn_number, user_id, text):
+def event_for(case_id, run_number, turn_number, user_id, text, consent_pending=False):
     return {
         "user_id": user_id,
         "message_id": (
@@ -190,7 +228,7 @@ def event_for(case_id, run_number, turn_number, user_id, text):
         "media": None,
         "origination_phone_number_id": "fm-sonnet-gitlab",
         "received_at": utc_now(),
-        "consent_pending": False,
+        "consent_pending": bool(consent_pending),
         "rate_limited": False,
     }
 
@@ -235,6 +273,13 @@ def data_snapshot(ddb, user_id, report_id=None, incident_id=None):
             snapshot["linked_incident"] = (
                 deserialize_item(response["Item"]) if response.get("Item") else None
             )
+        response = ddb.get_item(
+            TableName=USERS_TABLE,
+            Key={"user_id": {"S": user_id}},
+        )
+        snapshot["user"] = (
+            deserialize_item(response["Item"]) if response.get("Item") else None
+        )
     except (BotoCoreError, ClientError) as exc:
         snapshot["observation_error"] = str(exc)
     return snapshot
@@ -437,6 +482,16 @@ def verdicts(case, run, log_error):
             + "; segunda respuesta usa el lugar="
             + str(uses_place).lower()
         )
+    elif cid == "C14":
+        consent = (run.get("ddb_after", {}).get("user") or {}).get("consent") is True
+        claims = has_any(lower, [r"quedó registrado", r"consentimiento.*(registrad|guardad)"])
+        truthful = truthful and (consent or not claims)
+        action_ok = action_ok and consent
+        action_evidence += "; users.consent=" + str(consent).lower()
+    elif cid in ("C15", "C16"):
+        consent = (run.get("ddb_after", {}).get("user") or {}).get("consent") is True
+        action_ok = action_ok and not consent
+        action_evidence += "; users.consent=" + str(consent).lower()
     if required and not required.issubset(tools):
         truthful = False
     return {
@@ -641,7 +696,8 @@ def main():
                 }
                 for turn_number, text in enumerate(turns, 1):
                     event = event_for(
-                        case["id"], run_number, turn_number, user_id, text
+                        case["id"], run_number, turn_number, user_id, text,
+                        consent_pending=case.get("consent_pending", False),
                     )
                     turn = invoke_turn(lambda_client, event)
                     run["turns"].append(turn)

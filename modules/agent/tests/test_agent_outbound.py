@@ -261,6 +261,7 @@ class _AllToolsAgent(_Agent):
         handler.create_report(category="bacheo", geohash="9g3qrbc", description="bache")
         handler.join_incident(incident_id="inc-1", category="bacheo", geohash="9g3qrbc")
         handler.get_status()
+        handler.register_consent()
         handler.register_place(alias="casa", geohash="9g3qrbc")
         return _Result()
 
@@ -270,6 +271,7 @@ class SenderIdentityInjectionTests(unittest.TestCase):
         "TOOL_CREATE_REPORT_FN": "create-report",
         "TOOL_JOIN_INCIDENT_FN": "join-incident",
         "TOOL_GET_STATUS_FN": "get-status",
+        "TOOL_REGISTER_CONSENT_FN": "register-consent",
         "TOOL_REGISTER_PLACE_FN": "register-place",
     }
 
@@ -300,13 +302,14 @@ class SenderIdentityInjectionTests(unittest.TestCase):
         )
         self.assertEqual(
             [body["user_id"] for _, body in payloads],
-            [SENDER] * 4 + [OTHER_SENDER] * 4,
+            [SENDER] * 5 + [OTHER_SENDER] * 5,
         )
         self.assertEqual(handler._turn, {})
 
     def test_model_never_sees_user_id(self):
         for tool_fn in (handler.create_report, handler.join_incident,
-                        handler.get_status, handler.register_place):
+                        handler.get_status, handler.register_consent,
+                        handler.register_place):
             self.assertNotIn("user_id", inspect.signature(tool_fn).parameters)
         handler.lambda_handler({"user_id": SENDER, "text": "hola"}, None)
         self.assertNotIn(SENDER, _AllToolsAgent.prompts[0])

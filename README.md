@@ -33,20 +33,20 @@ backend through AppSync. Status changes emit EventBridge events to the notifier.
 ### CDS runtime call status
 
 The inbound integration is implemented in
-[`modules/compute/src/ingest/handler.py:135`](modules/compute/src/ingest/handler.py#L135)
+[`modules/compute/src/ingest/handler.py:141`](modules/compute/src/ingest/handler.py#L141)
 and invokes the queue at
-[`modules/compute/src/ingest/handler.py:342`](modules/compute/src/ingest/handler.py#L342).
+[`modules/compute/src/ingest/handler.py:414`](modules/compute/src/ingest/handler.py#L414).
 The agent creates its Bedrock model at
-[`modules/agent/src/agent/handler.py:401`](modules/agent/src/agent/handler.py#L401)
+[`modules/agent/src/agent/handler.py:511`](modules/agent/src/agent/handler.py#L511)
 and runs it at
-[`modules/agent/src/agent/handler.py:424`](modules/agent/src/agent/handler.py#L424).
+[`modules/agent/src/agent/handler.py:536`](modules/agent/src/agent/handler.py#L536).
 
 There is currently **no runtime import or call** to the CDS End User Messaging
 Social `SendWhatsAppMessage` client. The notifier’s outbound portion is a
 planned stub at
 [`modules/compute/src/notifier/handler.py:207`](modules/compute/src/notifier/handler.py#L207),
 and the agent returns its reply without an outbound handoff at
-[`modules/agent/src/agent/handler.py:435`](modules/agent/src/agent/handler.py#L435).
+[`modules/agent/src/agent/handler.py:548`](modules/agent/src/agent/handler.py#L548).
 Accordingly, this repository does not claim outbound WhatsApp delivery as a
 working feature. AgentCore Gateway and Memory are also feature-flagged and off
 in dev.

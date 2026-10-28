@@ -156,14 +156,22 @@ def lambda_handler(event, context):
         )
     except (ClientError, BotoCoreError) as exc:
         error_code = None
+        error_message = None
         if isinstance(exc, ClientError):
-            error_code = exc.response.get("Error", {}).get("Code")
+            err = exc.response.get("Error", {})
+            error_code = err.get("Code")
+            # The EUM Error.Message explains WHICH parameter is invalid (e.g.
+            # "Invalid message version", "Failed to parse WhatsApp message
+            # request"). It's an AWS validation string, not user PII, so it is
+            # safe to log and is essential for diagnosing InvalidParametersException.
+            error_message = err.get("Message")
         _log(
             logging.ERROR,
             "send_failed",
             recipient=_mask_phone(to),
             origination_id=origination_id,
             error_code=error_code,
+            error_message=error_message,
         )
         return {"ok": False, "error": "send_failed"}
     except Exception:  # noqa: BLE001 - never let an exception escape the handler

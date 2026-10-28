@@ -263,3 +263,50 @@ dashboard:deploy:
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: manual
+
+# =============================================================================
+# Bedrock smoke test — comprueba la invocacion real del modelo del agente
+# (T-0011: "comprobar invocacion Bedrock"). Invoca el inference profile Sonnet
+# que usa la Lambda del agente (modules/agent) con un prompt trivial en espanol
+# y verifica que Bedrock responde con texto. Manual y solo en main, despues de
+# terraform:apply, para validar end-to-end que el acceso a Bedrock + el perfil
+# de inferencia + la politica de gobierno permiten la invocacion.
+#
+# El modelo es el mismo que usa el agente: var.bedrock_model_id en el modulo
+# agent (anthropic.claude-3-5-sonnet-20241022-v2:0) a traves del perfil us.*.
+# Si se cambia el modelo del agente, actualizar BEDROCK_PROFILE_ID aqui.
+# =============================================================================
+bedrock:smoke:
+  <<: *aws_auth
+  stage: tf_apply
+  image:
+    name: hashicorp/terraform:${TF_VERSION}
+    entrypoint: [""]
+  variables:
+    # Perfil de inferencia que invoca el agente (prefijo us.* permitido por la
+    # politica de gobierno). Debe coincidir con modules/agent (var.bedrock_model_id).
+    BEDROCK_PROFILE_ID: "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+  before_script:
+    - apk add --no-cache aws-cli jq
+    - !reference [.aws_auth, before_script]
+  script:
+    - echo "Invocando ${BEDROCK_PROFILE_ID} via bedrock-runtime converse..."
+    - |
+      aws bedrock-runtime converse \
+        --model-id "${BEDROCK_PROFILE_ID}" \
+        --region "${AWS_DEFAULT_REGION}" \
+        --messages '[{"role":"user","content":[{"text":"Responde solo con la palabra: listo"}]}]' \
+        --inference-config '{"maxTokens":16,"temperature":0}' \
+        > converse.json
+    - echo "Respuesta cruda:" && cat converse.json
+    - |
+      REPLY=$(jq -r '.output.message.content[0].text // empty' converse.json)
+      STOP=$(jq -r '.stopReason // empty' converse.json)
+      if [ -z "$REPLY" ]; then
+        echo "FALLO: Bedrock no devolvio texto (stopReason=${STOP})."
+        exit 1
+      fi
+      echo "OK: Bedrock respondio -> '${REPLY}' (stopReason=${STOP})"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual

@@ -126,6 +126,7 @@ def run_with_reply(user, snapshot, reply):
     (None, "Entendido, lo reabrí para que la dependencia regrese."),
     ("confirm", "Gracias, lo reabrí para revisarlo."),
     ("reopen", "Perfecto, quedó resuelto tu reporte."),
+    (None, "Registré tu confirmación, gracias."),
 ])
 def test_false_decision_claim_fails_veracity_even_when_state_is_right(database, decision, reply):
     ddb, tool = database
@@ -139,6 +140,27 @@ def test_false_decision_claim_fails_veracity_even_when_state_is_right(database, 
     verdict = matrix.verdicts(case, run_with_reply(user, after, reply), None)
     assert verdict["accion_correcta"]["pass"] is (decision is None)
     assert verdict["veracidad"]["pass"] is False
+
+
+@pytest.mark.parametrize("decision,reply", [
+    ("reopen", "Nos dijeron que quedó resuelto, pero como sigue tirando agua lo reabrí."),
+    (None, "La dependencia nos informó que quedó resuelto. Cuéntame si ya funciona."),
+    (None, "Tu reporte quedó resuelto según la dependencia; dime si sigue la fuga."),
+    ("confirm", "Gracias, confirmé que quedó resuelto."),
+])
+def test_true_historic_or_current_resolution_keeps_veracity(database, decision, reply):
+    ddb, tool = database
+    case = next(case for case in matrix.CASES if case.get("follow_up") and case["expected_decision"] == decision)
+    user = matrix.fake_number(case["id"], 1)
+    ids = matrix.seed_follow_up(ddb, case, 1, user, "true-claim", [])
+    before = matrix.data_snapshot(ddb, user, **ids)
+    if decision:
+        pending = tool.lambda_handler({"action": "pending", "user_id": user}, None)["pending"]
+        tool.lambda_handler({"action": "respond", "user_id": user, **pending[0], "decision": decision}, None)
+    run = dict(run_with_reply(user, matrix.data_snapshot(ddb, user, **ids), reply), ddb_before=before)
+    verdict = matrix.verdicts(case, run, None)
+    assert verdict["accion_correcta"]["pass"] is True
+    assert verdict["veracidad"]["pass"] is True
 
 
 def test_question_about_decision_is_not_a_claim(database):

@@ -311,7 +311,7 @@ bedrock:smoke:
         --model-id "${BEDROCK_PROFILE_ID}" \
         --region "${AWS_DEFAULT_REGION}" \
         --messages '[{"role":"user","content":[{"text":"Responde solo con la palabra: listo"}]}]' \
-        --inference-config '{"maxTokens":16,"temperature":0}' \
+        --inference-config '{"maxTokens":16}' \
         > converse.json
     - echo "Respuesta cruda:" && cat converse.json
     - |

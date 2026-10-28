@@ -17,8 +17,10 @@
 # =============================================================================
 stages:
   - tf_validate
+  - app_build
   - tf_plan
   - tf_apply
+  - app_deploy
 
 variables:
   GIT_STRATEGY: "clone"
@@ -107,6 +109,8 @@ terraform:plan:
       # Mismo motivo: los ZIPs del modulo agent (seis tools + consumer) los
       # genera archive_file durante el plan en modules/agent/build/.
       - ${CI_PROJECT_DIR}/modules/agent/build/
+      # Y los del modulo portal (dashboard_api + stream_publisher).
+      - ${CI_PROJECT_DIR}/modules/portal/build/
     expire_in: 1 hour
   dependencies:
     - terraform:validate
@@ -125,9 +129,10 @@ terraform:apply:
   when: manual
   allow_failure: false
   rules:
+    # Los despliegues solo se hacen desde main.
     - if: '$TF_DESTROY == "true"'
       when: never
-    - if: '$CI_COMMIT_BRANCH =~ /^(main|feat\/.*|fix\/.*|hotfix\/.*|release\/.*)$/'
+    - if: '$CI_COMMIT_BRANCH == "main"'
       when: manual
 
 terraform:destroy:
@@ -139,7 +144,7 @@ terraform:destroy:
   when: manual
   allow_failure: false
   rules:
-    - if: '$TF_DESTROY == "true" && $CI_COMMIT_BRANCH =~ /^(main|feat\/.*|fix\/.*|hotfix\/.*|release\/.*)$/'
+    - if: '$TF_DESTROY == "true" && $CI_COMMIT_BRANCH == "main"'
       when: manual
 
 # =============================================================================
@@ -173,4 +178,88 @@ terraform:untaint:
   allow_failure: false
   rules:
     - if: '$TF_UNTAINT_TARGET != null && $TF_UNTAINT_TARGET != ""'
+      when: manual
+
+# =============================================================================
+# Dashboard (apps/dashboard) — Angular officials' dashboard.
+#
+# dashboard:build corre en MRs y ramas: tests unitarios + build de produccion.
+# dashboard:deploy es manual y SOLO en main, despues de terraform:apply:
+#   1. Lee los outputs de Terraform del entorno (Cognito, AppSync, Amplify).
+#   2. Obtiene el valor de la API key de Amazon Location (geo:DescribeKey).
+#   3. Escribe config.json en el build y lo sube como zip a Amplify Hosting.
+# =============================================================================
+dashboard:build:
+  stage: app_build
+  image: node:22-alpine
+  variables:
+    APP_DIR: "${CI_PROJECT_DIR}/apps/dashboard"
+  cache:
+    key:
+      files:
+        - apps/dashboard/package-lock.json
+    paths:
+      - apps/dashboard/.npm/
+  script:
+    - cd "${APP_DIR}"
+    - npm ci --cache .npm --prefer-offline
+    - npx ng test --watch=false
+    - npx ng build
+  artifacts:
+    paths:
+      - apps/dashboard/dist/dashboard/browser/
+    expire_in: 1 day
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - apps/dashboard/**/*
+    - if: '$CI_COMMIT_BRANCH'
+      changes:
+        - apps/dashboard/**/*
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+dashboard:deploy:
+  extends: .terraform_base
+  stage: app_deploy
+  dependencies:
+    - dashboard:build
+  script:
+    - apk add --no-cache zip curl
+    - cd "${TF_ROOT}"
+    - OUT=$(terraform output -json)
+    - APP_ID=$(echo "$OUT" | jq -r '.portal_dashboard_app_id.value')
+    - BRANCH=$(echo "$OUT" | jq -r '.portal_dashboard_branch_name.value')
+    - KEY_NAME=$(echo "$OUT" | jq -r '.portal_maps_api_key_name.value')
+    - MAPS_KEY=$(aws location describe-key --key-name "$KEY_NAME" --query Key --output text)
+    - |
+      jq -n \
+        --arg region "${AWS_DEFAULT_REGION}" \
+        --arg pool "$(echo "$OUT" | jq -r '.portal_user_pool_id.value')" \
+        --arg client "$(echo "$OUT" | jq -r '.portal_user_pool_client_id.value')" \
+        --arg url "$(echo "$OUT" | jq -r '.portal_graphql_url.value')" \
+        --arg key "$MAPS_KEY" \
+        '{dataSource: "appsync", region: $region, userPoolId: $pool, userPoolClientId: $client,
+          graphqlUrl: $url, mapsApiKey: $key,
+          defaultCenter: {lat: 20.5931, lng: -100.3921}, defaultCenterLabel: "Querétaro"}' \
+        > "${CI_PROJECT_DIR}/apps/dashboard/dist/dashboard/browser/config.json"
+    - cd "${CI_PROJECT_DIR}/apps/dashboard/dist/dashboard/browser" && zip -qr "${CI_PROJECT_DIR}/dashboard.zip" .
+    - DEPLOY=$(aws amplify create-deployment --app-id "$APP_ID" --branch-name "$BRANCH")
+    - JOB_ID=$(echo "$DEPLOY" | jq -r '.jobId')
+    - curl --fail --silent --show-error -T "${CI_PROJECT_DIR}/dashboard.zip" "$(echo "$DEPLOY" | jq -r '.zipUploadUrl')"
+    - aws amplify start-deployment --app-id "$APP_ID" --branch-name "$BRANCH" --job-id "$JOB_ID"
+    - |
+      for i in $(seq 1 60); do
+        STATUS=$(aws amplify get-job --app-id "$APP_ID" --branch-name "$BRANCH" --job-id "$JOB_ID" --query 'job.summary.status' --output text)
+        echo "Amplify job ${JOB_ID}: ${STATUS}"
+        case "$STATUS" in
+          SUCCEED) break ;;
+          FAILED|CANCELLED) exit 1 ;;
+        esac
+        sleep 5
+      done
+    - echo "Dashboard -> $(cd "${TF_ROOT}" && terraform output -raw portal_dashboard_url)"
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
       when: manual

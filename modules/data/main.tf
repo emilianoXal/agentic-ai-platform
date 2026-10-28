@@ -1,5 +1,15 @@
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+data "aws_partition" "current" {}
+
 locals {
   name_prefix = "cdshack-urbanbot-${var.environment}"
+  account_id  = data.aws_caller_identity.current.account_id
+  region      = data.aws_region.current.name
+  partition   = data.aws_partition.current.partition
+
+  social_messaging_waba_arn   = "arn:${local.partition}:social-messaging:${local.region}:${local.account_id}:waba/*"
+  social_messaging_source_arn = "arn:${local.partition}:social-messaging:${local.region}:${local.account_id}:*"
 }
 
 # =============================================================================
@@ -14,6 +24,44 @@ resource "aws_kms_key" "this" {
 resource "aws_kms_alias" "this" {
   name          = "alias/${local.name_prefix}-data-encryption"
   target_key_id = aws_kms_key.this.key_id
+}
+
+resource "aws_kms_key_policy" "this" {
+  key_id = aws_kms_key.this.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EnableIAMUserPermissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:${local.partition}:iam::${local.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowSocialMessagingUseOfKey"
+        Effect = "Allow"
+        Principal = {
+          Service = "social-messaging.amazonaws.com"
+        }
+        Action = [
+          "kms:GenerateDataKey*",
+          "kms:Decrypt",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = local.account_id
+          }
+          ArnLike = {
+            "aws:SourceArn" = local.social_messaging_source_arn
+          }
+        }
+      },
+    ]
+  })
 }
 
 # =============================================================================
@@ -238,6 +286,55 @@ resource "aws_dynamodb_table" "audit_log" {
 resource "aws_sns_topic" "inbound" {
   name              = "${local.name_prefix}-inbound"
   kms_master_key_id = aws_kms_key.this.arn
+}
+
+resource "aws_sns_topic_policy" "inbound" {
+  arn = aws_sns_topic.inbound.arn
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowAccountOwner"
+        Effect = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action = [
+          "SNS:GetTopicAttributes",
+          "SNS:SetTopicAttributes",
+          "SNS:AddPermission",
+          "SNS:RemovePermission",
+          "SNS:DeleteTopic",
+          "SNS:Subscribe",
+          "SNS:ListSubscriptionsByTopic",
+          "SNS:Publish",
+        ]
+        Resource = aws_sns_topic.inbound.arn
+        Condition = {
+          StringEquals = {
+            "AWS:SourceOwner" = local.account_id
+          }
+        }
+      },
+      {
+        Sid    = "AllowSocialMessagingPublish"
+        Effect = "Allow"
+        Principal = {
+          Service = "social-messaging.amazonaws.com"
+        }
+        Action   = "sns:Publish"
+        Resource = aws_sns_topic.inbound.arn
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = local.account_id
+          }
+          ArnLike = {
+            "aws:SourceArn" = local.social_messaging_waba_arn
+          }
+        }
+      },
+    ]
+  })
 }
 
 # =============================================================================

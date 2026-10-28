@@ -119,11 +119,18 @@ class _MemoryClient:
         self._append(key, {"blob": json.dumps({"agent_id": "default"})})
 
 
+class _PersistenceMode:
+    FULL = "FULL"
+    NONE = "NONE"
+
+
 class _MemoryConfig:
-    def __init__(self, memory_id, actor_id, session_id):
+    def __init__(self, memory_id, actor_id, session_id,
+                 persistence_mode=_PersistenceMode.FULL):
         self.memory_id = memory_id
         self.actor_id = actor_id
         self.session_id = session_id
+        self.persistence_mode = persistence_mode
 
 
 class _SessionManager:
@@ -149,10 +156,12 @@ class _SessionManager:
         )
 
     def append_message(self, message):
-        self.memory_client.create_message_event(self._key, message)
+        if self.config.persistence_mode != _PersistenceMode.NONE:
+            self.memory_client.create_message_event(self._key, message)
 
     def sync_agent(self):
-        self.memory_client.create_state_event(self._key)
+        if self.config.persistence_mode != _PersistenceMode.NONE:
+            self.memory_client.create_state_event(self._key)
 
     def __enter__(self):
         return self
@@ -213,6 +222,7 @@ def _agentcore_modules():
         "bedrock_agentcore.memory.integrations.strands.config",
     )
     config_module.AgentCoreMemoryConfig = _MemoryConfig
+    config_module.PersistenceMode = _PersistenceMode
     manager_module = types.ModuleType(
         "bedrock_agentcore.memory.integrations.strands.session_manager",
     )
@@ -326,6 +336,19 @@ class AgentMemorySessionTests(unittest.TestCase):
 
         later = self._invoke_with_memory(citizen, "Acepto")
         self.assertNotIn("Hay un bache", later["reply"])
+
+    def test_deletion_confirmation_turn_restores_history_but_persists_nothing(self):
+        citizen = "5215512345678"
+        self._invoke_with_memory(citizen, "Quiero borrar mis datos")
+        events_before = list(_SessionManager.memory_client.events.values())[0][:]
+
+        confirmed = self._invoke_with_memory(citizen, "CONFIRMO BORRAR MIS DATOS")
+
+        self.assertTrue(confirmed["ok"])
+        self.assertEqual(self._last_model_roles(), ["user", "assistant", "user"])
+        self.assertEqual(
+            list(_SessionManager.memory_client.events.values())[0], events_before,
+        )
 
     def test_answered_history_is_kept_intact(self):
         citizen = "5215512345678"

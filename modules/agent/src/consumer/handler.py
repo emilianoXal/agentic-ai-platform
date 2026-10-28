@@ -22,6 +22,7 @@ import re
 from datetime import datetime, timezone
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 # --- Config from environment -------------------------------------------------
@@ -37,6 +38,13 @@ RETRIABLE_AGENT_ERRORS = {"bedrock_throttled", "internal"}
 # --- Clients created at module load (reused across warm invocations) ---------
 _ddb = boto3.client("dynamodb")
 _lambda = boto3.client("lambda")
+# One SQS delivery must produce exactly one agent turn: the read timeout outlasts
+# the agent's 90 s function timeout and botocore never re-sends the Invoke, so a
+# slow turn cannot overlap a retry that writes to the same memory session.
+_agent_lambda = boto3.client(
+    "lambda",
+    config=Config(read_timeout=110, retries={"total_max_attempts": 1}),
+)
 
 # --- Structured JSON-line logger (PII-masking; mirrors compute/ingest) -------
 logger = logging.getLogger()
@@ -113,7 +121,7 @@ def _process_record(record):
 
     # Synchronously invoke the agent with the FULL parsed msg (Decision 2 shape:
     # do not reconstruct field-by-field, so no field is silently dropped).
-    resp = _lambda.invoke(
+    resp = _agent_lambda.invoke(
         FunctionName=AGENT_FUNCTION_NAME,
         InvocationType="RequestResponse",
         Payload=json.dumps(msg).encode(),

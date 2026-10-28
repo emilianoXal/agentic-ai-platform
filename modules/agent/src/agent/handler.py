@@ -334,7 +334,7 @@ def escalate(incident_id: str, reason: str = None, user_ids: list = None) -> dic
 
 @tool
 def delete_my_data() -> dict:
-    """Borra los datos personales del ciudadano y anonimiza sus reportes.
+    """Borra datos personales e historial de conversacion; anonimiza reportes.
 
     Solo debe llamarse cuando el mensaje actual del ciudadano sea exactamente
     la frase de confirmacion que le pediste en el turno anterior. El sujeto del
@@ -382,7 +382,8 @@ _SYSTEM_PROMPT = (
     "datos personales y lugares se eliminaran, que sus reportes se conservaran "
     "anonimizados, y pide que responda exactamente CONFIRMO BORRAR MIS DATOS en "
     "su siguiente mensaje. Llama delete_my_data solo cuando el mensaje actual "
-    "sea esa frase. Responde corto, claro y en "
+    "sea esa frase; si devuelve ok falso, di que el borrado no se completo. "
+    "Responde corto, claro y en "
     "espanol de Mexico."
 )
 
@@ -509,6 +510,7 @@ def _agent_for_citizen(model, user_id, consent_pending):
 
     from bedrock_agentcore.memory.integrations.strands.config import (
         AgentCoreMemoryConfig,
+        PersistenceMode,
     )
     from bedrock_agentcore.memory.integrations.strands.session_manager import (
         AgentCoreMemorySessionManager,
@@ -519,6 +521,9 @@ def _agent_for_citizen(model, user_id, consent_pending):
         memory_id=AGENTCORE_MEMORY_ID,
         actor_id=f"citizen-{citizen_key}",
         session_id=f"conversation-{citizen_key}",
+        persistence_mode=(PersistenceMode.NONE
+                          if _is_deletion_confirmation(_turn.get("text"))
+                          else PersistenceMode.FULL),
     )
     with AgentCoreMemorySessionManager(
         agentcore_memory_config=memory_config,

@@ -475,6 +475,33 @@ data "aws_iam_policy_document" "delete_my_data" {
     actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
     resources = [var.kms_key_arn]
   }
+
+  dynamic "statement" {
+    for_each = var.enable_agentcore_memory ? [1] : []
+
+    content {
+      sid    = "AgentCoreMemoryErase"
+      effect = "Allow"
+      actions = [
+        "bedrock-agentcore:ListEvents",
+        "bedrock-agentcore:DeleteEvent",
+        "bedrock-agentcore:ListMemoryRecords",
+        "bedrock-agentcore:BatchDeleteMemoryRecords",
+      ]
+      resources = [one(awscc_bedrockagentcore_memory.this[*].memory_arn)]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_agentcore_memory ? [1] : []
+
+    content {
+      sid       = "AgentCoreMemoryIdentityKey"
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [one(aws_secretsmanager_secret.agentcore_identity[*].arn)]
+    }
+  }
 }
 
 resource "aws_iam_policy" "delete_my_data" {
@@ -938,13 +965,15 @@ resource "aws_lambda_function" "delete_my_data" {
 
   environment {
     variables = {
-      USERS_TABLE        = var.users_table_name
-      PLACES_TABLE       = var.places_table_name
-      REPORTS_TABLE      = var.reports_table_name
-      REPORTS_USER_INDEX = "by-user"
-      INCIDENTS_TABLE    = var.incidents_table_name
-      AUDIT_TABLE        = var.audit_log_table_name
-      LOG_LEVEL          = var.log_level
+      USERS_TABLE                   = var.users_table_name
+      PLACES_TABLE                  = var.places_table_name
+      REPORTS_TABLE                 = var.reports_table_name
+      REPORTS_USER_INDEX            = "by-user"
+      INCIDENTS_TABLE               = var.incidents_table_name
+      AUDIT_TABLE                   = var.audit_log_table_name
+      LOG_LEVEL                     = var.log_level
+      AGENTCORE_MEMORY_ID           = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
+      AGENTCORE_IDENTITY_SECRET_ARN = var.enable_agentcore_memory ? one(aws_secretsmanager_secret.agentcore_identity[*].arn) : ""
     }
   }
 

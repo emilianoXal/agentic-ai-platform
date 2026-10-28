@@ -1,13 +1,14 @@
 """Delete a citizen's personal data while preserving incident reports."""
 
 import hashlib
+import hmac
 import json
 import logging
 import os
 from datetime import datetime, timezone
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 USERS_TABLE = os.environ.get("USERS_TABLE", "")
 PLACES_TABLE = os.environ.get("PLACES_TABLE", "")
@@ -15,9 +16,13 @@ REPORTS_TABLE = os.environ.get("REPORTS_TABLE", "")
 INCIDENTS_TABLE = os.environ.get("INCIDENTS_TABLE", "")
 REPORTS_USER_INDEX = os.environ.get("REPORTS_USER_INDEX", "by-user")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
+AGENTCORE_MEMORY_ID = os.environ.get("AGENTCORE_MEMORY_ID", "")
+AGENTCORE_IDENTITY_SECRET_ARN = os.environ.get("AGENTCORE_IDENTITY_SECRET_ARN", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 _ddb = boto3.client("dynamodb")
+_agentcore = boto3.client("bedrock-agentcore")
+_secrets = boto3.client("secretsmanager")
 
 logger = logging.getLogger()
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
@@ -127,7 +132,66 @@ def _anonymize_reports(user_id):
     return len(reports)
 
 
-def _audit(user_hash, places_deleted, reports_anonymized):
+class _MemoryErasureIncomplete(Exception):
+    pass
+
+
+def _paginate(method, items_key, **kwargs):
+    items = []
+    while True:
+        response = method(**kwargs)
+        items.extend(response.get(items_key, []))
+        token = response.get("nextToken")
+        if not token:
+            return items
+        kwargs["nextToken"] = token
+
+
+def _erase_memory(user_id):
+    """Delete the citizen's AgentCore Memory events and memory records.
+
+    Uses the same HMAC-derived actor/session ids as the agent Lambda.
+    """
+    if not AGENTCORE_MEMORY_ID:
+        return 0, 0
+    secret = _secrets.get_secret_value(SecretId=AGENTCORE_IDENTITY_SECRET_ARN)
+    key = hmac.new(
+        secret["SecretString"].encode("utf-8"), user_id.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    actor_id = f"citizen-{key}"
+    session_id = f"conversation-{key}"
+
+    events = _paginate(
+        _agentcore.list_events, "events",
+        memoryId=AGENTCORE_MEMORY_ID, actorId=actor_id, sessionId=session_id,
+        includePayloads=False,
+    )
+    for event in events:
+        _agentcore.delete_event(
+            memoryId=AGENTCORE_MEMORY_ID, actorId=actor_id,
+            sessionId=session_id, eventId=event["eventId"],
+        )
+
+    records = [
+        record for record in _paginate(
+            _agentcore.list_memory_records, "memoryRecordSummaries",
+            memoryId=AGENTCORE_MEMORY_ID, namespace="/",
+        )
+        if any(key in namespace for namespace in record.get("namespaces", []))
+    ]
+    for start in range(0, len(records), 100):
+        result = _agentcore.batch_delete_memory_records(
+            memoryId=AGENTCORE_MEMORY_ID,
+            records=[{"memoryRecordId": record["memoryRecordId"]}
+                     for record in records[start:start + 100]],
+        )
+        if result.get("failedRecords"):
+            raise _MemoryErasureIncomplete()
+    return len(events), len(records)
+
+
+def _audit(user_hash, places_deleted, reports_anonymized, memory_erased):
     _ddb.put_item(
         TableName=AUDIT_TABLE,
         Item={
@@ -137,6 +201,7 @@ def _audit(user_hash, places_deleted, reports_anonymized):
             "subject_hash": {"S": user_hash},
             "places_deleted": {"N": str(places_deleted)},
             "reports_anonymized": {"N": str(reports_anonymized)},
+            "memory_erased": {"BOOL": memory_erased},
         },
     )
 
@@ -164,18 +229,41 @@ def lambda_handler(event, context):
             TableName=USERS_TABLE,
             Key={"user_id": {"S": user_id}},
         )
-        _audit(user_hash, places_deleted, reports_anonymized)
+        try:
+            memory_events, memory_records = _erase_memory(user_id)
+            memory_erased = True
+        except (ClientError, BotoCoreError, KeyError, _MemoryErasureIncomplete) as exc:
+            memory_erased = False
+            error_code = (exc.response.get("Error", {}).get("Code")
+                          if isinstance(exc, ClientError) else type(exc).__name__)
+            _log(logging.ERROR, "agentcore_memory_erasure_failed",
+                 subject_hash=user_hash, error_code=error_code)
+        _audit(user_hash, places_deleted, reports_anonymized, memory_erased)
+        if not memory_erased:
+            return {
+                "ok": False,
+                "error": "memory_erasure_failed",
+                "places_deleted": places_deleted,
+                "reports_anonymized": reports_anonymized,
+                "message": "Se borraron tus datos personales, pero el historial "
+                           "de conversacion no se pudo borrar todavia. Intenta "
+                           "de nuevo mas tarde.",
+            }
         _log(
             logging.INFO,
             "personal_data_deleted",
             subject_hash=user_hash,
             places_deleted=places_deleted,
             reports_anonymized=reports_anonymized,
+            memory_events_deleted=memory_events,
+            memory_records_deleted=memory_records,
         )
         return {
             "ok": True,
             "places_deleted": places_deleted,
             "reports_anonymized": reports_anonymized,
+            "memory_events_deleted": memory_events,
+            "memory_records_deleted": memory_records,
         }
     except ClientError:
         logger.exception(json.dumps({

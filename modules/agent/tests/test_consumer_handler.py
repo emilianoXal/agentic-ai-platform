@@ -19,6 +19,9 @@ os.environ.update({
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "consumer"))
 
 import handler  # noqa: E402
+from botocore.exceptions import ReadTimeoutError  # noqa: E402
+
+_REAL_AGENT_LAMBDA = handler._agent_lambda
 
 SENDER = "5215512345678"
 TEXT_HOLA = "hola"
@@ -29,9 +32,10 @@ class ConsumerIngestBodyTests(unittest.TestCase):
     def setUp(self):
         handler._ddb = mock.MagicMock()
         handler._lambda = mock.MagicMock()
+        handler._agent_lambda = mock.MagicMock()
         payload = mock.MagicMock()
         payload.read.return_value = b'{"ok": true}'
-        handler._lambda.invoke.return_value = {"Payload": payload}
+        handler._agent_lambda.invoke.return_value = {"Payload": payload}
 
     def test_origination_phone_number_id_is_logged_without_pii(self):
         body = {
@@ -52,6 +56,27 @@ class ConsumerIngestBodyTests(unittest.TestCase):
         self.assertNotIn(SENDER, joined)
         self.assertNotIn(TEXT_HOLA, joined)
         handler._ddb.put_item.assert_called_once()
+
+
+
+class ConsumerAgentInvokeBoundaryTests(unittest.TestCase):
+    def test_agent_invoke_waits_past_agent_timeout_and_is_sent_once(self):
+        client = _REAL_AGENT_LAMBDA
+        attempts = []
+
+        def _slow_agent(request, **kwargs):
+            attempts.append(request)
+            raise ReadTimeoutError(endpoint_url=request.url)
+
+        client.meta.events.register("before-send.lambda.Invoke", _slow_agent)
+        try:
+            with self.assertRaises(ReadTimeoutError):
+                client.invoke(FunctionName="agent", Payload=b"{}")
+        finally:
+            client.meta.events.unregister("before-send.lambda.Invoke", _slow_agent)
+
+        self.assertEqual(len(attempts), 1)
+        self.assertGreater(client.meta.config.read_timeout, 90)
 
 
 if __name__ == "__main__":

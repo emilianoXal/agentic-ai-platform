@@ -14,9 +14,17 @@ to reply `CONFIRMO BORRAR MIS DATOS`; the `delete_my_data` wrapper refuses unles
 by the model. Its isolated Lambda deletes the citizen's user and saved-place
 records, removes the phone from `incidents.subscribers`, removes identity and
 phone attributes from their reports, and leaves incidents and report counts
-intact. The audit table receives only a hashed subject identifier and deletion
-totals. Its IAM role can access only the users, places, reports, audit tables,
-reports `by-user` index, incident subscriber scan and updates, KMS key, and its own logs.
+intact. It also erases the citizen's AgentCore Memory: every event of the same
+HMAC-derived actor/session and any memory record whose namespace carries that
+key. The confirmation turn itself runs with `PersistenceMode.NONE`, so it reads
+history but writes nothing after the purge. If memory erasure cannot complete,
+the tool returns `memory_erasure_failed` and logs only the hashed subject and an
+error code, never claiming full deletion. The audit table receives only a hashed
+subject identifier, deletion totals, and whether memory was erased. Its IAM role
+can access only the users, places, reports, audit tables, reports `by-user`
+index, incident subscriber scan and updates, the memory's
+`ListEvents`/`DeleteEvent`/`ListMemoryRecords`/`BatchDeleteMemoryRecords`, the
+identity secret, the KMS key, and its own logs.
 
 The compute module has two outbound event consumers. `notifier` handles citizen
 notification events for the WhatsApp channel. `dependency-mailer` handles an
@@ -48,5 +56,8 @@ events after 7 days. Before each turn the agent lists the session's raw events,
 decodes them with the session manager's converter, and deletes by `eventId`
 every message event newer than the last final assistant reply, so a retried
 failure or timeout cannot leave an unanswered user/tool turn that breaks role
-alternation. QA and production keep the
+alternation. The consumer invokes the agent with a client whose read timeout
+outlasts the agent's 90 s timeout and that never re-sends `Invoke`, so one SQS
+delivery cannot produce two overlapping turns on the same session. QA and
+production keep the
 integration disabled unless their environment flag is set.

@@ -209,6 +209,19 @@ resource "aws_iam_role" "dashboard_api" {
 
 data "aws_iam_policy_document" "dashboard_api" {
   statement {
+    actions   = ["scheduler:CreateSchedule"]
+    resources = ["arn:aws:scheduler:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:schedule/default/cdshack-*"]
+  }
+  statement {
+    actions   = ["iam:PassRole"]
+    resources = [var.follow_up_scheduler_role_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["scheduler.amazonaws.com"]
+    }
+  }
+  statement {
     sid    = "Tables"
     effect = "Allow"
     actions = [
@@ -390,14 +403,17 @@ resource "aws_lambda_function" "dashboard_api" {
 
   environment {
     variables = {
-      INCIDENTS_TABLE_NAME = var.incidents_table_name
-      REPORTS_TABLE_NAME   = var.reports_table_name
-      AUDIT_TABLE_NAME     = var.audit_log_table_name
-      USERS_TABLE_NAME     = var.users_table_name
-      EVENT_BUS_NAME       = var.events_bus_name
-      ROUTING_RULES_JSON   = var.routing_rules_json
-      FOLLOW_UP_HOURS      = tostring(var.follow_up_hours)
-      LOG_LEVEL            = var.log_level
+      INCIDENTS_TABLE_NAME    = var.incidents_table_name
+      REPORTS_TABLE_NAME      = var.reports_table_name
+      AUDIT_TABLE_NAME        = var.audit_log_table_name
+      USERS_TABLE_NAME        = var.users_table_name
+      EVENT_BUS_NAME          = var.events_bus_name
+      ROUTING_RULES_JSON      = var.routing_rules_json
+      FOLLOW_UP_DELAY_MINUTES = tostring(var.follow_up_delay_minutes)
+      FOLLOW_UP_FUNCTION_ARN  = var.follow_up_function_arn
+      FOLLOW_UP_ROLE_ARN      = var.follow_up_scheduler_role_arn
+      SCHEDULE_NAME_PREFIX    = "${local.name_prefix}-fu-"
+      LOG_LEVEL               = var.log_level
     }
   }
 

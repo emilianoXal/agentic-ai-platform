@@ -97,3 +97,38 @@ Messaging Social's `GetWhatsAppMessageMedia` contract: `mediaId` and
 S3 `bucketName` and key prefix. The service writes `raw/<mediaId>.<ext>`, so the
 download Lambda derives the raw key from the returned `mimeType`. See the [AWS API reference](https://docs.aws.amazon.com/social-messaging/latest/APIReference/API_GetWhatsAppMessageMedia.html)
 and [download guide](https://docs.aws.amazon.com/social-messaging/latest/userguide/receive-message-image.html).
+
+When staff mark an incident resolved, the portal first creates a one-time UTC
+EventBridge Scheduler schedule in the default group (`cdshack-*`, deleted after
+completion). The configurable delay is two minutes in dev and 60 minutes in QA
+and production. Its execution role can invoke only the follow-up Lambda. The portal
+conditionally records the due timestamp and an empty delivery map on the
+incident; a failed write leaves a harmless schedule whose generation check skips
+the send. A later resolution gets a fresh generation, so old schedules and old
+citizen answers cannot affect it.
+
+The follow-up Lambda reads the incident's reports, deduplicates their citizens,
+checks current consent and pause preferences, and synchronously invokes the
+existing outbound Lambda. It adds no WhatsApp client or channel permission.
+Conditional per-citizen reservations on the incident prevent duplicate sends;
+an uncertain channel outcome remains reserved rather than risking another
+message. Only an acknowledged send becomes a pending question; a failure the
+outbound Lambda reports releases the reservation for the Scheduler retry. The
+reservation keys are hashes and contain no new phone attributes; recipient
+identity remains in the existing reports/users records. Delayed free-text WhatsApp messages still
+require an open WhatsApp service conversation window; the demo delay stays short.
+
+Before a consenting agent turn, the agent queries that sender's pending follow-ups
+through the follow-up Lambda. Sonnet interprets free text and calls
+`respond_follow_up` to confirm the resolution or reopen the incident. Ambiguous
+answers request clarification; unrelated messages and injected instructions do
+not authorize changes. The wrapper binds the sender and resolution generation
+outside model arguments, and the Lambda rechecks report ownership and pending
+state before a conditional update. Confirmation retains `resolved`; reopening
+stores the portal's existing `reopened` status and relabels the report rows.
+Both answers append a `citizen_confirmed` or `citizen_reopened` audit entry to
+the incident timeline. The portal shows a follow-up as pending until the
+schedule has run and afterwards only while an acknowledged question awaits an
+answer. No new UI is needed.
+See `docs/oficios/tester.md` for local tests and the deferred post-apply model
+matrix, which runs against the deployed agent with team test numbers only.

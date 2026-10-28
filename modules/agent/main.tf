@@ -775,6 +775,14 @@ data "aws_iam_policy_document" "agent" {
     }
   }
 
+  dynamic "statement" {
+    for_each = var.follow_up_function_arn != "" ? [1] : []
+    content {
+      actions   = ["lambda:InvokeFunction"]
+      resources = [var.follow_up_function_arn]
+    }
+  }
+
   statement {
     sid    = "Logs"
     effect = "Allow"
@@ -1123,6 +1131,7 @@ resource "aws_lambda_function" "agent" {
       TOOL_CREATE_REPORT_FN         = aws_lambda_function.create_report.function_name
       TOOL_JOIN_INCIDENT_FN         = aws_lambda_function.join_incident.function_name
       TOOL_GET_STATUS_FN            = aws_lambda_function.get_status.function_name
+      TOOL_FOLLOW_UP_FN             = var.follow_up_function_name
       TOOL_REGISTER_PLACE_FN        = aws_lambda_function.register_place.function_name
       TOOL_ROUTE_FN                 = aws_lambda_function.route.function_name
       TOOL_ESCALATE_FN              = aws_lambda_function.escalate.function_name

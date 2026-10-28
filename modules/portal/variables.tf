@@ -78,10 +78,22 @@ variable "routing_rules_json" {
   default     = "{}"
 }
 
-variable "follow_up_hours" {
-  description = "Hours after Resolved before neighbors are asked \"Is it fixed?\" (RF-20)."
+variable "follow_up_delay_minutes" {
+  description = "Minutes after resolution before the one-time citizen follow-up."
   type        = number
-  default     = 24
+  default     = 1440
+  validation {
+    condition     = var.follow_up_delay_minutes >= 1 && floor(var.follow_up_delay_minutes) == var.follow_up_delay_minutes
+    error_message = "Follow-up delay must be a positive whole number of minutes."
+  }
+}
+
+variable "follow_up_function_arn" {
+  type = string
+}
+
+variable "follow_up_scheduler_role_arn" {
+  type = string
 }
 
 variable "local_dev_origins" {

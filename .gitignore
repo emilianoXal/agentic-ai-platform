@@ -14,6 +14,8 @@ modules/agent/build/*
 !modules/agent/build/.gitkeep
 modules/portal/build/*
 !modules/portal/build/.gitkeep
+modules/follow_up/build/*
+!modules/follow_up/build/.gitkeep
 
 # Workflow/agent task artifacts (internal planning docs, not part of the repo)
 .agents/

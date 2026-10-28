@@ -16,7 +16,7 @@ records, removes the phone from `incidents.subscribers`, removes identity and
 phone attributes from their reports, and leaves incidents and report counts
 intact. The audit table receives only a hashed subject identifier and deletion
 totals. Its IAM role can access only the users, places, reports, audit tables,
-reports `by-user` index, incident subscriber updates, KMS key, and its own logs.
+reports `by-user` index, incident subscriber scan and updates, KMS key, and its own logs.
 
 The compute module has two outbound event consumers. `notifier` handles citizen
 notification events for the WhatsApp channel. `dependency-mailer` handles an

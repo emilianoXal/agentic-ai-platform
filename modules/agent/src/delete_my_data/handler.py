@@ -67,6 +67,28 @@ def _delete_places(user_id):
     return len(places)
 
 
+def _scan_subscribed_incidents(user_id):
+    kwargs = {
+        "TableName": INCIDENTS_TABLE,
+        "FilterExpression": "contains(subscribers, :u)",
+        "ExpressionAttributeValues": {":u": {"S": user_id}},
+        "ProjectionExpression": "incident_id",
+    }
+    items = []
+    while True:
+        response = _ddb.scan(**kwargs)
+        items.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            return [item["incident_id"]["S"] for item in items]
+        kwargs["ExclusiveStartKey"] = last_key
+
+
+def _unsubscribe_incidents(user_id):
+    for incident_id in _scan_subscribed_incidents(user_id):
+        _unsubscribe(incident_id, user_id)
+
+
 def _unsubscribe(incident_id, user_id):
     try:
         _ddb.update_item(
@@ -87,13 +109,8 @@ def _anonymize_reports(user_id):
         IndexName=REPORTS_USER_INDEX,
         KeyConditionExpression="user_id = :u",
         ExpressionAttributeValues={":u": {"S": user_id}},
-        ProjectionExpression="report_id, incident_id",
+        ProjectionExpression="report_id",
     )
-    incident_ids = {
-        report["incident_id"]["S"] for report in reports if "incident_id" in report
-    }
-    for incident_id in sorted(incident_ids):
-        _unsubscribe(incident_id, user_id)
     personal_fields = {
         "#user_id": "user_id",
         "#phone": "phone",
@@ -140,6 +157,7 @@ def lambda_handler(event, context):
     user_id = str(user_id)
     user_hash = _hash_id(user_id)
     try:
+        _unsubscribe_incidents(user_id)
         reports_anonymized = _anonymize_reports(user_id)
         places_deleted = _delete_places(user_id)
         _ddb.delete_item(

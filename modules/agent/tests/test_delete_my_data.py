@@ -45,12 +45,21 @@ class FakeDynamoDB:
                 "phone": {"S": "5215512345678"},
                 "incident_id": {"S": "incident-1"},
             },
+            "report-joined": {
+                "report_id": {"S": "report-joined"},
+                "user_id": {"S": "5215512345678"},
+            },
         }
         self.incidents = {
             "incident-1": {
                 "incident_id": {"S": "incident-1"},
                 "report_count": {"N": "1"},
                 "subscribers": {"SS": ["5215512345678", "5215500000000"]},
+            },
+            "incident-joined": {
+                "incident_id": {"S": "incident-joined"},
+                "report_count": {"N": "2"},
+                "subscribers": {"SS": ["5215512345678"]},
             },
         }
         self.audit = []
@@ -67,9 +76,20 @@ class FakeDynamoDB:
             }
         return {
             "Items": [
-                {"report_id": item["report_id"], "incident_id": item["incident_id"]}
+                {"report_id": item["report_id"]}
                 for item in self.reports.values()
                 if item.get("user_id", {}).get("S") == user_id
+            ],
+        }
+
+    def scan(self, TableName, FilterExpression, ExpressionAttributeValues, **kwargs):
+        assert TableName == "incidents"
+        user_id = ExpressionAttributeValues[":u"]["S"]
+        return {
+            "Items": [
+                {"incident_id": item["incident_id"]}
+                for item in self.incidents.values()
+                if user_id in item.get("subscribers", {}).get("SS", [])
             ],
         }
 
@@ -108,7 +128,7 @@ def test_delete_removes_personal_data_and_preserves_incident_count():
         {"user_id": "5215512345678", "confirmed": True}, None,
     )
 
-    assert result == {"ok": True, "places_deleted": 1, "reports_anonymized": 1}
+    assert result == {"ok": True, "places_deleted": 1, "reports_anonymized": 2}
     assert database.users == {}
     assert database.places == {}
     assert database.reports["report-1"] == {
@@ -117,6 +137,9 @@ def test_delete_removes_personal_data_and_preserves_incident_count():
     }
     assert database.incidents["incident-1"]["report_count"] == {"N": "1"}
     assert database.incidents["incident-1"]["subscribers"] == {"SS": ["5215500000000"]}
+    assert database.reports["report-joined"] == {"report_id": {"S": "report-joined"}}
+    assert "subscribers" not in database.incidents["incident-joined"]
+    assert database.incidents["incident-joined"]["report_count"] == {"N": "2"}
     audit_text = str(database.audit)
     assert "5215512345678" not in audit_text
     assert database.audit[0]["kind"] == {"S": "delete_my_data"}

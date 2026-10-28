@@ -458,7 +458,7 @@ data "aws_iam_policy_document" "delete_my_data" {
   statement {
     sid       = "IncidentsUnsubscribe"
     effect    = "Allow"
-    actions   = ["dynamodb:UpdateItem"]
+    actions   = ["dynamodb:Scan", "dynamodb:UpdateItem"]
     resources = [var.incidents_table_arn]
   }
 

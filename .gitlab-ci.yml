@@ -273,7 +273,7 @@ dashboard:deploy:
 # de inferencia + la politica de gobierno permiten la invocacion.
 #
 # El modelo es el mismo que usa el agente: var.bedrock_model_id en el modulo
-# agent (anthropic.claude-3-5-sonnet-20241022-v2:0) a traves del perfil us.*.
+# agent (anthropic.claude-sonnet-4-5-20250929-v1:0) a traves del perfil us.*.
 # Si se cambia el modelo del agente, actualizar BEDROCK_PROFILE_ID aqui.
 # =============================================================================
 bedrock:smoke:
@@ -285,7 +285,7 @@ bedrock:smoke:
   variables:
     # Perfil de inferencia que invoca el agente (prefijo us.* permitido por la
     # politica de gobierno). Debe coincidir con modules/agent (var.bedrock_model_id).
-    BEDROCK_PROFILE_ID: "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+    BEDROCK_PROFILE_ID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
   before_script:
     - apk add --no-cache aws-cli jq
     - !reference [.aws_auth, before_script]

@@ -151,5 +151,5 @@ variable "log_level" {
 variable "bedrock_model_id" {
   description = "Bare Bedrock foundation-model id (NOT a us.* inference-profile id); the exec-role derives the profile ARN from it."
   type        = string
-  default     = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+  default     = "anthropic.claude-sonnet-4-5-20250929-v1:0"
 }

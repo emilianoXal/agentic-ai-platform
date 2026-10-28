@@ -3,7 +3,7 @@
 The scripted model retracts unless its system prompt says not to retract, and
 questions the pin unless the prompt accepts any location. Given a location note
 after a description it creates the report from both turns. When get_status
-contradicts the history it offers to create or reopen only if the prompt says so.
+contradicts the history it limits its offers only if the prompt says so.
 The real model runs separately through scripts/retraction_eval.py.
 """
 import importlib.util
@@ -50,17 +50,17 @@ class ScriptedModel:
             if "reports" not in result:
                 return _message({"text": "Your report %s is registered." % result["folio"]})
             if not result["reports"]:
-                if "offer to create" not in system:
+                if "create the report only if" not in system:
                     return _message({"text": "Your report %s is registered." % ev.FOLIO})
                 return _message({"text": "get_status shows no report under your number, so %s is not in "
                                          "the system. Do you want me to create the report now?" % ev.FOLIO})
             report = result["reports"][0]
             if report["status"] != "reopened":
-                if "offer to reopen" not in system:
-                    return _message({"text": "get_status shows %s as %s. Do you want me to create a new "
-                                             "report?" % (report["folio"], report["status"])})
-                return _message({"text": "get_status shows %s as %s. Do you want me to reopen the existing "
-                                         "incident?" % (report["folio"], report["status"])})
+                if "reopen only through a pending" not in system:
+                    return _message({"text": "get_status shows %s as %s. Do you want me to reopen it or "
+                                             "create a new report?" % (report["folio"], report["status"])})
+                return _message({"text": "get_status shows %s as %s. What would you like to do?"
+                                         % (report["folio"], report["status"])})
             return _message({"text": "Your report %s is reopened. Anything else?" % report["folio"]})
         note = re.match(r"\[The citizen shared this location .*: (\S+), (\S+)\]$", last["text"])
         if note:
@@ -130,7 +130,7 @@ def test_status_contradicting_a_confirmation_is_reported_with_an_offer_to_create
     assert "is registered" not in reply
 
 
-def test_status_contradicting_a_reopening_offers_to_reopen_not_create():
+def test_status_contradicting_a_reopening_without_a_notice_offers_no_action():
     system, tools = ev.load_agent(str(HANDLER))
     model = ScriptedModel(check_status_first=True)
     resolved = {"ok": True, "reports": [{**ev.STATUS_RESULT["reports"][0], "status": "resolved"}]}
@@ -138,8 +138,8 @@ def test_status_contradicting_a_reopening_offers_to_reopen_not_create():
                                  results={"get_status": resolved})
     assert called == ["get_status"]
     assert "%s as resolved" % ev.FOLIO in reply
-    assert "reopen the existing incident" in reply
-    assert "new report" not in reply
+    assert "What would you like to do?" in reply
+    assert "reopen" not in reply and "new report" not in reply
 
 
 def test_verdict_rejects_retraction_and_accepts_confirmation():

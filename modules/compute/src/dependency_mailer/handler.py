@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import ClientError
@@ -43,6 +44,32 @@ def _log(level, event, **fields):
 
 def _hash_id(value):
     return hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:16]
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _mark_mail_sent(incident_id, item, message_id, to_agency):
+    now = _now_iso()
+    if to_agency:
+        _ddb.update_item(
+            TableName=INCIDENTS_TABLE,
+            Key={"incident_id": {"S": incident_id}},
+            UpdateExpression="SET dependency_mail_sent_at = :t",
+            ExpressionAttributeValues={":t": {"S": now}},
+        )
+    audit = {
+        "entity_id": {"S": "incident#" + incident_id},
+        "ts": {"S": now},
+        "kind": {"S": "dependency_mail_sent" if to_agency else "supervisor_mail_sent"},
+    }
+    dependency = _text(item, "routed_to") or _text(item, "dependency")
+    if to_agency and dependency:
+        audit["dependency"] = {"S": dependency}
+    if message_id:
+        audit["message_id"] = {"S": str(message_id)}
+    _ddb.put_item(TableName=AUDIT_TABLE, Item=audit)
 
 
 def _is_creation(event, detail_type, detail):
@@ -117,8 +144,8 @@ def _field(detail, item, *keys):
 
 
 def _recipient(category):
-    normalized = category.strip().lower()
-    return DEPENDENCY_EMAIL_MAP.get(normalized) or FALLBACK_EMAIL
+    agency = DEPENDENCY_EMAIL_MAP.get(category.strip().lower())
+    return (agency, True) if agency else (FALLBACK_EMAIL, False)
 
 
 def _message(action, incident_id, category, neighborhood, priority, report_count):
@@ -172,7 +199,7 @@ def lambda_handler(event, context):
         neighborhood = _field(detail, item, "neighborhood", "address", "geohash")
         priority = _field(detail, item, "max_severity", "severity")
         report_count = _field(detail, item, "report_count")
-        recipient = _recipient(category)
+        recipient, to_agency = _recipient(category)
         if not recipient or not MAIL_FROM:
             raise ValueError("dependency mail sender or recipient is not configured")
         subject, body = _message(
@@ -198,11 +225,23 @@ def lambda_handler(event, context):
         _release(event_id)
         raise
 
+    message_id = response.get("MessageId")
+    try:
+        _mark_mail_sent(incident_id, item, message_id, to_agency)
+    except Exception as exc:
+        _log(
+            logging.ERROR,
+            "dependency_mail_mark_failed",
+            incident_id=incident_id,
+            message_id=message_id,
+            error=type(exc).__name__,
+        )
     _log(
         logging.INFO,
         "dependency_mail_sent",
         event_hash=_hash_id(event_id),
         incident_id=incident_id,
         detail_type=detail_type,
+        to_agency=to_agency,
     )
-    return {"sent": True, "message_id": response.get("MessageId")}
+    return {"sent": True, "message_id": message_id}

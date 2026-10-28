@@ -8,6 +8,8 @@ neighbor, the same contract the compute notifier already consumes (RF-19).
 
 Legacy statuses written by the tool Lambdas (OPEN / ESCALATED / Spanish labels)
 are normalized on read to the six standard codes plus an escalated flag.
+OPEN and ESCALATED become sent_to_agency only after the mailer stored
+dependency_mail_sent_at; routed_to alone keeps them received.
 
 Authorization (server side, from Cognito claims):
   - group "agency": only incidents routed to its custom:agency_id.
@@ -185,14 +187,14 @@ def _n(item, key, default=0):
         return default
 
 
-def normalize_status(raw, routed):
+def normalize_status(raw, routed, mail_sent=False):
     """Map any stored status to one of the six codes plus an escalated flag."""
     value = str(raw or "").strip()
     if value in STATUS_CODES:
         return value, False
     upper = value.upper()
     if upper in ("OPEN", "ESCALATED"):
-        return ("sent_to_agency" if routed else "received"), upper == "ESCALATED"
+        return ("sent_to_agency" if mail_sent else "received"), upper == "ESCALATED"
     plain = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
     return _LEGACY_STATUS.get(plain, "received"), False
 
@@ -200,7 +202,10 @@ def normalize_status(raw, routed):
 def to_incident(item, neighbors=None, timeline=None):
     incident_id = _s(item, "incident_id")
     routed_to = _s(item, "routed_to")
-    status, legacy_escalated = normalize_status(_s(item, "status"), bool(routed_to))
+    mail_sent = bool(_s(item, "dependency_mail_sent_at"))
+    status, legacy_escalated = normalize_status(
+        _s(item, "status"), bool(routed_to), mail_sent
+    )
     escalated = item.get("escalated", {}).get("BOOL", False) or legacy_escalated
     category = _s(item, "category", "otro")
     geohash = _s(item, "geohash", "")
@@ -242,14 +247,16 @@ def to_incident(item, neighbors=None, timeline=None):
     }
 
 
-def _timeline_entry(item):
+def _timeline_entry(item, mail_sent=False):
     kind = _s(item, "kind", "")
     at = _s(item, "ts", _now_iso())
     entry_id = "{}#{}".format(_s(item, "entity_id", ""), at)
     mapping = {
         "create_report": ("status", "First report received from WhatsApp", "whatsapp", "received"),
         "join_incident": ("joined", "A neighbor joined from WhatsApp", "whatsapp", None),
-        "route": ("routed", "Sent to {} by routing rule".format(_s(item, "dependency") or _s(item, "authority") or "the agency"), "routing", "sent_to_agency"),
+        "route": ("routed", "Assigned to {} by routing rule; agency email {}".format(_s(item, "dependency") or _s(item, "authority") or "the agency", "sent" if mail_sent else "pending"), "routing", None),
+        "dependency_mail_sent": ("status", "Agency email sent" + (" to " + _s(item, "dependency") if _s(item, "dependency") else ""), "email", "sent_to_agency"),
+        "supervisor_mail_sent": ("status", "Email sent to the supervisor", "email", None),
         "escalate": ("escalated", "Escalated: over the report or age threshold", "bot", None),
         "citizen_confirmed": ("follow_up", "A neighbor confirmed it is fixed from WhatsApp", "whatsapp", None),
         "citizen_reopened": ("status", "A neighbor reopened it from WhatsApp", "whatsapp", "reopened"),
@@ -270,7 +277,7 @@ def _timeline_entry(item):
     return {"id": entry_id, "at": at, "kind": "comment", "text": kind.replace("_", " ").capitalize(), "source": "bot", "status": None, "actor": None}
 
 
-def _load_timeline(incident_id):
+def _load_timeline(incident_id, mail_sent=False):
     resp = _ddb.query(
         TableName=AUDIT_TABLE,
         KeyConditionExpression="entity_id = :e",
@@ -278,7 +285,7 @@ def _load_timeline(incident_id):
         ScanIndexForward=False,
         Limit=TIMELINE_LIMIT,
     )
-    return [_timeline_entry(item) for item in resp.get("Items", [])]
+    return [_timeline_entry(item, mail_sent) for item in resp.get("Items", [])]
 
 
 def _report_ids(item):
@@ -315,7 +322,7 @@ def _get_item(incident_id):
 
 def _detail(item):
     recipients = _recipients(item)
-    return to_incident(item, [_mask_neighbor(u) for u in recipients], _load_timeline(_s(item, "incident_id")))
+    return to_incident(item, [_mask_neighbor(u) for u in recipients], _load_timeline(_s(item, "incident_id"), bool(_s(item, "dependency_mail_sent_at"))))
 
 
 # =============================================================================

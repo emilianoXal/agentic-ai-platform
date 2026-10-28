@@ -274,7 +274,21 @@ resource "aws_sesv2_email_identity" "dependency_mail" {
   email_identity = each.value
 }
 
+data "aws_iam_policy_document" "dependency_mailer_kms" {
+  statement {
+    sid    = "KmsDataKey"
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+    ]
+    resources = [var.kms_key_arn]
+  }
+}
+
 data "aws_iam_policy_document" "dependency_mailer" {
+  source_policy_documents = [data.aws_iam_policy_document.dependency_mailer_kms.json]
+
   statement {
     sid    = "Logs"
     effect = "Allow"
@@ -296,6 +310,7 @@ data "aws_iam_policy_document" "dependency_mailer" {
       "dynamodb:DeleteItem",
       "dynamodb:GetItem",
       "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
     ]
     resources = [
       var.incidents_table_arn,

@@ -68,12 +68,41 @@ describe('i18n', () => {
     const routed: TimelineEntry = {
       ...base,
       kind: 'routed',
-      text: 'Sent to Organismo de Agua by routing rule',
+      text: 'Assigned to Organismo de Agua by routing rule; agency email pending',
+    };
+    const routedMailed: TimelineEntry = {
+      ...routed,
+      text: 'Assigned to Organismo de Agua by routing rule; agency email sent',
+    };
+    const supervisor: TimelineEntry = {
+      ...base,
+      kind: 'status',
+      text: 'Email sent to the supervisor',
+    };
+    const mailedNoName: TimelineEntry = {
+      ...base,
+      kind: 'status',
+      status: 'sent_to_agency',
+      text: 'Agency email sent',
+    };
+    const mailed: TimelineEntry = {
+      ...base,
+      kind: 'status',
+      status: 'sent_to_agency',
+      text: 'Agency email sent to Organismo de Agua',
     };
     const comment: TimelineEntry = { ...base, kind: 'comment', text: 'Válvula cambiada' };
     expect(localizeTimeline(status, i18n)).toBe('Marcado en atención por Ana');
     expect(localizeTimeline(notified, i18n)).toBe('12 vecinos avisados por WhatsApp');
-    expect(localizeTimeline(routed, i18n)).toBe('Enviado a Organismo de Agua por regla de ruteo');
+    expect(localizeTimeline(routed, i18n)).toBe(
+      'Turnado a Organismo de Agua por regla de ruteo; correo a la dependencia pendiente',
+    );
+    expect(localizeTimeline(routedMailed, i18n)).toBe(
+      'Turnado a Organismo de Agua por regla de ruteo; correo a la dependencia enviado',
+    );
+    expect(localizeTimeline(supervisor, i18n)).toBe('Correo enviado al supervisor');
+    expect(localizeTimeline(mailedNoName, i18n)).toBe('Correo enviado a la dependencia');
+    expect(localizeTimeline(mailed, i18n)).toBe('Correo enviado a Organismo de Agua');
     expect(localizeTimeline(comment, i18n)).toBe('Válvula cambiada');
   });
 });

@@ -1,6 +1,11 @@
 /** The six standard incident statuses (RF-17). Escalation is a separate flag. */
 export type StatusCode =
-  'received' | 'sent_to_agency' | 'in_progress' | 'resolved' | 'not_applicable' | 'reopened';
+  | 'received'
+  | 'sent_to_agency'
+  | 'in_progress'
+  | 'resolved'
+  | 'not_applicable'
+  | 'reopened';
 
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -19,7 +24,7 @@ export type CategoryCode =
 export type Role = 'agency' | 'official' | 'admin';
 
 /** Where a change came from; simulated changes are always labeled (RB-08). */
-export type ChangeSource = 'whatsapp' | 'dashboard' | 'routing' | 'bot' | 'simulated';
+export type ChangeSource = 'whatsapp' | 'dashboard' | 'routing' | 'email' | 'bot' | 'simulated';
 
 export interface Agency {
   readonly id: string;
@@ -32,7 +37,14 @@ export interface LatLng {
 }
 
 export type TimelineKind =
-  'status' | 'joined' | 'routed' | 'comment' | 'notified' | 'follow_up' | 'reply' | 'escalated';
+  | 'status'
+  | 'joined'
+  | 'routed'
+  | 'comment'
+  | 'notified'
+  | 'follow_up'
+  | 'reply'
+  | 'escalated';
 
 export interface TimelineEntry {
   readonly id: string;
@@ -86,7 +98,13 @@ export interface OutboundMessage {
 }
 
 export type GatewayEventKind =
-  'status' | 'joined' | 'created' | 'removed' | 'reopened' | 'notified' | 'escalated';
+  | 'status'
+  | 'joined'
+  | 'created'
+  | 'removed'
+  | 'reopened'
+  | 'notified'
+  | 'escalated';
 
 export interface GatewayEvent {
   readonly kind: GatewayEventKind;

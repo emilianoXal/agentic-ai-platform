@@ -74,6 +74,12 @@ variable "enable_agentcore_memory" {
   default     = false
 }
 
+variable "enable_conversation_history" {
+  description = "Create the DynamoDB conversation-history table and let the agent persist consenting citizens' conversations for 7 days. Default false."
+  type        = bool
+  default     = false
+}
+
 variable "routing_rules_json" {
   description = "JSON map category -> {dependency, channel} used by the route tool."
   type        = string

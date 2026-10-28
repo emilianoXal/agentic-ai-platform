@@ -20,8 +20,9 @@ provider "awscc" {
 module "data" {
   source = "../../modules/data"
 
-  environment          = var.environment
-  media_retention_days = var.media_retention_days
+  environment                 = var.environment
+  media_retention_days        = var.media_retention_days
+  enable_conversation_history = var.enable_conversation_history
 }
 
 module "compute" {

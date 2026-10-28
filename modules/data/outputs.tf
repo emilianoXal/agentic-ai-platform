@@ -137,8 +137,8 @@ output "events_bus_name" {
 }
 
 output "conversation_history_table_name" {
-  value = aws_dynamodb_table.conversation_history.name
+  value = one(aws_dynamodb_table.conversation_history[*].name)
 }
 output "conversation_history_table_arn" {
-  value = aws_dynamodb_table.conversation_history.arn
+  value = one(aws_dynamodb_table.conversation_history[*].arn)
 }

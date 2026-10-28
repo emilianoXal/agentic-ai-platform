@@ -8,3 +8,9 @@ variable "media_retention_days" {
   type        = number
   default     = 30
 }
+
+variable "enable_conversation_history" {
+  description = "Create the DynamoDB conversation-history table. Default false."
+  type        = bool
+  default     = false
+}

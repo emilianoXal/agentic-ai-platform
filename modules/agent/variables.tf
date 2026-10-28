@@ -170,10 +170,12 @@ variable "bedrock_model_id" {
 }
 
 variable "conversation_history_table_name" {
-  type    = string
-  default = ""
+  type     = string
+  default  = ""
+  nullable = false
 }
 variable "conversation_history_table_arn" {
-  type    = string
-  default = ""
+  type     = string
+  default  = ""
+  nullable = false
 }

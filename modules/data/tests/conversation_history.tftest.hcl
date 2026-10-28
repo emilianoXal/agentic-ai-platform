@@ -39,18 +39,30 @@ mock_provider "aws" {
 run "history_table" {
   command = plan
   variables {
-    environment = "dev"
+    environment                 = "dev"
+    enable_conversation_history = true
   }
   assert {
-    condition     = aws_dynamodb_table.conversation_history.hash_key == "citizen_id" && aws_dynamodb_table.conversation_history.range_key == "ts"
+    condition     = aws_dynamodb_table.conversation_history[0].hash_key == "citizen_id" && aws_dynamodb_table.conversation_history[0].range_key == "ts"
     error_message = "History must be partitioned by pseudonymous citizen and sorted by timestamp."
   }
   assert {
-    condition     = aws_dynamodb_table.conversation_history.ttl[0].enabled && aws_dynamodb_table.conversation_history.ttl[0].attribute_name == "expires_at"
+    condition     = aws_dynamodb_table.conversation_history[0].ttl[0].enabled && aws_dynamodb_table.conversation_history[0].ttl[0].attribute_name == "expires_at"
     error_message = "History must expire through DynamoDB TTL."
   }
   assert {
-    condition     = aws_dynamodb_table.conversation_history.server_side_encryption[0].enabled && aws_dynamodb_table.conversation_history.server_side_encryption[0].kms_key_arn == aws_kms_key.this.arn
+    condition     = aws_dynamodb_table.conversation_history[0].server_side_encryption[0].enabled && aws_dynamodb_table.conversation_history[0].server_side_encryption[0].kms_key_arn == aws_kms_key.this.arn
     error_message = "History must use the project's encryption key."
+  }
+}
+
+run "history_disabled_by_default" {
+  command = plan
+  variables {
+    environment = "prod"
+  }
+  assert {
+    condition     = length(aws_dynamodb_table.conversation_history) == 0 && output.conversation_history_table_name == null
+    error_message = "Conversation history must not exist unless explicitly enabled."
   }
 }

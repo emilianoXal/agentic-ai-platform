@@ -676,8 +676,12 @@ def lambda_handler(event, context):
             _log(logging.WARNING, "agent_error", reason="bedrock_throttled",
                  user_hash=_hash_id(user_id))
             return {"ok": False, "error": "bedrock_throttled"}
-        _log(logging.ERROR, "agent_error", reason="client_error", user_hash=_hash_id(user_id))
+        logger.exception(json.dumps({"event": "agent_error",
+                                     "reason": "client_error",
+                                     "user_hash": _hash_id(user_id)}))
         return {"ok": False, "error": "internal"}
     except Exception:  # noqa: BLE001 - never raise out of lambda_handler
-        _log(logging.ERROR, "agent_error", reason="unexpected", user_hash=_hash_id(user_id))
+        logger.exception(json.dumps({"event": "agent_error",
+                                     "reason": "unexpected",
+                                     "user_hash": _hash_id(user_id)}))
         return {"ok": False, "error": "internal"}

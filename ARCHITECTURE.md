@@ -47,7 +47,9 @@ reply; failed, timed-out and empty replies leave no orphan turn to restore.
 Items expire after seven days with DynamoDB TTL; reads also exclude expired
 items while asynchronous TTL deletion catches up. Read or write failures log
 metadata only and allow the current response to continue without history.
-`consent_pending` turns neither load nor save conversation history.
+`consent_pending` turns neither load nor save conversation history. Only dev
+sets `enable_conversation_history = true`; QA and production create no history
+table and keep the agent stateless unless their environment flag is set.
 
 The HMAC key is held in a CMK-encrypted Secrets Manager secret and encrypted
 Terraform state; Lambdas receive its ARN. Agent and erasure IAM grants are scoped

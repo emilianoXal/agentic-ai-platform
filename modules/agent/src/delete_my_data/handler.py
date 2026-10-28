@@ -302,5 +302,8 @@ def lambda_handler(event, context):
             "memory_records_deleted": memory_records,
         }
     except ClientError:
-        _log(logging.ERROR, "personal_data_deletion_failed", subject_hash=user_hash)
+        logger.exception(json.dumps({
+            "event": "personal_data_deletion_failed",
+            "subject_hash": user_hash,
+        }))
         return {"ok": False, "error": "internal"}

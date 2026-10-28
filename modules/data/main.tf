@@ -367,6 +367,8 @@ resource "aws_cloudwatch_event_bus" "events" {
 }
 
 resource "aws_dynamodb_table" "conversation_history" {
+  count = var.enable_conversation_history ? 1 : 0
+
   name         = "${local.name_prefix}-conversation-history"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "citizen_id"

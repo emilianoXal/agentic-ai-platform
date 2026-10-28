@@ -1,6 +1,8 @@
 from math import ceil, floor
 
-from PIL import ImageFilter
+from PIL import Image, ImageFilter
+
+_CELLS = 8
 
 
 def _pixel_box(box, width, height):
@@ -18,5 +20,9 @@ def blur_regions(image, boxes, radius=12):
         if pixels[0] == pixels[2] or pixels[1] == pixels[3]:
             continue
         region = result.crop(pixels)
-        result.paste(region.filter(ImageFilter.GaussianBlur(radius=radius)), pixels)
+        width, height = region.size
+        cell = max(1, min(width, height) // _CELLS)
+        mosaic = region.resize((max(1, width // cell), max(1, height // cell)), Image.BOX)
+        region = mosaic.resize((width, height), Image.BILINEAR)
+        result.paste(region.filter(ImageFilter.GaussianBlur(radius=max(radius, cell // 2))), pixels)
     return result

@@ -2,6 +2,7 @@ import importlib.util
 import io
 import json
 import os
+import statistics
 import sys
 from copy import deepcopy
 
@@ -81,6 +82,20 @@ def test_blur_changes_only_pixels_inside_face_and_plate_boxes():
             else:
                 assert original.getpixel((x, y)) == blurred.getpixel((x, y))
     assert changed_inside > 0
+
+
+def test_large_region_loses_feature_sized_detail_and_outside_is_unchanged():
+    original = Image.new("L", (800, 800))
+    original.putdata([255 if (x // 40) % 2 else 0 for y in range(800) for x in range(800)])
+    box = {"Left": 0.1, "Top": 0.05, "Width": 0.75, "Height": 0.875}
+    blurred = blur_regions(original, [box])
+    inside = (80, 40, 680, 740)
+    core = (inside[0] + 150, inside[1] + 150, inside[2] - 150, inside[3] - 150)
+    before = statistics.pstdev(original.crop(core).getdata())
+    after = statistics.pstdev(blurred.crop(core).getdata())
+    assert after < before * 0.1
+    for region in ((0, 0, 800, inside[1]), (0, inside[3], 800, 800), (0, 0, inside[0], 800), (inside[2], 0, 800, 800)):
+        assert list(original.crop(region).getdata()) == list(blurred.crop(region).getdata())
 
 
 def test_image_without_detections_is_copied_byte_for_byte():

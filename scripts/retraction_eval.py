@@ -36,6 +36,7 @@ REOPEN_RESULT = {"ok": True, "incident_id": INCIDENT_ID, "status": "reopened"}
 STATUS_RESULT = {"ok": True, "reports": [{"folio": FOLIO, "report_id": REPORT_ID,
                  "incident_id": INCIDENT_ID, "category": "other",
                  "status": "reopened"}]}
+TOOL_RESULTS = {"get_status": STATUS_RESULT}
 
 TEXT_REPLIES = {
     "ask_location": "Thanks for the report. Please share the location of the "
@@ -157,8 +158,9 @@ def reply_text(message):
     return "".join(c.get("text", "") for c in message["content"])
 
 
-def run_agent(client, model, system, messages, tools):
-    messages = messages + [text("user", "Hi!")]
+def run_agent(client, model, system, messages, tools, user="Hi!",
+              results=TOOL_RESULTS):
+    messages = messages + [text("user", user)]
     called = []
     for _ in range(4):
         message = converse(client, model, system, messages, tools)
@@ -166,14 +168,14 @@ def run_agent(client, model, system, messages, tools):
         uses = [c["toolUse"] for c in message["content"] if "toolUse" in c]
         if not uses:
             return reply_text(message), called
-        results = []
+        outputs = []
         for use in uses:
             called.append(use["name"])
-            payload = STATUS_RESULT if use["name"] == "get_status" else {
-                "ok": False, "error": "not expected in this replay"}
-            results.append({"toolResult": {"toolUseId": use["toolUseId"],
+            payload = results.get(use["name"], {
+                "ok": False, "error": "not expected in this replay"})
+            outputs.append({"toolResult": {"toolUseId": use["toolUseId"],
                                            "content": [{"json": payload}]}})
-        messages.append({"role": "user", "content": results})
+        messages.append({"role": "user", "content": outputs})
     return "", called
 
 

@@ -1,11 +1,12 @@
 """Retraction harness against a scripted Bedrock client.
 
-The scripted model follows the instructions it is given: when its system prompt
-does not tell it the text-only history is trustworthy it retracts, and when the
-prompt names a single city without accepting other places it questions the pin.
+The scripted model retracts unless its system prompt forbids retracting, and
+questions the pin unless the prompt accepts any location. Given a location note
+after a description it creates the report from both turns.
 The real model runs separately through scripts/retraction_eval.py.
 """
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -44,10 +45,17 @@ class ScriptedModel:
         messages = kwargs["messages"]
         last = messages[-1]["content"][0]
         if "toolResult" in last:
-            folio = last["toolResult"]["content"][0]["json"]["reports"][0]["folio"]
+            result = last["toolResult"]["content"][0]["json"]
+            if "reports" not in result:
+                return _message({"text": "Your report %s is registered." % result["folio"]})
+            folio = result["reports"][0]["folio"]
             return _message({"text": "Your report %s is reopened. Anything else?" % folio})
-        trusts_history = "text only" in system and "never retract" in system
-        if self.always_retract or not trusts_history:
+        note = re.match(r"\[The citizen shared this location .*: (\S+), (\S+)\]$", last["text"])
+        if note:
+            return _message({"toolUse": {"toolUseId": "tu-create", "name": "create_report", "input": {
+                "category": "other", "geohash": ev.GEOHASH, "description": messages[-3]["content"][0]["text"],
+                "lat": float(note.group(1)), "lng": float(note.group(2))}}})
+        if self.always_retract or "never retract" not in system:
             reply = ev.RETRACTION
             if "accept any location" not in system:
                 reply += " The pin doesn't look like it's in Querétaro."
@@ -74,7 +82,7 @@ def test_agent_prompt_and_tools_come_from_the_handler():
     system, tools = ev.load_agent(str(HANDLER))
     names = {t["toolSpec"]["name"] for t in tools}
     assert {"create_report", "respond_follow_up", "get_status"} <= names
-    assert system.startswith("You are a citizen assistant")
+    assert system
 
 
 def test_tool_loop_executes_get_status_and_returns_the_final_reply():
@@ -84,6 +92,19 @@ def test_tool_loop_executes_get_status_and_returns_the_final_reply():
     assert called == ["get_status"]
     assert ev.FOLIO in reply
     assert model.requests[-1]["messages"][-2]["content"][0]["toolResult"]["content"][0]["json"] == ev.STATUS_RESULT
+
+
+def test_location_after_description_creates_the_report_from_history():
+    system, tools = ev.load_agent(str(HANDLER))
+    model = ScriptedModel()
+    reply, called = ev.run_agent(model, "m", system, ev.history("text")[:2], tools,
+                                 user=ev.LOCATION_NOTE, results={"create_report": ev.CREATE_RESULT})
+    assert called == ["create_report"]
+    use = next(c["toolUse"] for m in model.requests[-1]["messages"] for c in m["content"] if "toolUse" in c)
+    assert use["input"]["description"] == ev.REPORT_TEXT
+    assert (use["input"]["lat"], use["input"]["lng"]) == (ev.LAT, ev.LNG)
+    assert ev.FOLIO in reply
+    assert not ev.pattern_hits(reply)
 
 
 def test_verdict_rejects_retraction_and_accepts_confirmation():

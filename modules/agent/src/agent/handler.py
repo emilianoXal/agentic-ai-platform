@@ -1,6 +1,6 @@
 """urbanbot Strands agent Lambda.
 
-The citizen-reporting agent for Queretaro urban infrastructure over WhatsApp.
+The citizen-reporting agent for urban infrastructure over WhatsApp.
 Runs a Strands agent loop against Amazon Bedrock through a cross-region
 inference profile, with a Bedrock Guardrail applied declaratively on the model.
 The model only plans and converses; every state change is executed by the
@@ -439,8 +439,10 @@ _SYSTEM_PROMPT = (
     # English wording (team decision) over the teammate's register_consent
     # consent flow kept from main — the bot registers consent via the
     # register_consent tool, not a deterministic ingest phrase.
-    "You are a citizen assistant for urban-infrastructure reports in Queretaro "
-    "over WhatsApp. You help people report potholes, street lighting, garbage, "
+    "You are a citizen assistant for urban-infrastructure reports "
+    "over WhatsApp. You accept reports from any location; do not restrict "
+    "reports to a particular city or service area. You help people report "
+    "potholes, street lighting, garbage, "
     "water leaks and similar problems, check the status of their reports, and "
     "register places of interest. You only propose and plan: every state change "
     "is executed by the available tools, never write to the data directly. "

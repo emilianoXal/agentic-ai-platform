@@ -23,7 +23,17 @@ Nunca imprimirla, ni guardarla en logs, capturas o commits.
 | Tools Lambda (`create_report`, `join_incident`, `get_status`, `register_place`, `route`, `escalate`) | Unit tests del módulo agent (el consumer invoca al agente y el agente a las tools). Un reporte real se confirma en DynamoDB `cdshack-urbanbot-dev-reports` / `-incidents` o con el humo hasta portal. | `python3 -m unittest discover -s modules/agent/tests` <br> `AWS_PROFILE=hackathon-agentic AWS_REGION=us-east-1 python3 scripts/smoke_whatsapp.py --hasta portal` |
 | Terraform (módulos / `envs/dev`) | Formato, validate local (sin backend) y `terraform test` del módulo data. El plan vive en CI; no disparar apply de main desde una rama. | `terraform fmt -check -recursive` <br> `cd envs/dev && terraform init -backend=false && terraform validate` <br> `cd modules/data && terraform test` |
 | Portal y roles (Cognito admin / supervisor / operador) | Tests del dashboard; humo hasta portal (el incidente, si el agente lo creó, debe existir en la tabla que sirve AppSync). Login manual: usuario de `envs/dev/terraform.tfvars`, contraseña solo por el Llavero. | `cd apps/dashboard && npm test -- --watch=false` <br> `AWS_PROFILE=hackathon-agentic AWS_REGION=us-east-1 python3 scripts/smoke_whatsapp.py --hasta portal` |
-| Canal WhatsApp (ingesta EUM → SQS → consumidor) | Unit tests de la ingesta (sobre el envelope EUM) y humo que publica en `cdshack-urbanbot-dev-inbound` y espera el log `enqueued` con el `wamid` inyectado. | `python3 -m unittest discover -s modules/compute/tests` <br> `AWS_PROFILE=hackathon-agentic AWS_REGION=us-east-1 python3 scripts/smoke_whatsapp.py --hasta ingesta` |
+| Canal WhatsApp (ingesta EUM → SQS → consumidor) | Unit tests de la ingesta; humo `--local` (mismo envelope EUM, handler del repo, sin AWS); contra dev, job manual `smoke:whatsapp` (OIDC de despliegue) o el script con perfil que pueda `SNS:Publish`. | `python3 -m unittest discover -s modules/compute/tests` <br> `python3 scripts/smoke_whatsapp.py --local --hasta ingesta` <br> job GitLab `smoke:whatsapp` (variable `SMOKE_HASTA`, default `ingesta`) |
+
+## Humo local (sin AWS)
+
+```bash
+python3 scripts/smoke_whatsapp.py --local --hasta ingesta
+```
+
+Arma el envelope de End User Messaging Social y lo pasa por
+`modules/compute/src/ingest/handler.py` en proceso, con clientes simulados.
+Comprueba que el mensaje encolado lleva el remitente ficticio y el texto.
 
 ## Humo contra dev
 

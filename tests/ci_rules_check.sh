@@ -216,6 +216,38 @@ def main(path):
     if not saved_plan:
         fail("terraform:apply must apply the saved tfplan from the same pipeline")
 
+    stages = data.get("stages")
+    if not isinstance(stages, list):
+        fail("stages list is missing")
+    if "tf_apply" not in stages or "smoke" not in stages:
+        fail("stages must include tf_apply and smoke")
+    if stages.index("smoke") <= stages.index("tf_apply"):
+        fail("stage smoke must come after tf_apply")
+
+    smoke_job = data.get("smoke:whatsapp")
+    if not isinstance(smoke_job, dict):
+        fail("job smoke:whatsapp is missing")
+    if smoke_job.get("stage") != "smoke":
+        fail("smoke:whatsapp must use stage smoke")
+    smoke_vars = smoke_job.get("variables") or {}
+    if not isinstance(smoke_vars, dict) or smoke_vars.get("SMOKE_HASTA") != "ingesta":
+        fail("smoke:whatsapp must default SMOKE_HASTA to ingesta")
+    smoke_script = "\n".join(script_lines(smoke_job.get("script")))
+    if "scripts/smoke_whatsapp.py" not in smoke_script:
+        fail("smoke:whatsapp must run scripts/smoke_whatsapp.py")
+    if "--hasta" not in smoke_script:
+        fail("smoke:whatsapp must pass --hasta")
+    smoke_rules = smoke_job.get("rules")
+    if not isinstance(smoke_rules, list) or not smoke_rules:
+        fail("smoke:whatsapp is missing rules")
+    if not any(
+        isinstance(rule, dict) and rule.get("when") == "manual"
+        for rule in smoke_rules
+    ):
+        fail("smoke:whatsapp must be manual")
+    if not smoke_job.get("id_tokens"):
+        fail("smoke:whatsapp must use OIDC id_tokens (same pattern as bedrock:smoke)")
+
     print(
         "ci_rules_check: ok "
         f"resource_group={next(iter(values))} lock-timeout={LOCK_TIMEOUT}"

@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import smoke_whatsapp as smoke  # noqa: E402
@@ -120,6 +121,27 @@ class EnvelopeTests(unittest.TestCase):
         self.assertTrue(smoke.log_matches_event(line, "enqueued", mid))
         self.assertFalse(smoke.log_matches_event(line, "enqueued", "other"))
         self.assertFalse(smoke.log_matches_event(line, "agent_invoked", mid))
+
+
+class LocalIngestTests(unittest.TestCase):
+    def test_local_ingesta_enqueues_fictional_sender_and_text(self):
+        mid = "wamid.SMOKE-local1"
+        code = smoke.run_local("ingesta", mid)
+        self.assertEqual(code, 0)
+
+    def test_local_cli_hasta_ingesta(self):
+        code = smoke.main(["--local", "--hasta", "ingesta"])
+        self.assertEqual(code, 0)
+
+    def test_local_stops_before_later_steps(self):
+        code = smoke.run_local("consumidor", "wamid.SMOKE-local2")
+        self.assertEqual(code, 1)
+
+    def test_local_does_not_build_aws_clients(self):
+        with mock.patch.object(smoke, "build_clients") as build:
+            code = smoke.main(["--local", "--hasta", "ingesta"])
+        self.assertEqual(code, 0)
+        build.assert_not_called()
 
 
 class FailFastTests(unittest.TestCase):

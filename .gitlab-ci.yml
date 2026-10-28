@@ -31,6 +31,7 @@ stages:
   - app_build
   - tf_plan
   - tf_apply
+  - smoke
   - app_deploy
 
 variables:
@@ -324,4 +325,30 @@ bedrock:smoke:
       echo "OK: Bedrock respondio -> '${REPLY}' (stopReason=${STOP})"
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+# =============================================================================
+# WhatsApp smoke — publica un envelope EUM ficticio en el SNS inbound de dev
+# y espera el log enqueued de la Lambda de ingesta. Manual, despues de apply,
+# con el rol OIDC de despliegue (el SSO de lectura niega SNS:Publish a proposito).
+# SMOKE_HASTA (dev pipeline variable) avanza consumidor|agente|portal.
+# =============================================================================
+smoke:whatsapp:
+  <<: *aws_auth
+  stage: smoke
+  image:
+    name: python:3.12-alpine
+    entrypoint: [""]
+  variables:
+    SMOKE_HASTA: "ingesta"
+  before_script:
+    - apk add --no-cache aws-cli jq
+    - pip install --quiet boto3
+    - !reference [.aws_auth, before_script]
+  script:
+    - python3 scripts/smoke_whatsapp.py --hasta "${SMOKE_HASTA:-ingesta}"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+    - if: '$CI_COMMIT_BRANCH'
       when: manual

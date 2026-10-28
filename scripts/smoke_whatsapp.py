@@ -9,14 +9,13 @@ sender. Never calls SendWhatsAppMessage.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
+import os
 import sys
 import time
 import uuid
 from datetime import datetime, timezone
-
-import boto3
-from botocore.exceptions import BotoCoreError, ClientError
 
 AWS_REGION = "us-east-1"
 NAME_PREFIX = "cdshack-urbanbot-dev"
@@ -92,6 +91,118 @@ def new_message_id():
     return "wamid.SMOKE-" + uuid.uuid4().hex
 
 
+def sns_lambda_event(envelope, sns_message_id="sns-local"):
+    return {
+        "Records": [{
+            "EventSource": "aws:sns",
+            "Sns": {
+                "MessageId": sns_message_id,
+                "Message": json.dumps(envelope),
+            },
+        }],
+    }
+
+
+def _ingest_handler_path():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.normpath(os.path.join(
+        here, "..", "modules", "compute", "src", "ingest", "handler.py",
+    ))
+
+
+def load_ingest_handler():
+    os.environ.setdefault("INGEST_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/000000000000/q.fifo")
+    os.environ.setdefault("USERS_TABLE", "users")
+    os.environ.setdefault("AUDIT_TABLE", "audit")
+    os.environ.setdefault("AWS_DEFAULT_REGION", AWS_REGION)
+    os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
+    os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
+    path = _ingest_handler_path()
+    spec = importlib.util.spec_from_file_location("urbanbot_ingest_handler", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class _FakeSqs:
+    def __init__(self):
+        self.bodies = []
+
+    def send_message(self, **kwargs):
+        self.bodies.append(kwargs.get("MessageBody") or "")
+        return {}
+
+    def send_message_batch(self, **kwargs):
+        for entry in kwargs.get("Entries") or []:
+            self.bodies.append(entry.get("MessageBody") or "")
+        return {}
+
+
+class _FakeDdb:
+    def put_item(self, **kwargs):
+        return {}
+
+    def get_item(self, **kwargs):
+        return {}
+
+    def update_item(self, **kwargs):
+        return {"Attributes": {}}
+
+
+def queued_payloads(sqs):
+    out = []
+    for raw in sqs.bodies:
+        try:
+            out.append(json.loads(raw) if raw else {})
+        except (ValueError, TypeError):
+            out.append({})
+    return out
+
+
+def run_local(hasta, message_id, sender=FAKE_SENDER, text=TEXT_BODY, handler=None):
+    """Drive the repo ingest handler in-process. Does not call AWS."""
+    if handler is None:
+        handler = load_ingest_handler()
+    sqs = _FakeSqs()
+    handler._sqs = sqs
+    handler._ddb = _FakeDdb()
+    handler._already_processed = lambda *a, **k: False
+    handler._check_consent = lambda *a, **k: True
+    handler._check_rate_limit = lambda *a, **k: False
+    envelope = build_eum_envelope(message_id, sender=sender, text=text)
+    handler.lambda_handler(sns_lambda_event(envelope, "sns-" + message_id), None)
+    payloads = queued_payloads(sqs)
+    if len(payloads) != 1:
+        _print_step(
+            "ingesta",
+            False,
+            "local encoló %s mensajes, se esperaba 1" % len(payloads),
+        )
+        return 1
+    body = payloads[0]
+    got_user = body.get("user_id")
+    got_text = body.get("text")
+    ok = got_user == sender and got_text == text
+    if ok:
+        detail = "local EUM user_id y text encolados message_id=%s" % message_id
+    else:
+        text_len = len(got_text) if isinstance(got_text, str) else 0
+        detail = "encolado user_id=%r text_len=%s, esperado remitente ficticio y text" % (
+            got_user, text_len,
+        )
+    _print_step("ingesta", ok, detail)
+    if not ok:
+        return 1
+    if step_rank(hasta) > 0:
+        _print_step(
+            hasta,
+            False,
+            "--local solo cubre ingesta; use el job smoke:whatsapp contra dev",
+        )
+        return 1
+    return 0
+
+
 def parse_hasta(value):
     if value not in STEPS:
         raise argparse.ArgumentTypeError(
@@ -120,8 +231,9 @@ def _print_step(name, ok, detail):
 
 
 def _aws_error_detail(exc):
-    if isinstance(exc, ClientError):
-        err = (exc.response or {}).get("Error") or {}
+    response = getattr(exc, "response", None) or {}
+    err = response.get("Error") if isinstance(response, dict) else None
+    if isinstance(err, dict):
         code = err.get("Code") or "ClientError"
         action = err.get("Message") or str(exc)
         return "permiso AWS %s: %s" % (code, action)
@@ -145,7 +257,7 @@ class Smoke:
                     filterPattern='"%s"' % message_id,
                     limit=50,
                 )
-            except (ClientError, BotoCoreError) as exc:
+            except Exception as exc:  # boto ClientError/BotoCoreError
                 raise RuntimeError(_aws_error_detail(exc)) from exc
             for event in resp.get("events") or []:
                 msg = event.get("message") or ""
@@ -165,7 +277,7 @@ class Smoke:
                 ExpressionAttributeValues={":e": {"S": entity_id}},
                 Limit=1,
             )
-        except (ClientError, BotoCoreError) as exc:
+        except Exception as exc:
             raise RuntimeError(_aws_error_detail(exc)) from exc
         return bool(resp.get("Items"))
 
@@ -179,7 +291,7 @@ class Smoke:
                 ScanIndexForward=False,
                 Limit=5,
             )
-        except (ClientError, BotoCoreError) as exc:
+        except Exception as exc:
             raise RuntimeError(_aws_error_detail(exc)) from exc
         return resp.get("Items") or []
 
@@ -189,7 +301,7 @@ class Smoke:
                 TableName=INCIDENTS_TABLE,
                 Key={"incident_id": {"S": incident_id}},
             )
-        except (ClientError, BotoCoreError) as exc:
+        except Exception as exc:
             raise RuntimeError(_aws_error_detail(exc)) from exc
         return resp.get("Item")
 
@@ -201,7 +313,7 @@ class Smoke:
                 ),
                 Message=json.dumps(envelope),
             )
-        except (ClientError, BotoCoreError) as exc:
+        except Exception as exc:
             raise RuntimeError(_aws_error_detail(exc)) from exc
 
     def run(self, hasta, message_id, sender=FAKE_SENDER, deadline=None):
@@ -323,6 +435,7 @@ class Smoke:
 
 
 def build_clients():
+    import boto3
     session = boto3.Session(region_name=AWS_REGION)
     return (
         session.client("sns"),
@@ -336,21 +449,29 @@ def main(argv=None):
         description="Humo WhatsApp (SNS ficticio, sin envío real).",
     )
     parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Pasar el envelope EUM por la ingesta del repo, sin AWS.",
+    )
+    parser.add_argument(
         "--hasta",
         type=parse_hasta,
-        default="portal",
+        default=None,
         help="Cortar la verificación en este paso: " + ", ".join(STEPS),
     )
     args = parser.parse_args(argv)
+    hasta = args.hasta or ("ingesta" if args.local else "portal")
     if FAKE_SENDER == "":
         print("falla: el remitente ficticio no está configurado", flush=True)
         return 1
-    deadline = time.monotonic() + DEADLINE_S
     message_id = new_message_id()
+    if args.local:
+        return run_local(hasta, message_id)
+    deadline = time.monotonic() + DEADLINE_S
     try:
         sns, logs, ddb = build_clients()
         smoke = Smoke(sns, logs, ddb)
-        return smoke.run(args.hasta, message_id, deadline=deadline)
+        return smoke.run(hasta, message_id, deadline=deadline)
     except RuntimeError as exc:
         print("falla: %s" % exc, flush=True)
         return 1

@@ -31,13 +31,16 @@ OUTBOUND_ORIGINATION_PHONE_NUMBER_ID = os.environ.get(
 )
 
 SUPPORTED_DETAIL_TYPES = ("StatusChanged", "IncidentNearby")
+INCIDENTS_TABLE = os.environ.get("INCIDENTS_TABLE", "")
 
-# English notification bodies keyed by EventBridge detail-type. Full template
-# rendering (per-report details, deep links, localization variants) is out of
-# scope -- TODO: replace this minimal map with real template rendering.
-_DETAIL_MSG = {
-    "StatusChanged": "There's an update on your report status.",
-    "IncidentNearby": "An incident was reported near a place you care about.",
+_STATUS_EN = {
+    "OPEN": "Received",
+    "received": "Received",
+    "sent_to_agency": "Sent to the agency",
+    "in_progress": "In progress",
+    "resolved": "Resolved",
+    "reopened": "Reopened",
+    "not_applicable": "Not applicable",
 }
 
 # --- Clients created at module load ------------------------------------------
@@ -75,6 +78,79 @@ def _now():
 
 def _now_iso():
     return _now().isoformat()
+
+
+def _portal_folio(incident_id, created_at=""):
+    year = created_at[:4] if len(created_at) >= 4 and created_at[:4].isdigit() else str(_now().year)
+    token = (incident_id or "??????")[:6].upper()
+    return "UB-{}-{}".format(year, token)
+
+
+def _incident_item(incident_id):
+    if not INCIDENTS_TABLE or not incident_id:
+        return {}
+    try:
+        return _ddb.get_item(
+            TableName=INCIDENTS_TABLE,
+            Key={"incident_id": {"S": str(incident_id)}},
+        ).get("Item") or {}
+    except ClientError:
+        return {}
+
+
+def _canonical_status(event, detail):
+    status = detail.get("status")
+    if status:
+        return str(status)
+    if event.get("source") == "urbanbot.agent":
+        return "sent_to_agency"
+    return ""
+
+
+def _status_notice_text(folio, status):
+    label = _STATUS_EN.get(status, (status or "updated").replace("_", " ").capitalize())
+    return "Your report {} is now {}.".format(folio, label)
+
+
+def _nearby_notice_text(folio):
+    if folio:
+        return "An incident was reported near a place you care about: {}.".format(folio)
+    return "An incident was reported near a place you care about."
+
+
+def _status_notice_key(event, incident_id, status, user_id):
+    key = "status-notice#{}#{}#{}".format(incident_id, status, user_id)
+    if event.get("source") == "urbanbot.agent":
+        return key
+    return "{}#{}".format(key, event.get("id") or "")
+
+
+def _claim_status_notice(key):
+    try:
+        _ddb.put_item(
+            TableName=AUDIT_TABLE,
+            Item={
+                "entity_id": {"S": key},
+                "ts": {"S": "dedup"},
+                "kind": {"S": "status_notice"},
+            },
+            ConditionExpression="attribute_not_exists(entity_id)",
+        )
+        return True
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return False
+        raise
+
+
+def _release_status_notice(key):
+    _ddb.delete_item(
+        TableName=AUDIT_TABLE,
+        Key={
+            "entity_id": {"S": key},
+            "ts": {"S": "dedup"},
+        },
+    )
 
 
 def _affected_user_ids(detail):
@@ -198,7 +274,7 @@ def _audit_notification(user_id, template_id, detail_type):
         _log(logging.WARNING, "audit_write_failed", user_hash=_hash_id(user_id))
 
 
-def _notify_user(user_id, detail_type, template_id, now):
+def _notify_user(user_id, detail_type, template_id, now, text):
     user_item = _get_user(user_id)
     if not user_item:
         _log(logging.INFO, "skipped_unknown_user", user=_mask_phone(user_id))
@@ -226,10 +302,6 @@ def _notify_user(user_id, detail_type, template_id, now):
     over_cap = count > cap
 
     phone = user_item.get("phone", {}).get("S") or user_id
-
-    # Minimal English body from the detail-type map; full template rendering is
-    # out of scope (TODO above on _DETAIL_MSG).
-    text = _DETAIL_MSG.get(detail_type, "You have an update from UrbanBot.")
 
     if over_cap:
         # Over daily cap: still NO individual send -- the digest-batching
@@ -288,13 +360,47 @@ def lambda_handler(event, context):
 
     template_id = detail.get("template_id") or detail.get("template")
     now = _now()
+    incident_id = str(detail.get("incident_id") or "")
+    item = _incident_item(incident_id)
+    created_at = (item.get("created_at") or {}).get("S") or str(detail.get("created_at") or "")
+    folio = _portal_folio(incident_id, created_at) if incident_id else ""
+    status = _canonical_status(event, detail) if detail_type == "StatusChanged" else ""
 
     results = {"sent": 0, "digest": 0, "skipped": 0, "error": 0}
+    if detail_type == "StatusChanged" and status == "resolved":
+        _log(logging.INFO, "skipped_follow_up_owns_resolved", incident_id=incident_id)
+        results["skipped"] = len(_affected_user_ids(detail))
+        _log(logging.INFO, "batch_done", detail_type=detail_type, **results)
+        return results
+
+    if detail_type == "StatusChanged":
+        text = _status_notice_text(folio, status)
+    else:
+        text = _nearby_notice_text(folio)
+
     for user_id in _affected_user_ids(detail):
+        claimed = False
         try:
-            outcome = _notify_user(user_id, detail_type, template_id, now)
+            if detail_type == "StatusChanged" and incident_id and status:
+                notice_key = _status_notice_key(event, incident_id, status, user_id)
+                if not _claim_status_notice(notice_key):
+                    _log(
+                        logging.INFO,
+                        "skipped_duplicate_status",
+                        incident_id=incident_id,
+                        status=status,
+                        user=_mask_phone(user_id),
+                    )
+                    results["skipped"] += 1
+                    continue
+                claimed = True
+            outcome = _notify_user(user_id, detail_type, template_id, now, text)
             results[outcome] = results.get(outcome, 0) + 1
+            if claimed and outcome == "skipped":
+                _release_status_notice(notice_key)
         except Exception:  # noqa: BLE001 - log and continue
+            if claimed:
+                _release_status_notice(notice_key)
             results["error"] += 1
             logger.exception(json.dumps({"event": "notify_failed"}))
 

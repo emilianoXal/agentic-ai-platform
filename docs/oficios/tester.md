@@ -101,6 +101,8 @@ terraform -chdir=modules/follow_up test
 
 Las suites antiguas importan un módulo llamado `handler`; correr agent,
 compute y portal en procesos separados evita que pytest mezcle esos imports.
+Los avisos al ciudadano van en inglés, con el folio corto del portal
+(`UB-AAAA-XXXXXX`) y sin UUID: `python3 -m pytest -q modules/*/tests/test_*avisos*.py`.
 Las pruebas nuevas usan DynamoDB de moto y verifican condiciones reales:
 dos disparos envían una sola vez, una generación anterior no envía ni reabre,
 un ciudadano ajeno no puede responder, una reapertura guarda `reopened` y

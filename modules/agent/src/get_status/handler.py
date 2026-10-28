@@ -60,27 +60,37 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _incident_status(incident_id):
-    """Read the parent incident status (best-effort; None if missing)."""
+def _portal_folio(incident_id, created_at=""):
+    year = created_at[:4] if len(created_at) >= 4 and created_at[:4].isdigit() else str(
+        datetime.now(timezone.utc).year)
+    token = (incident_id or "??????")[:6].upper()
+    return "UB-{}-{}".format(year, token)
+
+
+def _incident_meta(incident_id):
+    """Read parent incident status and portal folio (best-effort)."""
     if not incident_id:
-        return None
+        return None, None
     resp = _ddb.get_item(
         TableName=INCIDENTS_TABLE,
         Key={"incident_id": {"S": incident_id}},
-        ProjectionExpression="#s, updated_at",
+        ProjectionExpression="#s, updated_at, created_at",
         ExpressionAttributeNames={"#s": "status"},
     )
     item = resp.get("Item")
     if not item:
-        return None
-    return item.get("status", {}).get("S")
+        return None, _portal_folio(incident_id)
+    status = item.get("status", {}).get("S")
+    created_at = item.get("created_at", {}).get("S", "")
+    return status, _portal_folio(incident_id, created_at)
 
 
 def _report_view(item):
     """Compact status view of a report row + parent incident status."""
     incident_id = item.get("incident_id", {}).get("S")
-    incident_status = _incident_status(incident_id)
+    incident_status, folio = _incident_meta(incident_id)
     return {
+        "folio": folio,
         "report_id": item.get("report_id", {}).get("S"),
         "category": item.get("category", {}).get("S"),
         "status": incident_status or item.get("status", {}).get("S"),

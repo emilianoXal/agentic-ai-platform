@@ -23,7 +23,14 @@ counts and erasure status.
 Citizen opt-in is a dedicated `register_consent` tool. Ingest reads `users[user_id].consent` as a DynamoDB BOOL and, when it is missing or false, still enqueues the turn with `consent_pending` (it never drops the message). The model decides from free text whether the citizen accepted; it has no phrase list. On accept it calls `register_consent`, which `UpdateItem`s the users table under the exact `user_id` key ingest, `register_place`, `follow_up` and `delete_my_data` read (no normalization), setting `consent` true and `consent_at`. The wrapper clears `consent_pending` for the rest of that turn after a successful write, so a report request in the same message can proceed. The model must not claim the consent was stored until the tool returns `ok`. The tool role may `dynamodb:UpdateItem` only on the users table, plus the shared data CMK. Rejection or ambiguity must not call the tool. The live wording matrix is the manual GitLab `agent:conversations` job (`scripts/conversation_matrix.py` cases C14–C16).
 
 The compute module has two outbound event consumers. `notifier` handles citizen
-notification events for the WhatsApp channel. `dependency-mailer` handles an
+WhatsApp notices in English with the portal short folio (`UB-YYYY-XXXXXX`) and
+the concrete status (for example `Your report UB-2026-A20FF7 is now In progress`).
+It claims each notice in the audit table so EventBridge retries do not repeat
+it: the agent's route event (`urbanbot.agent`) is claimed once per
+incident+status+citizen, while portal `StatusChanged` events add the EventBridge
+event `id`, so a later `in_progress` or `reopened` after a reopen cycle still notifies.
+Resolved status is owned by the follow-up Lambda (`Is it fixed?`), not the
+notifier. `dependency-mailer` handles an
 incident's initial route (`StatusChanged` from `urbanbot.agent`), portal
 escalations (`IncidentEscalated`), and automatic agent escalations
 (`IncidentNearby` from `urbanbot.agent` with status `ESCALATED`). It enriches

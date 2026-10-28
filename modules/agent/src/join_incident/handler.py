@@ -67,6 +67,13 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _portal_folio(incident_id, created_at=""):
+    year = created_at[:4] if len(created_at) >= 4 and created_at[:4].isdigit() else str(
+        datetime.now(timezone.utc).year)
+    token = (incident_id or "??????")[:6].upper()
+    return "UB-{}-{}".format(year, token)
+
+
 def _audit(entity_id, kind, **extra):
     """Write a lightweight audit-log entry (entity_id + ts), RF-15."""
     item = {
@@ -222,6 +229,7 @@ def lambda_handler(event, context):
         )
         return {
             "ok": True,
+            "folio": _portal_folio(incident_id, attrs.get("created_at", {}).get("S", "")),
             "incident_id": incident_id,
             "report_id": report_id,
             "report_count": report_count,

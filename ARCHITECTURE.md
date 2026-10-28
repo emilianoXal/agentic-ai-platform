@@ -52,7 +52,8 @@ fallback-supervisor send records only `supervisor_mail_sent`. Marking failures
 after SES are logged (`dependency_mail_mark_failed`), not retried. The portal
 maps `OPEN` to `received` until both `routed_to` and `dependency_mail_sent_at`
 are present; only then does the read model become `sent_to_agency`. A supervisor
-fallback keeps `received` and the timeline text `Email sent to the supervisor`.
+fallback keeps `received` and the timeline text `Escalated to the supervisor: no
+agency mailbox`.
 A supervisor "Send to agency" click must name an agency whose category has a
 mailbox in `dependency_email_map` (the dialog lists only those); it sets
 `routed_to` and emits `StatusChanged` (source `urbanbot.dashboard`, no

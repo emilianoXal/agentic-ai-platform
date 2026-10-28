@@ -90,10 +90,6 @@ CATEGORY_LABEL = {
     "otro": "Other",
 }
 
-# Geohash base32 (no a, i, l, o). A whole token of this shape is a cell id, not a place.
-_GEOHASH_TOKEN = re.compile(r"^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$")
-_TITLE_LIMIT = 90
-
 # Mirrors the route tool's default routing map (category -> dependency).
 _DEFAULT_DEPENDENCIES = {
     "alumbrado": "Servicios Publicos",
@@ -204,71 +200,35 @@ def normalize_status(raw, routed, mail_sent=False):
     return _LEGACY_STATUS.get(plain, "received"), False
 
 
-def _is_geohash_token(value, geohash=""):
-    text = str(value or "").strip().lower()
-    if not text:
+def _exposes_geohash(text, geohash):
+    """True when a word of the text is the incident's geohash cell or a 4+ char prefix of it."""
+    cell = str(geohash or "").strip().lower()
+    if not cell:
         return False
-    if geohash and text == str(geohash).strip().lower():
-        return True
-    return _GEOHASH_TOKEN.match(text) is not None
+    for word in str(text or "").lower().split():
+        token = word.strip(".,;:()")
+        if len(token) >= 4 and (cell.startswith(token) or token.startswith(cell)):
+            return True
+    return False
 
 
-def _title_exposes_geohash(title, geohash):
-    return any(_is_geohash_token(token, geohash) for token in str(title or "").split())
-
-
-def _summarize_description(text):
-    cleaned = " ".join(str(text or "").split())
-    if not cleaned or _is_geohash_token(cleaned):
-        return None
-    sentence = re.split(r"(?<=[.!?])\s", cleaned, maxsplit=1)[0]
-    if len(sentence) > _TITLE_LIMIT:
-        return sentence[: _TITLE_LIMIT - 1].rstrip() + "…"
-    return sentence
-
-
-def public_title(item, description=None):
-    """Title shown in the portal. Never a geohash.
-
-    Prefers a stored place title, then the citizen's description, then the
-    category with a street or neighborhood, then the category alone.
-    """
-    category = _s(item, "category", "otro")
+def public_title(item):
+    """Title shown in the portal: a stored place title, else the category with a street or neighborhood, else the category. Never a geohash."""
     geohash = _s(item, "geohash", "") or ""
-    label = CATEGORY_LABEL.get(category, "Incident")
+    label = CATEGORY_LABEL.get(_s(item, "category", "otro"), "Incident")
     stored = (_s(item, "title") or "").strip()
-    if stored and not _title_exposes_geohash(stored, geohash):
+    if stored and not _exposes_geohash(stored, geohash):
         return stored
-    summary = _summarize_description(description or _s(item, "description"))
-    if summary:
-        return summary
     address = _s(item, "address")
-    neighborhood = _s(item, "neighborhood")
-    if address and not _is_geohash_token(address, geohash):
+    if address and not _exposes_geohash(address, geohash):
         return "{} at {}".format(label, address)
-    if neighborhood and not _is_geohash_token(neighborhood, geohash):
+    neighborhood = _s(item, "neighborhood")
+    if neighborhood and not _exposes_geohash(neighborhood, geohash):
         return "{} near {}".format(label, neighborhood)
     return label
 
 
-def _citizen_description(item):
-    """Description already on the incident, or on its first report for rows that predate that field."""
-    own = _summarize_description(_s(item, "description"))
-    if own:
-        return own
-    geohash = _s(item, "geohash", "") or ""
-    if (_s(item, "title") or "").strip() and not _title_exposes_geohash(_s(item, "title"), geohash):
-        return None
-    report_ids = _report_ids(item)
-    if not report_ids:
-        return None
-    reports = _load_reports(report_ids[:1])
-    if not reports:
-        return None
-    return _summarize_description(_s(reports[0], "description"))
-
-
-def to_incident(item, neighbors=None, timeline=None, description=None):
+def to_incident(item, neighbors=None, timeline=None):
     incident_id = _s(item, "incident_id")
     routed_to = _s(item, "routed_to")
     mail_sent = bool(_s(item, "dependency_mail_sent_at"))
@@ -284,7 +244,7 @@ def to_incident(item, neighbors=None, timeline=None, description=None):
         lat, lng = decode_geohash(geohash)
     created_at = _s(item, "created_at", _now_iso())
     neighborhood = _s(item, "neighborhood")
-    title = public_title(item, description)
+    title = public_title(item)
     return {
         "id": incident_id,
         "folio": _s(item, "folio") or "UB-{}-{}".format(created_at[:4], incident_id[:6].upper()),
@@ -389,12 +349,7 @@ def _get_item(incident_id):
 
 def _detail(item):
     recipients = _recipients(item)
-    return to_incident(
-        item,
-        [_mask_neighbor(u) for u in recipients],
-        _load_timeline(_s(item, "incident_id"), bool(_s(item, "dependency_mail_sent_at"))),
-        _citizen_description(item),
-    )
+    return to_incident(item, [_mask_neighbor(u) for u in recipients], _load_timeline(_s(item, "incident_id"), bool(_s(item, "dependency_mail_sent_at"))))
 
 
 # =============================================================================
@@ -622,7 +577,7 @@ def list_incidents(event, caller):
         agency = caller["agency_id"]
         items = [i for i in items if agency and slugify(_s(i, "routed_to")) == agency]
     token = _encode_token(resp.get("LastEvaluatedKey"))
-    incidents = [to_incident(i, description=_citizen_description(i)) for i in items]
+    incidents = [to_incident(i) for i in items]
     return {"items": incidents, "nextToken": token, "hasMore": token is not None, "count": len(incidents)}
 
 

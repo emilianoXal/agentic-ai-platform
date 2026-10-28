@@ -24,13 +24,6 @@ const TITLE_PREFIXES: readonly [string, string][] = [
   ['Incident', 'category.otro'],
 ];
 
-/** Geohash alphabet (no a, i, l, o). A whole token of this shape is a cell id, not a place name. */
-const GEOHASH_TOKEN = /^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$/i;
-
-export function isGeohashToken(value: string): boolean {
-  return GEOHASH_TOKEN.test(value.trim());
-}
-
 export function localizeTitle(title: string, i18n: I18nService): string {
   const match = TITLE_PREFIXES.find(
     ([prefix]) => title === prefix || title.startsWith(prefix + ' '),
@@ -42,19 +35,9 @@ export function localizeTitle(title: string, i18n: I18nService): string {
   const rest = title.slice(prefix.length + 1);
   if (rest === 'near you') return i18n.t('title.nearYou', { category });
   if (rest === 'near the demo point') return i18n.t('title.nearDemo', { category });
-  if (rest.startsWith('at ')) return placeTitle(i18n, 'title.at', category, rest.slice(3));
-  if (rest.startsWith('near ')) return placeTitle(i18n, 'title.near', category, rest.slice(5));
+  if (rest.startsWith('at ')) return i18n.t('title.at', { category, place: rest.slice(3) });
+  if (rest.startsWith('near ')) return i18n.t('title.near', { category, place: rest.slice(5) });
   return title;
-}
-
-function placeTitle(
-  i18n: I18nService,
-  key: 'title.at' | 'title.near',
-  category: string,
-  place: string,
-): string {
-  if (isGeohashToken(place)) return category;
-  return i18n.t(key, { category, place });
 }
 
 export function localizeIncidentTitle(
@@ -80,6 +63,17 @@ function followUpDelay(text: string): string | null {
 function formatFollowUpDelay(minutes: number): string {
   if (minutes > 0 && minutes % 60 === 0) return `${minutes / 60} h`;
   return `${minutes} min`;
+}
+
+/** Delay of the latest scheduled "Is it fixed?" on the incident's history, if any. */
+export function scheduledFollowUpDelay(timeline: readonly TimelineEntry[]): string | null {
+  for (let index = timeline.length - 1; index >= 0; index--) {
+    const entry = timeline[index];
+    if (entry.kind !== 'follow_up' || /sent to \d+/.test(entry.text)) continue;
+    const delay = followUpDelay(entry.text);
+    if (delay) return delay;
+  }
+  return null;
 }
 
 function firstNumber(text: string): number | null {

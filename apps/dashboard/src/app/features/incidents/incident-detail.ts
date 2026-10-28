@@ -10,7 +10,7 @@ import {
 import { formatAbsolute, formatRelative } from '../../core/format';
 import { I18nService, TranslatePipe } from '../../core/i18n';
 import { IncidentsGateway } from '../../core/incidents-gateway';
-import { localizeTimeline, localizeTitle } from '../../core/localize';
+import { localizeTimeline, localizeTitle, scheduledFollowUpDelay } from '../../core/localize';
 import { allowedTransitions, CATEGORY } from '../../core/labels';
 import { Incident, StatusCode, TimelineKind, TimelineEntry } from '../../core/models';
 import { SessionService } from '../../core/session';
@@ -88,6 +88,8 @@ export class IncidentDetail {
   }
 
   protected readonly title = computed(() => localizeTitle(this.incident().title, this.i18n));
+
+  protected readonly followUpDelay = computed(() => scheduledFollowUpDelay(this.incident().timeline));
 
   protected entryText(entry: TimelineEntry): string {
     return localizeTimeline(entry, this.i18n);

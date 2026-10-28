@@ -60,7 +60,11 @@
   } @else {
     <p class="hint">
       @if (i.status === 'resolved' && i.followUpPending) {
-        {{ 'detail.waitingFollowUp' | t }}
+        @if (followUpDelay(); as delay) {
+          {{ 'detail.waitingFollowUp' | t: { delay } }}
+        } @else {
+          {{ 'detail.waitingFollowUpUnscheduled' | t }}
+        }
       } @else {
         {{ 'detail.noAction' | t }}
       }

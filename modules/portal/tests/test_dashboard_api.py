@@ -116,7 +116,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(len(self.ddb.tables["reports"]), 30)
         self.assertTrue(all(i["synthetic"]["BOOL"] for i in self.ddb.tables["incidents"].values()))
 
-    def test_list_uses_the_first_report_description_when_the_incident_has_no_title(self):
+    def test_list_title_never_uses_the_citizen_description(self):
         self.ddb.put_item("incidents", {
             "incident_id": {"S": "wa-1"},
             "category": {"S": "otro"},
@@ -127,13 +127,20 @@ class DashboardApiTest(unittest.TestCase):
         })
         self.ddb.put_item("reports", {
             "report_id": {"S": "rep-1"},
-            "description": {"S": "Parked patrol car blocking the lane at the corner"},
+            "description": {"S": "Parked patrol car blocking the lane, call Ana 5215550000000"},
             "user_id": {"S": "5215550000000"},
         })
         page = handler.lambda_handler(event("listIncidents", parent="Query", limit=50), None)
         shown = next(i for i in page["items"] if i["id"] == "wa-1")
-        self.assertEqual(shown["title"], "Parked patrol car blocking the lane at the corner")
-        self.assertNotIn("9g5wug6", shown["title"])
+        self.assertEqual(shown["title"], "Other")
+
+    def test_list_keeps_seeded_titles_with_ordinary_words_and_house_numbers(self):
+        page = handler.lambda_handler(event("listIncidents", parent="Query", limit=50), None)
+        stored = {_id: item["title"]["S"] for _id, item in self.ddb.tables["incidents"].items() if "title" in item}
+        self.assertTrue(stored)
+        for shown in page["items"]:
+            if shown["id"] in stored:
+                self.assertEqual(shown["title"], stored[shown["id"]])
 
     def test_list_returns_paginated_read_model(self):
         page = handler.lambda_handler(event("listIncidents", parent="Query", limit=50), None)
@@ -244,7 +251,7 @@ class ReadModelTest(unittest.TestCase):
         self.assertEqual(incident["title"], "Pothole")
         self.assertNotIn(item["geohash"]["S"], incident["title"])
 
-    def test_title_uses_description_and_hides_geohash(self):
+    def test_title_ignores_the_description_and_hides_geohash(self):
         item = {
             "incident_id": {"S": "wa-1"},
             "category": {"S": "otro"},
@@ -253,9 +260,24 @@ class ReadModelTest(unittest.TestCase):
             "status": {"S": "OPEN"},
             "created_at": {"S": "2026-10-28T17:00:00+00:00"},
         }
-        incident = handler.to_incident(item)
-        self.assertEqual(incident["title"], "Parked patrol car blocking the lane at the corner")
-        self.assertNotIn("9g5wug6", incident["title"])
+        self.assertEqual(handler.to_incident(item)["title"], "Other")
+
+    def test_title_keeps_ordinary_words_and_house_numbers(self):
+        base = {
+            "incident_id": {"S": "wa-4"},
+            "category": {"S": "agua"},
+            "geohash": {"S": "9g8t5s4"},
+            "status": {"S": "OPEN"},
+            "created_at": {"S": "2026-10-28T17:00:00+00:00"},
+        }
+        stored = dict(base, title={"S": "Street lights out at Av. Universidad 1500"})
+        self.assertEqual(handler.to_incident(stored)["title"], "Street lights out at Av. Universidad 1500")
+        verde = dict(base, neighborhood={"S": "Verde"})
+        self.assertEqual(handler.to_incident(verde)["title"], "Water leak near Verde")
+        house = dict(base, address={"S": "1500"})
+        self.assertEqual(handler.to_incident(house)["title"], "Water leak at 1500")
+        prefix = dict(base, title={"S": "Water leak near 9g8t5s"})
+        self.assertEqual(handler.to_incident(prefix)["title"], "Water leak")
 
     def test_title_is_category_near_a_readable_place(self):
         item = {

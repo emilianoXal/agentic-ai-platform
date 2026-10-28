@@ -3,7 +3,7 @@ import { getTestBed, TestBed } from '@angular/core/testing';
 import { BrowserTestingModule, platformBrowserTesting } from '@angular/platform-browser/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { I18N_DICTIONARIES, I18nService, interpolate } from './i18n';
-import { localizeTimeline, localizeTitle } from './localize';
+import { localizeTimeline, localizeTitle, scheduledFollowUpDelay } from './localize';
 import { TimelineEntry } from './models';
 
 const bed = getTestBed();
@@ -54,18 +54,15 @@ describe('i18n', () => {
     expect(localizeTitle('Street lights out near you', i18n)).toBe(
       'Luminarias apagadas cerca de ti',
     );
-    expect(localizeTitle('Pothole near 9ewmq3h', i18n)).toBe('Bache');
-    expect(localizeTitle('Other near 9g5wug6', i18n)).toBe('Otro');
     expect(localizeTitle('Pothole near Centro', i18n)).toBe('Bache cerca de Centro');
+    expect(localizeTitle('Pothole near Verde', i18n)).toBe('Bache cerca de Verde');
     expect(localizeTitle('Pothole', i18n)).toBe('Bache');
-    expect(
-      localizeTitle('Parked patrol car blocking the lane at the corner', i18n),
-    ).toBe('Parked patrol car blocking the lane at the corner');
+    expect(localizeTitle('Other', i18n)).toBe('Otro');
     expect(localizeTitle('Something else', i18n)).toBe('Something else');
     i18n.set('en');
-    expect(localizeTitle('Other near 9g5wug6', i18n)).toBe('Other');
-    expect(localizeTitle('Pothole near 9g8t5s4', i18n)).toBe('Pothole');
-    expect(localizeTitle('Pothole near 9g8t5s4', i18n)).not.toMatch(/[0-9bcdefghjkmnpqrstuvwxyz]{4,}/i);
+    expect(localizeTitle('Water leak at Av. Universidad 1500', i18n)).toBe(
+      'Water leak at Av. Universidad 1500',
+    );
   });
 
   it('localizes timeline entries from their kind and fields', () => {
@@ -140,6 +137,33 @@ describe('i18n', () => {
     i18n.set('en');
     expect(localizeTimeline(scheduled, i18n)).toBe(
       '"Is it fixed?" scheduled for neighbors in 5 min',
+    );
+  });
+
+  it('reads the follow-up delay from the scheduled history line', () => {
+    const scheduled: TimelineEntry = {
+      id: 'f1',
+      at: '2026-10-28T17:00:00Z',
+      kind: 'follow_up',
+      text: '"Is it fixed?" scheduled for neighbors in 5 min',
+      source: 'dashboard',
+    };
+    const sent: TimelineEntry = { ...scheduled, id: 'f2', text: '"Is it fixed?" sent to 3 neighbors' };
+    expect(scheduledFollowUpDelay([scheduled])).toBe('5 min');
+    expect(scheduledFollowUpDelay([scheduled, sent])).toBe('5 min');
+    const day: TimelineEntry = {
+      ...scheduled,
+      text: '"Is it fixed?" scheduled for neighbors in 1440 min',
+    };
+    expect(scheduledFollowUpDelay([day])).toBe('24 h');
+    expect(scheduledFollowUpDelay([])).toBeNull();
+    i18n.set('es');
+    expect(i18n.t('detail.waitingFollowUp', { delay: '5 min' })).toBe(
+      'Esperando que los vecinos respondan "¿Ya quedó?", que se envía en 5 min.',
+    );
+    i18n.set('en');
+    expect(i18n.t('detail.waitingFollowUp', { delay: '5 min' })).toBe(
+      'Waiting for neighbors to answer "Is it fixed?", sent in 5 min.',
     );
   });
 });

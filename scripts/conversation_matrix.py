@@ -228,10 +228,13 @@ for scenario, decision, mx, col in FOLLOW_UP_PHRASES:
                 "locale": locale,
                 "input_channel": channel,
                 "expected_decision": decision,
-                "turns": ["Sobre el aviso ¿Ya quedó? del incidente {{INCIDENT_ID}}: "
-                          + ("Bueno, eh, " if channel == "voice_transcript" else "") + phrase],
+                "turns": [("Bueno, eh, " if channel == "voice_transcript" else "") + phrase],
                 "video_candidate": decision is not None,
             })
+
+
+def select_cases(suite):
+    return [case for case in CASES if suite == "all" or bool(case.get("follow_up")) == (suite == "follow-up")]
 
 
 def seed_follow_up(ddb, case, run_number, user_id, namespace, fixtures):
@@ -831,8 +834,8 @@ def parse_args():
         default=os.environ.get("CONVERSATION_OUTPUT_DIR", "conversation-artifacts"),
     )
     parser.add_argument("--function-name", default=FUNCTION_NAME)
-    parser.add_argument("--suite", choices=("all", "follow-up"),
-                        default=os.environ.get("CONVERSATION_SUITE", "all"))
+    parser.add_argument("--suite", choices=("base", "follow-up", "all"),
+                        default=os.environ.get("CONVERSATION_SUITE", "base"))
     return parser.parse_args()
 
 
@@ -847,7 +850,7 @@ def main():
     )
     ddb = session.client("dynamodb")
     logs = session.client("logs")
-    cases = [case for case in CASES if args.suite == "all" or case.get("follow_up")]
+    cases = select_cases(args.suite)
     namespace = str(uuid.uuid4())
     result = {
         "schema": "urbanbot-conversation-matrix-v1",

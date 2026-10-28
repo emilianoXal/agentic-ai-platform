@@ -254,3 +254,28 @@ def test_partially_seeded_run_still_deletes_what_it_created(database, monkeypatc
     assert len(result["follow_up_cleanup"]["fixtures"]) == 3
     assert result["follow_up_cleanup"]["errors"] == []
     assert table_keys(ddb) == untouched
+
+
+def test_default_suite_is_base_and_follow_up_or_all_are_explicit(monkeypatch):
+    monkeypatch.delenv("CONVERSATION_SUITE", raising=False)
+    monkeypatch.setattr(sys, "argv", ["conversation_matrix.py"])
+    default = matrix.select_cases(matrix.parse_args().suite)
+    follow_up = matrix.select_cases("follow-up")
+    every = matrix.select_cases("all")
+    assert default and not any(case.get("follow_up") for case in default)
+    assert len(follow_up) == 32 and all(case.get("follow_up") for case in follow_up)
+    assert [case["id"] for case in every] == [case["id"] for case in default + follow_up]
+
+
+def test_follow_up_turns_send_only_the_citizen_phrase(database, monkeypatch, tmp_path):
+    ddb, tool = database
+    lambda_client = Mock()
+    lambda_client.invoke.side_effect = fake_agent(tool, None)
+    status, result = run_main(monkeypatch, tmp_path, ddb, lambda_client)
+    assert status == 0
+    sent = [matrix.json.loads(call.kwargs["Payload"])["text"] for call in lambda_client.invoke.call_args_list]
+    expected = {prefix + phrase for _, _, mx, col in matrix.FOLLOW_UP_PHRASES for phrase in (mx, col)
+                for prefix in ("", "Bueno, eh, ")}
+    assert len(sent) == 96 and set(sent) == expected
+    ids = {fixture["incident_id"] for fixture in result["follow_up_cleanup"]["fixtures"]}
+    assert not any(incident in text or "aviso" in text.lower() for text in sent for incident in ids)

@@ -59,10 +59,14 @@ ficticio creado en esta corrida, cuando el agente lo crea).
 ## Borrado de datos personales
 
 Antes de `apply`, ejecutar `python3 -m pytest -q modules/agent/tests -k delete`.
-La prueba usa DynamoDB simulado y comprueba confirmación obligatoria, eliminación
-de usuario y lugares, anonimización de reportes, conservación del conteo del
-incidente e idempotencia. Después de aplicar `main`, usar el job manual
+La prueba usa DynamoDB simulado y comprueba confirmación obligatoria, que el
+sujeto es siempre el remitente del evento, que sin `AGENTCORE_MEMORY_ID` no se
+borra nada, eliminación de usuario y lugares, baja de `incidents.subscribers`,
+anonimización de reportes, conservación del conteo del incidente e idempotencia.
+El borrado en dev requiere AgentCore Memory habilitada (otro MR); sin ella la
+herramienta responde `deletion_unavailable`. Con Memory, usar el job manual
 `agent:conversations` con el número ficticio: solicitar el borrado, comprobar
-que el agente pide confirmación y confirmarlo en un segundo mensaje. Verificar
-en DynamoDB que no quede el número ficticio en users, places ni reports y que el
-incidente conserve su `report_count`; el audit log solo debe contener el hash.
+que el agente pide responder `CONFIRMO BORRAR MIS DATOS` y enviarlo en un
+segundo mensaje. Verificar en DynamoDB que no quede el número ficticio en users,
+places, reports ni en `subscribers` de incidents y que el incidente conserve su
+`report_count`; el audit log solo debe contener el hash.

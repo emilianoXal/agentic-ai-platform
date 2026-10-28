@@ -456,6 +456,13 @@ data "aws_iam_policy_document" "delete_my_data" {
   }
 
   statement {
+    sid       = "IncidentsUnsubscribe"
+    effect    = "Allow"
+    actions   = ["dynamodb:UpdateItem"]
+    resources = [var.incidents_table_arn]
+  }
+
+  statement {
     sid       = "AuditWrite"
     effect    = "Allow"
     actions   = ["dynamodb:PutItem"]
@@ -885,6 +892,7 @@ resource "aws_lambda_function" "delete_my_data" {
       PLACES_TABLE       = var.places_table_name
       REPORTS_TABLE      = var.reports_table_name
       REPORTS_USER_INDEX = "by-user"
+      INCIDENTS_TABLE    = var.incidents_table_name
       AUDIT_TABLE        = var.audit_log_table_name
       LOG_LEVEL          = var.log_level
     }

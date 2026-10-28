@@ -12,6 +12,7 @@ from botocore.exceptions import ClientError
 USERS_TABLE = os.environ.get("USERS_TABLE", "")
 PLACES_TABLE = os.environ.get("PLACES_TABLE", "")
 REPORTS_TABLE = os.environ.get("REPORTS_TABLE", "")
+INCIDENTS_TABLE = os.environ.get("INCIDENTS_TABLE", "")
 REPORTS_USER_INDEX = os.environ.get("REPORTS_USER_INDEX", "by-user")
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -66,14 +67,33 @@ def _delete_places(user_id):
     return len(places)
 
 
+def _unsubscribe(incident_id, user_id):
+    try:
+        _ddb.update_item(
+            TableName=INCIDENTS_TABLE,
+            Key={"incident_id": {"S": incident_id}},
+            UpdateExpression="DELETE subscribers :sub",
+            ConditionExpression="attribute_exists(incident_id)",
+            ExpressionAttributeValues={":sub": {"SS": [user_id]}},
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+
+
 def _anonymize_reports(user_id):
     reports = _query_all(
         TableName=REPORTS_TABLE,
         IndexName=REPORTS_USER_INDEX,
         KeyConditionExpression="user_id = :u",
         ExpressionAttributeValues={":u": {"S": user_id}},
-        ProjectionExpression="report_id",
+        ProjectionExpression="report_id, incident_id",
     )
+    incident_ids = {
+        report["incident_id"]["S"] for report in reports if "incident_id" in report
+    }
+    for incident_id in sorted(incident_ids):
+        _unsubscribe(incident_id, user_id)
     personal_fields = {
         "#user_id": "user_id",
         "#phone": "phone",

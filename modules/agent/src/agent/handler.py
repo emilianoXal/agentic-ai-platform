@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from datetime import datetime, timezone
 
 import boto3
@@ -169,6 +170,18 @@ def _invoke_tool(function_name, payload):
     except (ClientError, BotoCoreError):
         logger.exception(json.dumps({"event": "tool_invoke_exception"}))
         return {"ok": False, "error": "tool_invoke_failed"}
+
+
+_DELETE_CONFIRMATION_PHRASE = "confirmo borrar mis datos"
+
+_turn = {}
+
+
+def _is_deletion_confirmation(text):
+    folded = unicodedata.normalize("NFKD", str(text or "")).lower()
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    words = re.sub(r"[^a-z0-9]+", " ", folded).split()
+    return " ".join(words) == _DELETE_CONFIRMATION_PHRASE
 
 
 # --- Tool wrappers (one per tool Lambda; typed signatures + es-MX docstrings) -
@@ -315,22 +328,23 @@ def escalate(incident_id: str, reason: str = None, user_ids: list = None) -> dic
 
 
 @tool
-def delete_my_data(user_id: str, confirmed: bool = False) -> dict:
+def delete_my_data() -> dict:
     """Borra los datos personales del ciudadano y anonimiza sus reportes.
 
-    Solo debe llamarse despues de que el ciudadano confirme explicitamente el
-    borrado en la conversacion actual. Conserva los reportes anonimizados y los
-    conteos de incidentes para mantener la informacion operativa.
-
-    Args:
-        user_id: Identificador del ciudadano que solicita el borrado.
-        confirmed: Verdadero solo tras una confirmacion explicita del ciudadano.
+    Solo debe llamarse cuando el mensaje actual del ciudadano sea exactamente
+    la frase de confirmacion que le pediste en el turno anterior. El sujeto del
+    borrado es siempre el remitente de este mensaje. Conserva los reportes
+    anonimizados y los conteos de incidentes.
     """
-    if confirmed is not True:
+    user_id = _turn.get("user_id")
+    if not AGENTCORE_MEMORY_ID or not user_id:
+        return {"ok": False, "error": "deletion_unavailable"}
+    if not _is_deletion_confirmation(_turn.get("text")):
         return {
             "ok": False,
             "error": "confirmation_required",
-            "message": "Pide confirmacion explicita antes de borrar los datos.",
+            "message": "Pide al ciudadano que responda exactamente: "
+                       + _DELETE_CONFIRMATION_PHRASE.upper(),
         }
     return _invoke_tool(TOOL_DELETE_MY_DATA_FN, {
         "user_id": user_id,
@@ -361,8 +375,9 @@ _SYSTEM_PROMPT = (
     "reportes necesitas la ubicacion (lat/lng); si falta, pidela y no inventes "
     "una celda. Si una persona pide borrar sus datos, primero explica que sus "
     "datos personales y lugares se eliminaran, que sus reportes se conservaran "
-    "anonimizados, y pide confirmacion explicita. No llames delete_my_data hasta "
-    "recibir esa confirmacion en la conversacion. Responde corto, claro y en "
+    "anonimizados, y pide que responda exactamente CONFIRMO BORRAR MIS DATOS en "
+    "su siguiente mensaje. Llama delete_my_data solo cuando el mensaje actual "
+    "sea esa frase. Responde corto, claro y en "
     "espanol de Mexico."
 )
 
@@ -450,6 +465,8 @@ def lambda_handler(event, context):
         return {"ok": False, "error": "invalid_input", "reply": _ASK_FOR_TEXT}
 
     text = text.strip()
+    _turn.clear()
+    _turn.update(user_id=str(user_id), text=text)
     consent_pending = bool(event.get("consent_pending"))
     rate_limited = bool(event.get("rate_limited"))
 

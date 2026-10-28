@@ -12,6 +12,7 @@ os.environ.update({
     "USERS_TABLE": "users",
     "PLACES_TABLE": "places",
     "REPORTS_TABLE": "reports",
+    "INCIDENTS_TABLE": "incidents",
     "AUDIT_TABLE": "audit",
 })
 
@@ -49,6 +50,7 @@ class FakeDynamoDB:
             "incident-1": {
                 "incident_id": {"S": "incident-1"},
                 "report_count": {"N": "1"},
+                "subscribers": {"SS": ["5215512345678", "5215500000000"]},
             },
         }
         self.audit = []
@@ -65,7 +67,7 @@ class FakeDynamoDB:
             }
         return {
             "Items": [
-                {"report_id": item["report_id"]}
+                {"report_id": item["report_id"], "incident_id": item["incident_id"]}
                 for item in self.reports.values()
                 if item.get("user_id", {}).get("S") == user_id
             ],
@@ -78,6 +80,18 @@ class FakeDynamoDB:
             self.places.pop((Key["user_id"]["S"], Key["place_id"]["S"]), None)
 
     def update_item(self, TableName, Key, **kwargs):
+        if TableName == "incidents":
+            incident = self.incidents[Key["incident_id"]["S"]]
+            removed = kwargs["ExpressionAttributeValues"][":sub"]["SS"]
+            remaining = [
+                sub for sub in incident.get("subscribers", {}).get("SS", [])
+                if sub not in removed
+            ]
+            if remaining:
+                incident["subscribers"] = {"SS": remaining}
+            else:
+                incident.pop("subscribers", None)
+            return {}
         report = self.reports[Key["report_id"]["S"]]
         for field in kwargs["ExpressionAttributeNames"].values():
             report.pop(field, None)
@@ -102,6 +116,7 @@ def test_delete_removes_personal_data_and_preserves_incident_count():
         "incident_id": {"S": "incident-1"},
     }
     assert database.incidents["incident-1"]["report_count"] == {"N": "1"}
+    assert database.incidents["incident-1"]["subscribers"] == {"SS": ["5215500000000"]}
     audit_text = str(database.audit)
     assert "5215512345678" not in audit_text
     assert database.audit[0]["kind"] == {"S": "delete_my_data"}

@@ -66,27 +66,25 @@ def _hash_id(value):
 
 
 def _phone_number_id(value):
-    """Normalize an EUM phone-number ARN to the bare phone-number id.
+    """Return an originationPhoneNumberId accepted by send_whatsapp_message.
 
-    send_whatsapp_message wants the id; ingest propagates the full ARN
-    (context.MetaPhoneNumberIds[].arn). Split on the specific delimiter the
-    ingest handler already proves (":phone-number-id/"), NOT a blind
-    last-segment split -- the id contains no "/". A bare id (or an unknown
-    shape) is passed through unchanged (VP-3).
+    The API requires one of two shapes (per the AWS pattern
+    `(^phone-number-id-.*$)|(^arn:.*:phone-number-id/[0-9a-zA-Z]+$)`):
+      1. a bare id that STARTS WITH `phone-number-id-`, or
+      2. the FULL ARN `arn:...:phone-number-id/<id>`.
 
-    OPERATOR NOTE (AC-6): a malformed origination -- a value that looks like an
-    ARN but lacks the ":phone-number-id/" delimiter -- is NOT rejected here; it
-    is passed through verbatim and will surface downstream as a "send_failed"
-    log from send_whatsapp_message (error_code from EUM), not as "invalid_input".
-    If sends fail with no obvious cause, check that the configured
-    OUTBOUND_ORIGINATION_PHONE_NUMBER_ID / ingest-propagated ARN is well-formed.
+    ingest propagates the full ARN (context.MetaPhoneNumberIds[].arn). We pass
+    that ARN through UNCHANGED -- it already matches form 2. Splitting on
+    ":phone-number-id/" would yield only the trailing hash (e.g.
+    "e644d37f...") WITHOUT the required "phone-number-id-" prefix, which fails
+    the pattern with a ValidationException -- the bug this replaces. A value
+    that already starts with "phone-number-id-" (form 1) is also passed
+    through. Anything else is passed through verbatim and will surface as a
+    send_failed from the API.
     """
     if not value:
         return None
-    s = str(value)
-    if ":phone-number-id/" in s:
-        return s.split(":phone-number-id/", 1)[1]
-    return s
+    return str(value)
 
 
 def lambda_handler(event, context):

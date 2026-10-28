@@ -60,7 +60,10 @@ class OutboundHandlerTests(unittest.TestCase):
         self.assertEqual(result, {"ok": True, "message_id": MESSAGE_ID})
         handler._social.send_whatsapp_message.assert_called_once()
         kwargs = handler._social.send_whatsapp_message.call_args.kwargs
-        self.assertEqual(kwargs["originationPhoneNumberId"], AWS_PHONE_ID)
+        # The full ARN is passed through unchanged (matches the AWS pattern
+        # form `arn:...:phone-number-id/<id>`); extracting the bare hash would
+        # drop the required `phone-number-id-` prefix and fail validation.
+        self.assertEqual(kwargs["originationPhoneNumberId"], PHONE_ARN)
         self.assertEqual(kwargs["metaApiVersion"], "v20.0")
         expected_obj = {
             "messaging_product": "whatsapp",
@@ -70,12 +73,17 @@ class OutboundHandlerTests(unittest.TestCase):
         }
         self.assertEqual(kwargs["message"], json.dumps(expected_obj).encode("utf-8"))
 
-    def test_phone_number_id_normalization(self):
-        self.assertEqual(handler._phone_number_id(PHONE_ARN), AWS_PHONE_ID)
-        self.assertEqual(handler._phone_number_id(AWS_PHONE_ID), AWS_PHONE_ID)
+    def test_phone_number_id_passthrough(self):
+        # The full ARN (form `arn:...:phone-number-id/<id>`) and a bare
+        # `phone-number-id-...` id are both valid originationPhoneNumberId
+        # shapes, so both are passed through unchanged. Splitting the ARN to
+        # the trailing hash (the old behavior) dropped the `phone-number-id-`
+        # prefix and caused a ValidationException.
+        self.assertEqual(handler._phone_number_id(PHONE_ARN), PHONE_ARN)
+        bare = "phone-number-id-" + AWS_PHONE_ID
+        self.assertEqual(handler._phone_number_id(bare), bare)
         self.assertIsNone(handler._phone_number_id(""))
         self.assertIsNone(handler._phone_number_id(None))
-        self.assertEqual(handler._phone_number_id("junk-value"), "junk-value")
 
     def test_missing_to_is_invalid_input(self):
         event = {"text": TEXT_HOLA, "origination_phone_number_id": PHONE_ARN}

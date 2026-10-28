@@ -52,9 +52,8 @@ data "aws_iam_policy_document" "lambda_assume" {
 # ingest — IAM role + customer-managed least-privilege policy + attachment.
 # =============================================================================
 resource "aws_iam_role" "ingest" {
-  name                 = "${local.name_prefix}-ingest-role"
-  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
-  permissions_boundary = var.permissions_boundary_arn
+  name               = "${local.name_prefix}-ingest-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 }
 
 data "aws_iam_policy_document" "ingest" {
@@ -119,9 +118,8 @@ resource "aws_iam_role_policy_attachment" "ingest" {
 # No sns:Publish, no socialmessaging.
 # =============================================================================
 resource "aws_iam_role" "notifier" {
-  name                 = "${local.name_prefix}-notifier-role"
-  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
-  permissions_boundary = var.permissions_boundary_arn
+  name               = "${local.name_prefix}-notifier-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 }
 
 data "aws_iam_policy_document" "notifier" {

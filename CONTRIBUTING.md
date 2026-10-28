@@ -101,14 +101,6 @@ needs the index ARN (`"${table_arn}/index/<index_name>"`) in addition to the
 table ARN. Any role touching CMK-encrypted resources needs `kms:Decrypt` +
 `kms:GenerateDataKey` on the CMK ARN.
 
-**Permissions boundary is mandatory.** The governance policy denies
-`iam:CreateRole` unless the role carries the `base-cdshack-limite-permisos`
-boundary. Every `aws_iam_role` MUST set
-`permissions_boundary = var.permissions_boundary_arn`; declare the
-`permissions_boundary_arn` variable in your module and pass it from the env
-(default `arn:aws:iam::636487155766:policy/base-cdshack-limite-permisos`). A role
-without the boundary fails `apply` with an explicit-deny AccessDenied.
-
 ## Lambda handlers
 
 - Python 3.12, handler `handler.lambda_handler`, stdlib + boto3 only.

@@ -27,8 +27,7 @@ module "data" {
 module "compute" {
   source = "../../modules/compute"
 
-  environment              = var.environment
-  permissions_boundary_arn = var.permissions_boundary_arn
+  environment = var.environment
 
   kms_key_arn       = module.data.kms_key_arn
   ingest_queue_url  = module.data.ingest_queue_url
@@ -53,8 +52,7 @@ module "compute" {
 module "agent" {
   source = "../../modules/agent"
 
-  environment              = var.environment
-  permissions_boundary_arn = var.permissions_boundary_arn
+  environment = var.environment
 
   enable_agentcore_runtime = var.enable_agentcore_runtime
   enable_agentcore_gateway = var.enable_agentcore_gateway

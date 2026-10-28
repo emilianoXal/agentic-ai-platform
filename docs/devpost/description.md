@@ -1,12 +1,12 @@
-# Urbanbot
+# UrbanBot
 
 ## Inspiration
 
-Reporting a pothole, leak, broken streetlight, or trash pile should not mean navigating a portal, repeating the same issue to different people, or losing track of what happened next. Urbanbot meets residents in WhatsApp, groups nearby reports into a shared incident, and gives municipal teams a focused operational view.
+Reporting a pothole, leak, broken streetlight, or trash pile should not mean navigating a portal, repeating the same issue to different people, or losing track of what happened next. UrbanBot meets residents in WhatsApp, groups nearby reports into a shared incident, and gives municipal teams a focused operational view.
 
 ## What it does
 
-Urbanbot accepts citizen messages through WhatsApp, normalizes inbound events, and queues them for an agentic workflow. The agent uses Amazon Bedrock and narrowly scoped Lambda tools to create reports, join an existing incident, look up status, register a place, route a request, or escalate an incident. Operational data lives in DynamoDB.
+UrbanBot accepts citizen messages through WhatsApp, normalizes inbound events, and queues them for an agentic workflow. The agent uses Amazon Bedrock and narrowly scoped Lambda tools to create reports, join an existing incident, look up status, register a place, route a request, or escalate an incident. Operational data lives in DynamoDB.
 
 Officials use an AWS Amplify-hosted dashboard backed by AppSync to view incidents, inspect report clusters, change status, and work within role-based permissions. Status changes emit domain events for the notifier flow. The MVP uses synthetic municipal data and does not replace emergency services.
 

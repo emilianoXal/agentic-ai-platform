@@ -1,6 +1,6 @@
-# Best WhatsApp Solution: Urbanbot
+# Best WhatsApp Solution: UrbanBot
 
-Urbanbot is designed around WhatsApp as the citizen channel for urban-infrastructure reports. A resident can send a text, location, or media message to the project WhatsApp number; the inbound path is implemented as **WhatsApp → AWS End User Messaging Social → Amazon SNS → ingest Lambda → Amazon SQS FIFO**.
+UrbanBot is designed around WhatsApp as the citizen channel for urban-infrastructure reports. A resident can send a text, location, or media message to the project WhatsApp number; the inbound path is implemented as **WhatsApp → AWS End User Messaging Social → Amazon SNS → ingest Lambda → Amazon SQS FIFO**.
 
 ## End User Messaging Social and WABA
 

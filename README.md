@@ -5,7 +5,7 @@ urban infrastructure reporting. Built for the AWS CDS Agentic AI Hackathon.
 
 ## For hackathon judges
 
-Urbanbot helps residents report potholes, leaks, lighting failures, and waste in
+UrbanBot helps residents report potholes, leaks, lighting failures, and waste in
 the WhatsApp channel they already use, while municipal staff work the resulting
 incident clusters in a role-aware portal. It focuses on shared incidents rather
 than isolated tickets, so each additional nearby report can improve visibility
@@ -13,7 +13,7 @@ and prioritization.
 
 ### Architecture
 
-![Urbanbot AWS architecture](docs/architecture/urbanbot-architecture.png)
+![UrbanBot AWS architecture](docs/architecture/urbanbot-architecture.png)
 
 The diagram source is editable in [draw.io](docs/architecture/urbanbot-architecture.drawio).
 Inbound WhatsApp events flow through AWS End User Messaging Social, SNS, ingest
@@ -58,7 +58,7 @@ For example:
 
 ```text
 You: There is a water leak on Calle Example near the park.
-Urbanbot: Please share the location and confirm that you consent to processing this report.
+UrbanBot (generated internally, not delivered): Please share the location and confirm that you consent to processing this report.
 You: I consent. The leak is by the north entrance.
 ```
 

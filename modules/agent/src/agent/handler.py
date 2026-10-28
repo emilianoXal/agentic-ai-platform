@@ -196,8 +196,6 @@ def _is_deletion_confirmation(text):
     return " ".join(words) == _DELETE_CONFIRMATION_PHRASE
 
 
-_inbound_media = []
-
 
 def _sanitized_media(media):
     if not isinstance(media, list):
@@ -207,7 +205,7 @@ def _sanitized_media(media):
 
 # --- Tool wrappers (one per tool Lambda; typed signatures + es-MX docstrings) -
 @tool
-def create_report(user_id: str, category: str, geohash: str, description: str,
+def create_report(category: str, geohash: str, description: str,
                   lat: float = None, lng: float = None,
                   severity: str = None) -> dict:
     """Registra un nuevo reporte ciudadano de infraestructura urbana.
@@ -217,7 +215,6 @@ def create_report(user_id: str, category: str, geohash: str, description: str,
     partir de lat/lng con precision 7 antes de llamar a esta herramienta.
 
     Args:
-        user_id: Identificador del usuario que reporta.
         category: Categoria del reporte (p.ej. bacheo, alumbrado, basura, agua).
         geohash: Celda geohash de precision 7 calculada desde lat/lng.
         description: Descripcion del reporte (obligatoria).
@@ -226,11 +223,11 @@ def create_report(user_id: str, category: str, geohash: str, description: str,
         severity: Severidad opcional (low, medium, high, critical).
     """
     return _invoke_tool(TOOL_CREATE_REPORT_FN, {
-        "user_id": user_id,
+        "user_id": _turn.get("user_id"),
         "category": category,
         "geohash": geohash,
         "description": description,
-        "media": list(_inbound_media),
+        "media": list(_turn.get("media", [])),
         "lat": lat,
         "lng": lng,
         "severity": severity,
@@ -238,19 +235,18 @@ def create_report(user_id: str, category: str, geohash: str, description: str,
 
 
 @tool
-def join_incident(incident_id: str, report_id: str = None, user_id: str = None,
+def join_incident(incident_id: str, report_id: str = None,
                   category: str = None, geohash: str = None,
                   severity: str = None) -> dict:
     """Adjunta un reporte a un incidente abierto existente (RF-29/RF-10).
 
     Proporciona incident_id y exactamente uno de: report_id (adjunta un reporte
-    existente) o user_id+category+geohash (crea un reporte y lo adjunta). El
-    geohash debe ser de precision 7.
+    existente) o category+geohash (crea un reporte del usuario actual y lo
+    adjunta). El geohash debe ser de precision 7.
 
     Args:
         incident_id: Identificador del incidente abierto (obligatorio).
         report_id: Reporte existente a adjuntar.
-        user_id: Usuario, para crear-y-adjuntar.
         category: Categoria, para crear-y-adjuntar.
         geohash: Celda geohash de precision 7, para crear-y-adjuntar.
         severity: Severidad opcional para recalcular prioridad.
@@ -258,7 +254,7 @@ def join_incident(incident_id: str, report_id: str = None, user_id: str = None,
     return _invoke_tool(TOOL_JOIN_INCIDENT_FN, {
         "incident_id": incident_id,
         "report_id": report_id,
-        "user_id": user_id,
+        "user_id": _turn.get("user_id"),
         "category": category,
         "geohash": geohash,
         "severity": severity,
@@ -266,34 +262,32 @@ def join_incident(incident_id: str, report_id: str = None, user_id: str = None,
 
 
 @tool
-def get_status(user_id: str = None, report_id: str = None) -> dict:
-    """Consulta el estatus de un reporte o de todos los reportes de un usuario.
+def get_status(report_id: str = None) -> dict:
+    """Consulta el estatus de un reporte o de todos los reportes del usuario actual.
 
-    Proporciona report_id o user_id (RF-16). Devuelve el estatus del reporte y
-    del incidente padre.
+    Sin report_id lista los reportes del usuario (RF-16). Devuelve el estatus
+    del reporte y del incidente padre.
 
     Args:
-        user_id: Usuario del que listar reportes.
         report_id: Reporte especifico a consultar.
     """
     return _invoke_tool(TOOL_GET_STATUS_FN, {
-        "user_id": user_id,
+        "user_id": _turn.get("user_id"),
         "report_id": report_id,
     })
 
 
 @tool
-def register_place(user_id: str, alias: str, geohash: str = None,
+def register_place(alias: str, geohash: str = None,
                    lat: float = None, lng: float = None, place_id: str = None,
                    radius_m: int = None) -> dict:
-    """Registra o actualiza un lugar de interes para el usuario (RF-23/RF-25).
+    """Registra o actualiza un lugar de interes del usuario actual (RF-23/RF-25).
 
     Maximo 3 lugares por usuario; requiere consentimiento previo. Proporciona
     geohash o lat/lng. Si lat/lng estan presentes, calcula el geohash de
     precision 7 antes de llamar.
 
     Args:
-        user_id: Usuario dueno del lugar.
         alias: Nombre/etiqueta del lugar.
         geohash: Celda geohash de precision 7 (opcional si hay lat/lng).
         lat: Latitud opcional.
@@ -302,7 +296,7 @@ def register_place(user_id: str, alias: str, geohash: str = None,
         radius_m: Radio en metros del area de interes.
     """
     return _invoke_tool(TOOL_REGISTER_PLACE_FN, {
-        "user_id": user_id,
+        "user_id": _turn.get("user_id"),
         "alias": alias,
         "geohash": geohash,
         "lat": lat,
@@ -631,7 +625,8 @@ def lambda_handler(event, context):
 
     text = text.strip() if isinstance(text, str) else ""
     _turn.clear()
-    _turn.update(user_id=str(user_id), text=text)
+    _turn.update(user_id=str(user_id), text=text,
+                 media=_sanitized_media(event.get("media")))
     consent_pending = bool(event.get("consent_pending"))
     rate_limited = bool(event.get("rate_limited"))
 
@@ -642,7 +637,6 @@ def lambda_handler(event, context):
          rate_limited=rate_limited,
          memory=bool(CONVERSATION_HISTORY_TABLE or AGENTCORE_MEMORY_ID) and not consent_pending)
 
-    _inbound_media[:] = _sanitized_media(event.get("media"))
     try:
         # Build the Bedrock model targeting the inference profile with the
         # guardrail applied declaratively (RNF-13/14): BedrockModel forwards
@@ -712,4 +706,4 @@ def lambda_handler(event, context):
                                      "user_hash": _hash_id(user_id)}))
         return {"ok": False, "error": "internal"}
     finally:
-        _inbound_media.clear()
+        _turn.clear()

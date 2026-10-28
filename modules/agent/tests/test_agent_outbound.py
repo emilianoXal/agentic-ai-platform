@@ -4,6 +4,7 @@ Run: python3 -m unittest discover -s modules/agent/tests
 """
 
 import hashlib
+import inspect
 import json
 import os
 import sys
@@ -204,8 +205,7 @@ class DroppedMediaPromptTests(unittest.TestCase):
 class _ReportingAgent(_Agent):
     def __call__(self, prompt):
         handler.create_report(
-            user_id=SENDER, category="bacheo", geohash="9g3qrbc",
-            description="bache en la calle",
+            category="bacheo", geohash="9g3qrbc", description="bache en la calle",
         )
         return _Result()
 
@@ -239,7 +239,7 @@ class InboundMediaReportTests(unittest.TestCase):
         }, None)
         self.assertTrue(result.get("ok"))
         self.assertEqual(self._report_payloads()[0]["media"], ["sanitized/abc"])
-        self.assertEqual(handler._inbound_media, [])
+        self.assertEqual(handler._turn, {})
 
     def test_media_does_not_leak_into_next_invocation(self):
         handler.lambda_handler({
@@ -248,6 +248,73 @@ class InboundMediaReportTests(unittest.TestCase):
         }, None)
         handler.lambda_handler({"user_id": SENDER, "text": "otro bache", "type": "text"}, None)
         self.assertEqual([p["media"] for p in self._report_payloads()], [["sanitized/abc"], []])
+
+
+OTHER_SENDER = "5215512345678"
+
+
+class _AllToolsAgent(_Agent):
+    prompts = []
+
+    def __call__(self, prompt):
+        _AllToolsAgent.prompts.append(prompt)
+        handler.create_report(category="bacheo", geohash="9g3qrbc", description="bache")
+        handler.join_incident(incident_id="inc-1", category="bacheo", geohash="9g3qrbc")
+        handler.get_status()
+        handler.register_place(alias="casa", geohash="9g3qrbc")
+        return _Result()
+
+
+class SenderIdentityInjectionTests(unittest.TestCase):
+    _FUNCTIONS = {
+        "TOOL_CREATE_REPORT_FN": "create-report",
+        "TOOL_JOIN_INCIDENT_FN": "join-incident",
+        "TOOL_GET_STATUS_FN": "get-status",
+        "TOOL_REGISTER_PLACE_FN": "register-place",
+    }
+
+    def setUp(self):
+        _AllToolsAgent.prompts = []
+        handler.Agent = _AllToolsAgent
+        handler.BedrockModel = mock.MagicMock()
+        handler._lambda = mock.MagicMock()
+        handler._lambda.invoke.return_value = {
+            "Payload": mock.MagicMock(read=lambda: b'{"ok": true}'),
+        }
+        for name, value in self._FUNCTIONS.items():
+            setattr(handler, name, value)
+
+    def _payloads(self):
+        return [
+            (call.kwargs["FunctionName"], json.loads(call.kwargs["Payload"]))
+            for call in handler._lambda.invoke.call_args_list
+        ]
+
+    def test_each_tool_receives_current_sender_and_never_previous_one(self):
+        handler.lambda_handler({"user_id": SENDER, "text": "hola"}, None)
+        handler.lambda_handler({"user_id": OTHER_SENDER, "text": "hola"}, None)
+        payloads = self._payloads()
+        self.assertEqual(
+            [name for name, _ in payloads],
+            list(self._FUNCTIONS.values()) * 2,
+        )
+        self.assertEqual(
+            [body["user_id"] for _, body in payloads],
+            [SENDER] * 4 + [OTHER_SENDER] * 4,
+        )
+        self.assertEqual(handler._turn, {})
+
+    def test_model_never_sees_user_id(self):
+        for tool_fn in (handler.create_report, handler.join_incident,
+                        handler.get_status, handler.register_place):
+            self.assertNotIn("user_id", inspect.signature(tool_fn).parameters)
+        handler.lambda_handler({"user_id": SENDER, "text": "hola"}, None)
+        self.assertNotIn(SENDER, _AllToolsAgent.prompts[0])
+        self.assertNotIn(SENDER, handler._SYSTEM_PROMPT)
+
+    def test_tool_call_outside_an_invocation_has_no_identity(self):
+        handler.get_status()
+        self.assertIsNone(self._payloads()[0][1]["user_id"])
 
 
 if __name__ == "__main__":

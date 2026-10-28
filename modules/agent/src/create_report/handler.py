@@ -166,23 +166,24 @@ def _attach_report(incident_id, report_id):
     return int(resp.get("Attributes", {}).get("report_count", {}).get("N", "1"))
 
 
-def _create_incident(geohash, category, report_id):
+def _create_incident(geohash, category, report_id, description):
     """Create a new OPEN incident with this report as the first member."""
     incident_id = str(uuid.uuid4())
     now = _now_iso()
-    _ddb.put_item(
-        TableName=INCIDENTS_TABLE,
-        Item={
-            "incident_id": {"S": incident_id},
-            "geohash": {"S": geohash},
-            "category": {"S": category},
-            "status": {"S": "OPEN"},
-            "report_count": {"N": "1"},
-            "report_ids": {"L": [{"S": report_id}]},
-            "created_at": {"S": now},
-            "updated_at": {"S": now},
-        },
-    )
+    item = {
+        "incident_id": {"S": incident_id},
+        "geohash": {"S": geohash},
+        "category": {"S": category},
+        "status": {"S": "OPEN"},
+        "report_count": {"N": "1"},
+        "report_ids": {"L": [{"S": report_id}]},
+        "created_at": {"S": now},
+        "updated_at": {"S": now},
+    }
+    text = str(description or "").strip()
+    if text:
+        item["description"] = {"S": text[:MAX_TEXT_LEN]}
+    _ddb.put_item(TableName=INCIDENTS_TABLE, Item=item)
     return incident_id
 
 
@@ -242,7 +243,7 @@ def lambda_handler(event, context):
             report_count = _attach_report(incident_id, report_id)
             attached = True
         else:
-            incident_id = _create_incident(geohash, category, report_id)
+            incident_id = _create_incident(geohash, category, report_id, description)
             report_count = 1
             attached = False
 

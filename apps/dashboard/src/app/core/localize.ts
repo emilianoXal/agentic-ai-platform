@@ -20,20 +20,41 @@ const TITLE_PREFIXES: readonly [string, string][] = [
   ['Safety', 'category.seguridad'],
   ['Trash', 'category.basura'],
   ['Pests', 'category.plagas'],
+  ['Other', 'category.otro'],
   ['Incident', 'category.otro'],
 ];
 
+/** Geohash alphabet (no a, i, l, o). A whole token of this shape is a cell id, not a place name. */
+const GEOHASH_TOKEN = /^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$/i;
+
+export function isGeohashToken(value: string): boolean {
+  return GEOHASH_TOKEN.test(value.trim());
+}
+
 export function localizeTitle(title: string, i18n: I18nService): string {
-  const match = TITLE_PREFIXES.find(([prefix]) => title.startsWith(prefix + ' '));
+  const match = TITLE_PREFIXES.find(
+    ([prefix]) => title === prefix || title.startsWith(prefix + ' '),
+  );
   if (!match) return title;
   const [prefix, key] = match;
   const category = i18n.t(key);
+  if (title === prefix) return category;
   const rest = title.slice(prefix.length + 1);
   if (rest === 'near you') return i18n.t('title.nearYou', { category });
   if (rest === 'near the demo point') return i18n.t('title.nearDemo', { category });
-  if (rest.startsWith('at ')) return i18n.t('title.at', { category, place: rest.slice(3) });
-  if (rest.startsWith('near ')) return i18n.t('title.near', { category, place: rest.slice(5) });
+  if (rest.startsWith('at ')) return placeTitle(i18n, 'title.at', category, rest.slice(3));
+  if (rest.startsWith('near ')) return placeTitle(i18n, 'title.near', category, rest.slice(5));
   return title;
+}
+
+function placeTitle(
+  i18n: I18nService,
+  key: 'title.at' | 'title.near',
+  category: string,
+  place: string,
+): string {
+  if (isGeohashToken(place)) return category;
+  return i18n.t(key, { category, place });
 }
 
 export function localizeIncidentTitle(

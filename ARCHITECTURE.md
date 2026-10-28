@@ -4,7 +4,14 @@ UrbanBot is an event-driven serverless system in `us-east-1`. WhatsApp ingress
 is normalized by the compute module and queued for the agent tools. Those tools
 store reports and incidents in DynamoDB and publish domain events to the custom
 EventBridge bus. The portal reads the same incident data through AppSync and
-also publishes status and escalation events.
+also publishes status and escalation events. An incident title is the citizen's
+short description when the incident or its first report has one; otherwise the
+category with a street or neighborhood, or the category alone. A geohash never
+appears in the title, including rows already stored as "near {geohash}". The
+portal translates category titles (EN/ES) and leaves the citizen's wording as
+written. Map markers are HTML dots with MapLibre anchor `center`, absolute
+positioning, and no transform of their own, so the dot stays on the coordinate
+at every zoom.
 
 Personal-data deletion is a dedicated agent tool with two-turn confirmation.
 The agent asks the citizen to reply `CONFIRMO BORRAR MIS DATOS`; the wrapper

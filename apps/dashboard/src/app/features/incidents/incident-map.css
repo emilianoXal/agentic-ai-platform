@@ -76,9 +76,12 @@ fy-incident-map {
 
 /* --- Markers (DOM elements owned by MapLibre) ------------------------------ */
 .fy-marker {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
   width: var(--size);
   height: var(--size);
+  margin: 0;
   padding: 0;
   border: 0;
   background: transparent;

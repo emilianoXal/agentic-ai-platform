@@ -1,14 +1,22 @@
-import { TestBed } from '@angular/core/testing';
+// @vitest-environment jsdom
+import { getTestBed, TestBed } from '@angular/core/testing';
+import { BrowserTestingModule, platformBrowserTesting } from '@angular/platform-browser/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { I18N_DICTIONARIES, I18nService, interpolate } from './i18n';
 import { localizeTimeline, localizeTitle } from './localize';
 import { TimelineEntry } from './models';
+
+const bed = getTestBed();
+if (!bed.platform) {
+  bed.initTestEnvironment(BrowserTestingModule, platformBrowserTesting());
+}
 
 describe('i18n', () => {
   let i18n: I18nService;
 
   beforeEach(() => {
     localStorage.removeItem('urbanbot.lang');
+    TestBed.resetTestingModule();
     TestBed.configureTestingModule({});
     i18n = TestBed.inject(I18nService);
   });
@@ -46,8 +54,18 @@ describe('i18n', () => {
     expect(localizeTitle('Street lights out near you', i18n)).toBe(
       'Luminarias apagadas cerca de ti',
     );
-    expect(localizeTitle('Pothole near 9ewmq3h', i18n)).toBe('Bache cerca de 9ewmq3h');
+    expect(localizeTitle('Pothole near 9ewmq3h', i18n)).toBe('Bache');
+    expect(localizeTitle('Other near 9g5wug6', i18n)).toBe('Otro');
+    expect(localizeTitle('Pothole near Centro', i18n)).toBe('Bache cerca de Centro');
+    expect(localizeTitle('Pothole', i18n)).toBe('Bache');
+    expect(
+      localizeTitle('Parked patrol car blocking the lane at the corner', i18n),
+    ).toBe('Parked patrol car blocking the lane at the corner');
     expect(localizeTitle('Something else', i18n)).toBe('Something else');
+    i18n.set('en');
+    expect(localizeTitle('Other near 9g5wug6', i18n)).toBe('Other');
+    expect(localizeTitle('Pothole near 9g8t5s4', i18n)).toBe('Pothole');
+    expect(localizeTitle('Pothole near 9g8t5s4', i18n)).not.toMatch(/[0-9bcdefghjkmnpqrstuvwxyz]{4,}/i);
   });
 
   it('localizes timeline entries from their kind and fields', () => {

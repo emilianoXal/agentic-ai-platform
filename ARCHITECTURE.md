@@ -75,9 +75,8 @@ PII-free `media_dropped` reason (`consent_pending`, `rate_limited`, or
 `processing_error` when media preparation fails, including missing pipeline
 configuration or origination number and AWS `StartExecution` errors); the agent prompt then asks for
 opt-in or explains the reason and asks the citizen to resend the photo, even
-when the photo had no caption. The agent's `create_report` tool attaches only
-the current inbound message's `sanitized/` keys server-side; the model cannot
-supply or omit media. Ingest also records each started `sanitized/` key in the
+when the photo had no caption. Report media is attached server-side and only
+as `sanitized/` keys; the model cannot supply or omit media. Ingest also records each started `sanitized/` key in the
 pending-media table, keyed only by a SHA-256 of the sender's `user_id`, with a
 one-hour per-key expiry plus DynamoDB TTL cleanup. `create_report`, and
 `join_incident` when it creates a report from `category`+`geohash`, receive the

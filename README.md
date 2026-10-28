@@ -101,9 +101,9 @@ neighbors about issues near their registered places.
 ```
 envs/<env>/        # dev | qa | prod — each is an isolated Terraform root (own state)
 modules/data/      # [done] KMS CMK, S3 media, 5 DynamoDB tables, SNS, SQS FIFO, EventBridge
-modules/compute/   # [done] ingest + notifier Lambdas (ingestion glue)
+modules/compute/   # [done] ingest + notifier Lambdas, image blur workflow (Step Functions + Rekognition)
 modules/agent/     # [done] 6 tool Lambdas, SQS consumer, ECR, Guardrails, AgentCore (awscc)
-modules/media/     # [todo] Rekognition blur + Transcribe + Nova multimodal
+modules/media/     # [todo] Transcribe + Nova multimodal
 modules/portal/    # [done] Cognito + AppSync + dashboard Lambdas + Location key + WAF + Amplify Hosting
 apps/dashboard/    # [done] Angular officials' dashboard (UrbanBot): live AppSync data + real map
 .kiro/steering/    # IA context (product, structure, tech, terraform conventions)
@@ -121,9 +121,9 @@ table); the state key is isolated per environment
 | Module    | Status | Summary |
 |-----------|--------|---------|
 | `data`    | done   | CMK, S3 media (SSE-KMS + retention), DynamoDB (reports/incidents/places/users/audit-log) with streams + GSIs, SNS inbound, SQS FIFO + DLQ, EventBridge bus |
-| `compute` | done   | `ingest` (SNS EUM WhatsApp webhook → deterministic guards → SQS FIFO), `notifier` (EventBridge→WhatsApp stub), and `dependency-mailer` (creation/escalation EventBridge events → SES) Lambdas, least-privilege IAM |
+| `compute` | done   | `ingest` (SNS EUM WhatsApp webhook → deterministic guards → SQS FIFO), `notifier` (EventBridge→WhatsApp stub), and `dependency-mailer` (creation/escalation EventBridge events → SES) Lambdas, consent-gated image workflow (`GetWhatsAppMessageMedia` → S3 → Step Functions → Rekognition face/plate blur; see [`ARCHITECTURE.md`](ARCHITECTURE.md)), least-privilege IAM |
 | `agent`   | done   | `create_report` / `join_incident` / `get_status` / `register_place` / `route` / `escalate` tool Lambdas, SQS `consumer`, ECR, Bedrock Guardrails, AgentCore runtime/gateway/memory (flag-gated, default off) |
-| `media`   | todo   | `GetWhatsAppMessageMedia` → S3 → Step Functions → Rekognition (face/plate blur) + Transcribe + Nova |
+| `media`   | todo   | Transcribe + Nova multimodal |
 | `portal`  | done   | Dashboard backend and hosting: Cognito staff pool (groups agency / official / admin, users as code), AppSync GraphQL + WAF, `dashboard-api` Lambda (paginated queries, status changes that emit `StatusChanged` to the notifier, admin demo seed), `stream-publisher` Lambda (incidents stream → real-time subscription), Amazon Location API key, Amplify Hosting |
 | `apps/dashboard` | done | Angular dashboard: priority queue, MapLibre + Amazon Location map opening at the user's location, status changes, demo console. See [`apps/dashboard/README.md`](apps/dashboard/README.md) |
 

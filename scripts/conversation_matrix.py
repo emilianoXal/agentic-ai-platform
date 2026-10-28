@@ -234,11 +234,13 @@ for scenario, decision, mx, col in FOLLOW_UP_PHRASES:
             })
 
 
-def seed_follow_up(ddb, case, run_number, user_id, namespace):
+def seed_follow_up(ddb, case, run_number, user_id, namespace, fixtures):
     """Seed a delivered question without creating schedules or invoking outbound."""
     stem = namespace + "/" + case["id"] + "/" + str(run_number)
     incident_id = str(uuid.uuid5(uuid.NAMESPACE_URL, stem + "/incident"))
     report_id = str(uuid.uuid5(uuid.NAMESPACE_URL, stem + "/report"))
+    fixtures.append({"case_run": case["id"] + "/R" + str(run_number), "user_id": user_id,
+                     "incident_id": incident_id, "report_id": report_id})
     now = utc_now()
     subject = hashlib.sha256(user_id.encode()).hexdigest()
     ddb.put_item(TableName=INCIDENTS_TABLE, Item={
@@ -268,6 +270,34 @@ def seed_follow_up(ddb, case, run_number, user_id, namespace):
             return {"incident_id": incident_id, "report_id": report_id}
         time.sleep(0.25)
     raise RuntimeError("Follow-up fixture did not become visible in by-user index")
+
+
+def cleanup_follow_up(ddb, fixtures):
+    """Delete only the synthetic rows and incident audit this run seeded."""
+    deleted, errors = [], []
+    owned = {":t": {"BOOL": True}}
+    for fixture in fixtures:
+        for table, key in ((INCIDENTS_TABLE, "incident_id"), (REPORTS_TABLE, "report_id")):
+            try:
+                ddb.delete_item(TableName=table, Key={key: {"S": fixture[key]}},
+                                ConditionExpression="synthetic = :t", ExpressionAttributeValues=owned)
+                deleted.append(table + ":" + fixture[key])
+            except ClientError as exc:
+                if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                    errors.append(table + ":" + fixture[key] + ": " + str(exc))
+            except BotoCoreError as exc:
+                errors.append(table + ":" + fixture[key] + ": " + str(exc))
+        entity = "incident#" + fixture["incident_id"]
+        try:
+            audit = ddb.query(TableName=AUDIT_TABLE, KeyConditionExpression="entity_id = :e",
+                              ExpressionAttributeValues={":e": {"S": entity}}, ConsistentRead=True)
+            for item in audit.get("Items", []):
+                ddb.delete_item(TableName=AUDIT_TABLE,
+                                Key={"entity_id": item["entity_id"], "ts": item["ts"]})
+                deleted.append(AUDIT_TABLE + ":" + entity + "#" + item["ts"]["S"])
+        except (BotoCoreError, ClientError) as exc:
+            errors.append(AUDIT_TABLE + ":" + entity + ": " + str(exc))
+    return {"fixtures": fixtures, "deleted": deleted, "errors": errors}
 
 
 def follow_up_state_matches(case, run):
@@ -599,11 +629,25 @@ def verdicts(case, run, log_error):
             "incident_status": (run["ddb_after"].get("linked_incident") or {}).get("status"),
             "audit_kinds": [entry.get("kind") for entry in run["ddb_after"].get("follow_up_audit", [])],
         }, ensure_ascii=False)
-        truthful = bool(combined) and action_ok
+        subject = hashlib.sha256(run["user_id"].encode()).hexdigest()
+        persisted = ((run["ddb_after"].get("linked_incident") or {})
+                     .get("follow_up_deliveries", {}).get(subject))
+        statements = re.sub(r"¿[^?]*\?", "", lower)
+        claims_reopen = has_any(statements, [r"\breabr(í|imos)\b", r"(?<!no )(quedó|fue) reabiert",
+                                             r"marqué.*reabiert"])
+        claims_confirm = has_any(statements, [r"\bconfirm(é|amos)\b", r"(?<!no )(quedó|fue) (confirmad|resuelt)",
+                                              r"marqué.*(confirmad|resuelt)"])
+        truthful = (all_ok and bool(combined) and not run["ddb_after"].get("observation_error")
+                    and not (claims_reopen and persisted != "reopen")
+                    and not (claims_confirm and persisted != "confirm"))
+        truth_evidence = json.dumps({"persisted_decision": persisted, "claims_reopen": claims_reopen,
+                                     "claims_confirm": claims_confirm}, ensure_ascii=False)
+    else:
+        truth_evidence = "respuesta consistente con la regla específica del caso"
     return {
         "veracidad": {
             "pass": truthful,
-            "evidence": "respuesta consistente con la regla específica del caso",
+            "evidence": truth_evidence,
         },
         "accion_correcta": {"pass": action_ok, "evidence": action_evidence},
         "idioma_es_mx": {
@@ -659,6 +703,10 @@ def render_markdown(result):
     ]
     if result.get("fatal_error"):
         lines.extend(["## Error fatal", "", "```text", result["fatal_error"], "```", ""])
+    cleanup = result.get("follow_up_cleanup")
+    if cleanup and cleanup["fixtures"]:
+        lines.extend(["- Limpieza ¿Ya quedó?: " + str(len(cleanup["deleted"])) + " filas sintéticas borradas, "
+                      + str(len(cleanup["errors"])) + " errores", ""])
     cells = [item for item in result.get("case_summary", []) if item.get("scenario")]
     if cells:
         lines.extend(["## ¿Ya quedó? — conteos por celda", "",
@@ -776,7 +824,7 @@ def parse_args():
         default=os.environ.get("CONVERSATION_OUTPUT_DIR", "conversation-artifacts"),
     )
     parser.add_argument("--function-name", default=FUNCTION_NAME)
-    parser.add_argument("--suite", choices=("all", "legacy", "follow-up"),
+    parser.add_argument("--suite", choices=("all", "follow-up"),
                         default=os.environ.get("CONVERSATION_SUITE", "all"))
     return parser.parse_args()
 
@@ -792,8 +840,7 @@ def main():
     )
     ddb = session.client("dynamodb")
     logs = session.client("logs")
-    cases = [case for case in CASES if args.suite == "all"
-             or bool(case.get("follow_up")) == (args.suite == "follow-up")]
+    cases = [case for case in CASES if args.suite == "all" or case.get("follow_up")]
     namespace = str(uuid.uuid4())
     result = {
         "schema": "urbanbot-conversation-matrix-v1",
@@ -806,11 +853,13 @@ def main():
         "fixture_namespace": namespace,
     }
     try:
-        config = lambda_client.get_function_configuration(FunctionName=FUNCTION_NAME)
+        config = lambda_client.get_function_configuration(FunctionName=args.function_name)
         result["bedrock_model_id"] = config.get("Environment", {}).get("Variables", {}).get("BEDROCK_MODEL_ID")
     except (BotoCoreError, ClientError) as exc:
         result["model_observation_error"] = str(exc)
     links = {}
+    fixtures = []
+    status = 0
     try:
         for case in cases:
             for run_number in range(1, 4):
@@ -819,9 +868,7 @@ def main():
                 if case.get("follow_up"):
                     suffix = str(int(hashlib.sha256(namespace.encode()).hexdigest()[:8], 16) % 10000).zfill(4)
                     user_id = "521000" + suffix + case["id"][1:] + str(run_number)
-                    linked = seed_follow_up(ddb, case, run_number, user_id, namespace)
-                    result["cleanup_inventory"].append({"case_run": case["id"] + "/R" + str(run_number),
-                                                        "user_id": user_id, **linked})
+                    linked = seed_follow_up(ddb, case, run_number, user_id, namespace, fixtures)
                 turns, blocked = case_turns(case, run_number, {run_number: linked})
                 run = {
                     "case_id": case["id"],
@@ -882,11 +929,15 @@ def main():
                 result["runs"].append(run)
     except (BotoCoreError, ClientError, RuntimeError, ValueError) as exc:
         result["fatal_error"] = type(exc).__name__ + ": " + str(exc)
+        status = 2
+    finally:
+        result["follow_up_cleanup"] = cleanup_follow_up(ddb, fixtures)
+    if status:
         result["finished_at"] = utc_now()
         result["case_summary"] = aggregate_cases(cases, result["runs"])
         write_outputs(result, output_dir)
         print(result["fatal_error"], file=sys.stderr)
-        return 2
+        return status
 
     time.sleep(8)
     log_error = attach_tool_evidence(logs, result["runs"])

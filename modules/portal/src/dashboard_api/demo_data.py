@@ -18,7 +18,7 @@ INCIDENT_PLAN = [
     ("agua", 12, "high", "Organismo de Agua", "sent_to_agency", False, 120, -80, 3, "Hay una fuga de agua enorme en la banqueta"),
     ("bacheo", 9, "medium", "Obras Publicas", "reopened", False, -260, 310, 2, "Bache profundo, ya se poncharon dos llantas"),
     ("alumbrado", 6, "medium", "Servicios Publicos", "in_progress", True, 430, -390, 1, "Tres luminarias apagadas desde hace dias"),
-    ("basura", 3, "low", None, "received", False, -160, -460, 2, "Contenedores llenos y basura en la calle"),
+    ("basura", 3, "low", "Limpia Publica", "received", False, -160, -460, 2, "Contenedores llenos y basura en la calle"),
 ]
 
 # Age of each incident's first report, in minutes before now.

@@ -54,7 +54,6 @@ module "agent" {
 
   environment = var.environment
 
-  enable_agentcore_runtime = var.enable_agentcore_runtime
   enable_agentcore_gateway = var.enable_agentcore_gateway
   enable_agentcore_memory  = var.enable_agentcore_memory
 

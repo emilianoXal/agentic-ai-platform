@@ -2,10 +2,9 @@
 
 Drains the data module's FIFO ingest queue (SQS event-source mapping). Parses the
 normalized message the compute ingest Lambda enqueued, logs it with PII masking,
-writes a lightweight inbound audit record, and — once the AgentCore runtime is
-enabled — will invoke it. The InvokeAgentRuntime call is a clearly-marked TODO
-gated behind AGENTCORE_RUNTIME_ENABLED; while false (the default) this is a no-op
-and NO bedrock-agentcore SDK is imported or called.
+writes a lightweight inbound audit record. FEAT-002 adds the synchronous
+invoke of the agent Lambda (AGENT_FUNCTION_NAME); today this is a no-op after
+the audit write.
 
 Error handling is the SQS ESM partial-batch-failure contract (NOT the ingest
 swallow-and-continue): per-record try/except, failed messageIds returned in
@@ -26,8 +25,7 @@ from botocore.exceptions import ClientError
 
 # --- Config from environment -------------------------------------------------
 AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "")
-AGENTCORE_RUNTIME_ENABLED = os.environ.get("AGENTCORE_RUNTIME_ENABLED", "false")
-AGENTCORE_RUNTIME_ARN = os.environ.get("AGENTCORE_RUNTIME_ARN", "")
+AGENT_FUNCTION_NAME = os.environ.get("AGENT_FUNCTION_NAME", "")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 # --- Clients created at module load (reused across warm invocations) ---------
@@ -104,16 +102,7 @@ def _process_record(record):
         rate_limited=msg.get("rate_limited"),
     )
 
-    # TODO(agentcore): once enable_agentcore_runtime is true, invoke the
-    # AgentCore runtime here, e.g.:
-    #     _agentcore = boto3.client("bedrock-agentcore")
-    #     _agentcore.invoke_agent_runtime(
-    #         agentRuntimeArn=AGENTCORE_RUNTIME_ARN,
-    #         payload=json.dumps(msg).encode("utf-8"),
-    #     )
-    # Gated below so it stays a no-op until the runtime image is pushed/enabled.
-    if AGENTCORE_RUNTIME_ENABLED == "true" and AGENTCORE_RUNTIME_ARN:
-        _log(logging.INFO, "agentcore_invoke_skipped_todo", message_id=message_id)
+    # FEAT-002 adds the synchronous invoke of AGENT_FUNCTION_NAME here.
 
 
 def lambda_handler(event, context):

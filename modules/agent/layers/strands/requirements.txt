@@ -1,0 +1,6 @@
+# Strands Lambda layer dependencies.
+#
+# boto3 / botocore / s3transfer / jmespath / python-dateutil / urllib3 are
+# provided by the python3.12 Lambda runtime and MUST NOT be vendored here —
+# build.sh removes them if pip pulls them transitively.
+strands-agents==1.62.0

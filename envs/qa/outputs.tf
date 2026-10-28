@@ -184,9 +184,24 @@ output "consumer_function_arn" {
   value       = module.agent.consumer_function_arn
 }
 
-output "agent_ecr_repository_url" {
-  description = "URL of the ECR repository for the Strands agent image."
-  value       = module.agent.ecr_repository_url
+output "agent_function_name" {
+  description = "Name of the Strands agent Lambda."
+  value       = module.agent.agent_function_name
+}
+
+output "agent_function_arn" {
+  description = "ARN of the Strands agent Lambda."
+  value       = module.agent.agent_function_arn
+}
+
+output "agent_role_arn" {
+  description = "ARN of the Strands agent Lambda execution role."
+  value       = module.agent.agent_role_arn
+}
+
+output "strands_layer_arn" {
+  description = "ARN of the published Strands Lambda layer version."
+  value       = module.agent.strands_layer_arn
 }
 
 output "agent_guardrail_id" {
@@ -202,11 +217,6 @@ output "agent_guardrail_version" {
 output "agentcore_exec_role_arn" {
   description = "ARN of the AgentCore execution role."
   value       = module.agent.agentcore_exec_role_arn
-}
-
-output "agentcore_runtime_id" {
-  description = "Id of the AgentCore Runtime (null when disabled)."
-  value       = module.agent.agentcore_runtime_id
 }
 
 output "agentcore_gateway_id" {

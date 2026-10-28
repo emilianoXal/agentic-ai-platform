@@ -44,12 +44,6 @@ variable "log_level" {
 # =============================================================================
 # Agent module — feature flags + tunables.
 # =============================================================================
-variable "enable_agentcore_runtime" {
-  description = "Create the AgentCore Runtime (awscc). Default false so validate / plan need no agent image."
-  type        = bool
-  default     = false
-}
-
 variable "enable_agentcore_gateway" {
   description = "Create the AgentCore Gateway (awscc). Default false."
   type        = bool

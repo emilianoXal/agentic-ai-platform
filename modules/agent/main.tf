@@ -70,6 +70,22 @@ data "archive_file" "consumer" {
   output_path = "${path.module}/build/consumer.zip"
 }
 
+data "archive_file" "agent" {
+  type        = "zip"
+  source_dir  = "${path.module}/src/agent"
+  output_path = "${path.module}/build/agent.zip"
+}
+
+# Strands Lambda layer — archive_file zips the committed layers/strands tree
+# (requirements.txt + build.sh + the prebuilt python/ site-packages). The CI
+# terraform image has no python/pip, so build.sh is run once locally and the
+# resulting python/ tree is committed; archive_file only zips what exists.
+data "archive_file" "strands_layer" {
+  type        = "zip"
+  source_dir  = "${path.module}/layers/strands"
+  output_path = "${path.module}/build/strands-layer.zip"
+}
+
 # =============================================================================
 # CloudWatch log groups — one per Lambda; IAM scopes to a known ARN.
 # =============================================================================
@@ -108,8 +124,8 @@ resource "aws_cloudwatch_log_group" "consumer" {
   retention_in_days = var.log_retention_days
 }
 
-resource "aws_cloudwatch_log_group" "agentcore" {
-  name              = "/aws/bedrock-agentcore/${local.name_prefix}-agent"
+resource "aws_cloudwatch_log_group" "agent" {
+  name              = "/aws/lambda/${local.name_prefix}-agent"
   retention_in_days = var.log_retention_days
 }
 
@@ -512,8 +528,8 @@ resource "aws_iam_role_policy_attachment" "escalate" {
 
 # =============================================================================
 # consumer — role + policy + attachment.
-# sqs receive/delete on the ingest queue + dynamodb write (audit) + kms + logs.
-# bedrock-agentcore:InvokeAgentRuntime left as a TODO (runtime flag false).
+# sqs receive/delete on the ingest queue + dynamodb write (audit) + kms + logs
+# + lambda:InvokeFunction on the agent Lambda (synchronous hand-off).
 # =============================================================================
 resource "aws_iam_role" "consumer" {
   name               = "${local.name_prefix}-consumer-role"
@@ -560,9 +576,12 @@ data "aws_iam_policy_document" "consumer" {
     resources = [var.kms_key_arn]
   }
 
-  # TODO(agentcore): when enable_agentcore_runtime is true, grant
-  # "bedrock-agentcore:InvokeAgentRuntime" on the runtime ARN so the consumer
-  # can hand off to the AgentCore runtime.
+  statement {
+    sid       = "InvokeAgent"
+    effect    = "Allow"
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.agent.arn]
+  }
 }
 
 resource "aws_iam_policy" "consumer" {
@@ -573,6 +592,93 @@ resource "aws_iam_policy" "consumer" {
 resource "aws_iam_role_policy_attachment" "consumer" {
   role       = aws_iam_role.consumer.name
   policy_arn = aws_iam_policy.consumer.arn
+}
+
+# =============================================================================
+# Strands Lambda layer — published from the committed layers/strands tree.
+# =============================================================================
+resource "aws_lambda_layer_version" "strands" {
+  layer_name          = "${local.name_prefix}-strands"
+  filename            = data.archive_file.strands_layer.output_path
+  source_code_hash    = data.archive_file.strands_layer.output_base64sha256
+  compatible_runtimes = ["python3.12"]
+}
+
+# =============================================================================
+# agent — role + least-privilege policy + attachment.
+# Runs the Strands agent loop: Bedrock invoke + guardrail + tool-Lambda invoke
+# + kms + logs. NO DynamoDB (the tool Lambdas own all table access).
+# =============================================================================
+resource "aws_iam_role" "agent" {
+  name               = "${local.name_prefix}-agent-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+data "aws_iam_policy_document" "agent" {
+  statement {
+    sid    = "Logs"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = [
+      aws_cloudwatch_log_group.agent.arn,
+      "${aws_cloudwatch_log_group.agent.arn}:*",
+    ]
+  }
+
+  statement {
+    sid    = "BedrockInvoke"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+    ]
+    resources = [
+      local.model_arn,
+      local.inference_profile_arn,
+    ]
+  }
+
+  statement {
+    sid       = "GuardrailApply"
+    effect    = "Allow"
+    actions   = ["bedrock:ApplyGuardrail"]
+    resources = [aws_bedrock_guardrail.this.guardrail_arn]
+  }
+
+  statement {
+    sid     = "InvokeTools"
+    effect  = "Allow"
+    actions = ["lambda:InvokeFunction"]
+    resources = [
+      aws_lambda_function.create_report.arn,
+      aws_lambda_function.join_incident.arn,
+      aws_lambda_function.get_status.arn,
+      aws_lambda_function.register_place.arn,
+      aws_lambda_function.route.arn,
+      aws_lambda_function.escalate.arn,
+    ]
+  }
+
+  statement {
+    sid       = "KmsDataKey"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = [var.kms_key_arn]
+  }
+}
+
+resource "aws_iam_policy" "agent" {
+  name   = "${local.name_prefix}-agent-policy"
+  policy = data.aws_iam_policy_document.agent.json
+}
+
+resource "aws_iam_role_policy_attachment" "agent" {
+  role       = aws_iam_role.agent.name
+  policy_arn = aws_iam_policy.agent.arn
 }
 
 # =============================================================================
@@ -742,21 +848,53 @@ resource "aws_lambda_function" "consumer" {
   handler          = "handler.lambda_handler"
   filename         = data.archive_file.consumer.output_path
   source_code_hash = data.archive_file.consumer.output_base64sha256
-  timeout          = 30
+  timeout          = 120
   memory_size      = 256
 
   environment {
     variables = {
-      AUDIT_TABLE               = var.audit_log_table_name
-      AGENTCORE_RUNTIME_ENABLED = tostring(var.enable_agentcore_runtime)
-      AGENTCORE_RUNTIME_ARN     = var.enable_agentcore_runtime ? one(awscc_bedrockagentcore_runtime.this[*].agent_runtime_arn) : ""
-      LOG_LEVEL                 = var.log_level
+      AUDIT_TABLE         = var.audit_log_table_name
+      AGENT_FUNCTION_NAME = aws_lambda_function.agent.function_name
+      LOG_LEVEL           = var.log_level
     }
   }
 
   depends_on = [
     aws_cloudwatch_log_group.consumer,
     aws_iam_role_policy_attachment.consumer,
+  ]
+}
+
+resource "aws_lambda_function" "agent" {
+  function_name    = "${local.name_prefix}-agent"
+  role             = aws_iam_role.agent.arn
+  runtime          = "python3.12"
+  handler          = "handler.lambda_handler"
+  filename         = data.archive_file.agent.output_path
+  source_code_hash = data.archive_file.agent.output_base64sha256
+  timeout          = 90
+  memory_size      = 1024
+  layers           = [aws_lambda_layer_version.strands.arn]
+
+  environment {
+    variables = {
+      BEDROCK_MODEL_ID       = var.bedrock_model_id
+      GUARDRAIL_ID           = aws_bedrock_guardrail.this.guardrail_id
+      GUARDRAIL_VERSION      = aws_bedrock_guardrail_version.this.version
+      TOOL_CREATE_REPORT_FN  = aws_lambda_function.create_report.function_name
+      TOOL_JOIN_INCIDENT_FN  = aws_lambda_function.join_incident.function_name
+      TOOL_GET_STATUS_FN     = aws_lambda_function.get_status.function_name
+      TOOL_REGISTER_PLACE_FN = aws_lambda_function.register_place.function_name
+      TOOL_ROUTE_FN          = aws_lambda_function.route.function_name
+      TOOL_ESCALATE_FN       = aws_lambda_function.escalate.function_name
+      AGENTCORE_MEMORY_ID    = var.enable_agentcore_memory ? one(awscc_bedrockagentcore_memory.this[*].memory_id) : ""
+      LOG_LEVEL              = var.log_level
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.agent,
+    aws_iam_role_policy_attachment.agent,
   ]
 }
 
@@ -820,24 +958,6 @@ resource "aws_bedrock_guardrail_version" "this" {
 }
 
 # =============================================================================
-# ECR repository — created unconditionally so a build pipeline can push the
-# Strands agent image before the AgentCore runtime flag is turned on.
-# =============================================================================
-resource "aws_ecr_repository" "agent" {
-  name                 = "${local.name_prefix}-agent"
-  image_tag_mutability = "IMMUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-
-  encryption_configuration {
-    encryption_type = "KMS"
-    kms_key         = var.kms_key_arn
-  }
-}
-
-# =============================================================================
 # AgentCore execution role — created REGARDLESS of the flags so its ARN is a
 # stable output. Trust principal verified against the awscc runtime example:
 # bedrock-agentcore.amazonaws.com.
@@ -881,24 +1001,6 @@ data "aws_iam_policy_document" "agentcore_exec" {
   }
 
   statement {
-    sid    = "EcrPull"
-    effect = "Allow"
-    actions = [
-      "ecr:GetDownloadUrlForLayer",
-      "ecr:BatchGetImage",
-      "ecr:BatchCheckLayerAvailability",
-    ]
-    resources = [aws_ecr_repository.agent.arn]
-  }
-
-  statement {
-    sid       = "EcrAuthToken"
-    effect    = "Allow"
-    actions   = ["ecr:GetAuthorizationToken"]
-    resources = ["*"]
-  }
-
-  statement {
     sid     = "InvokeTools"
     effect  = "Allow"
     actions = ["lambda:InvokeFunction"]
@@ -909,20 +1011,6 @@ data "aws_iam_policy_document" "agentcore_exec" {
       aws_lambda_function.register_place.arn,
       aws_lambda_function.route.arn,
       aws_lambda_function.escalate.arn,
-    ]
-  }
-
-  statement {
-    sid    = "Logs"
-    effect = "Allow"
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-    ]
-    resources = [
-      aws_cloudwatch_log_group.agentcore.arn,
-      "${aws_cloudwatch_log_group.agentcore.arn}:*",
     ]
   }
 
@@ -945,39 +1033,16 @@ resource "aws_iam_role_policy_attachment" "agentcore_exec" {
 }
 
 # =============================================================================
-# AgentCore resources (awscc) — flag-gated via count, default false. With the
-# flags false (count = 0) terraform validate / a dev plan contain ZERO
-# AgentCore resources and need no agent image. awscc does NOT honour provider
-# default_tags, so tags are set inline from local.tags.
+# AgentCore resources (awscc) — Gateway + Memory, flag-gated via count, default
+# false. With the flags false (count = 0) terraform validate / a dev plan
+# contain ZERO AgentCore resources. The Strands agent itself now runs in the
+# agent Lambda (see aws_lambda_function.agent), so there is no AgentCore
+# Runtime here. awscc does NOT honour provider default_tags, so tags are set
+# inline from local.tags.
 #
 # Resource type names + required args VERIFIED against the hashicorp/awscc
-# provider docs (bedrockagentcore_runtime / _gateway / _memory).
+# provider docs (bedrockagentcore_gateway / _memory).
 # =============================================================================
-resource "awscc_bedrockagentcore_runtime" "this" {
-  count = var.enable_agentcore_runtime ? 1 : 0
-
-  agent_runtime_name = replace("${local.name_prefix}-agent", "-", "_")
-  role_arn           = aws_iam_role.agentcore_exec.arn
-
-  agent_runtime_artifact = {
-    container_configuration = {
-      # TODO(agentcore): :latest is a placeholder — the Strands agent image must
-      # be pushed to this ECR repo before enabling enable_agentcore_runtime.
-      container_uri = "${aws_ecr_repository.agent.repository_url}:latest"
-    }
-  }
-
-  network_configuration = {
-    network_mode = "PUBLIC"
-  }
-
-  environment_variables = {
-    LOG_LEVEL = var.log_level
-  }
-
-  tags = local.tags
-}
-
 resource "awscc_bedrockagentcore_gateway" "this" {
   count = var.enable_agentcore_gateway ? 1 : 0
 
